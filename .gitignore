@@ -5,3 +5,7 @@ env/
 
 # Local database assets
 pgsql
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
