@@ -1,0 +1,78 @@
+[build-system]
+requires = [
+    "setuptools>=68",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "namel3ss"
+version = "0.1.0"
+description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
+readme = "README.md"
+authors = [
+    { name = "Namel3ss Developers" }
+]
+license = "MIT"
+requires-python = ">=3.10"
+keywords = ["codegen", "fastapi", "llm", "dashboard", "language"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "httpx>=0.28,<0.29",
+    "pydantic>=2.7,<3.0",
+    "uvicorn>=0.30,<0.31",
+]
+
+[project.urls]
+Homepage = "https://github.com/namel3ss/namel3ss"
+
+[project.optional-dependencies]
+cli = [
+    "click>=8",
+]
+
+sql = [
+    "sqlalchemy>=2.0",
+    "asyncpg>=0.29",
+]
+
+redis = [
+    "redis>=5.0",
+    "aioredis>=2.0",
+]
+
+mongo = [
+    "motor>=3.0",
+    "pymongo>=4.0",
+]
+
+all = [
+    "sqlalchemy>=2.0",
+    "asyncpg>=0.29",
+    "redis>=5.0",
+    "aioredis>=2.0",
+    "motor>=3.0",
+    "pymongo>=4.0",
+]
+
+default = []
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["namel3ss", "namel3ss.*"]
+
+[tool.setuptools.package-data]
+"namel3ss.codegen.backend.core" = ["runtime_sections/*.py"]

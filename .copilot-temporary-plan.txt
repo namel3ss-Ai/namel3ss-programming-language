@@ -1,0 +1,7 @@
+TODO:
+- [ ] Review tests/test_connector_drivers.py for expected behaviours
+- [ ] Inspect runtime_sections/connectors.py, context.py, and related core template helpers
+- [ ] Update drivers to match expected error messages and stub outputs
+- [ ] Harden secret redaction and environment flag handling
+- [ ] Verify _load_python_callable behaviour matches tests
+- [ ] Run pytest tests/test_connector_drivers.py -vv and iterate until green

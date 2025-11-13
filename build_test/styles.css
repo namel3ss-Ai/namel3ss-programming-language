@@ -1,0 +1,37 @@
+:root {
+  --primary: "#795548";
+  --background: "#FFF8E1";
+  --text: "#3E2723";
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 1rem;
+  background-color: var(--background, #ffffff);
+  color: var(--text, #333333);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background-color: #333;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+.toast.show {
+  opacity: 1;
+}

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin – CoffeeHub</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<nav><ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="feedback.html">Feedback</a></li>
+<li><a href="admin.html">Admin</a></li>
+</ul></nav>
+<h2>Admin</h2>
+<h3>Orders</h3>
+<table style=""><thead><tr>
+  <th>id</th>
+  <th>customer_name</th>
+  <th>total</th>
+  <th>status</th>
+</tr></thead>
+<tbody>
+  <tr>
+    <td>2</td>
+    <td>61</td>
+    <td>4</td>
+    <td>48</td>
+  </tr>
+  <tr>
+    <td>59</td>
+    <td>6</td>
+    <td>38</td>
+    <td>2</td>
+  </tr>
+  <tr>
+    <td>19</td>
+    <td>15</td>
+    <td>63</td>
+    <td>9</td>
+  </tr>
+</tbody></table>
+<button id="action_btn_admin_0">Approve</button>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+</script>
+</body>
+</html>

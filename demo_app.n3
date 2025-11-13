@@ -1,0 +1,15 @@
+app "Demo API" connects to postgres "DEMO_DB".
+
+dataset "active_users" from table users:
+  filter by: status == "active"
+
+page "Home" at "/":
+  show text "Welcome to Demo API"
+  show table "Active Users" from dataset active_users
+
+page "Admin" at "/admin":
+  if user.role == "admin":
+    show text "Admin Dashboard"
+    show table "All Users" from table users
+  else:
+    show text "Access Denied"

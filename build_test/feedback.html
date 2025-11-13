@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feedback – CoffeeHub</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<nav><ul>
+<li><a href="index.html">Home</a></li>
+<li><a href="feedback.html">Feedback</a></li>
+<li><a href="admin.html">Admin</a></li>
+</ul></nav>
+<h2>Feedback</h2>
+<h3>Submit Feedback</h3>
+<form id="form_feedback_0" style="">
+  <label>name: <input name="name" type="text"></label><br>
+  <label>email: <input name="email" type="email"></label><br>
+  <label>message: <input name="message" type="text"></label><br>
+  <button type="submit">Submit</button>
+</form>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+</script>
+</body>
+</html>

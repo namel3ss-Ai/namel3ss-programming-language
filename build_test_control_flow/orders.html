@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders List – Control Flow Demo</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<nav><ul>
+<li><a href="admin.html">Admin Dashboard</a></li>
+<li><a href="orders.html">Orders List</a></li>
+<li><a href="order-details.html">Order Details</a></li>
+<li><a href="features.html">Features</a></li>
+</ul></nav>
+<h2>Orders List</h2>
+<p style="">Active Orders</p>
+<!-- For loop: order in dataset active_orders -->
+<div class="for-loop" style="border-left: 3px solid #2196F3; padding-left: 10px; margin: 10px 0;">
+<p><em>For each order in dataset active_orders:</em></p>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 1:</small>
+<p style="">Order #{order.id} - ${order.total}</p>
+</div>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 2:</small>
+<p style="">Order #{order.id} - ${order.total}</p>
+</div>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 3:</small>
+<p style="">Order #{order.id} - ${order.total}</p>
+</div>
+</div>
+<p style="">Pending Orders</p>
+<!-- For loop: row in table pending_orders -->
+<div class="for-loop" style="border-left: 3px solid #2196F3; padding-left: 10px; margin: 10px 0;">
+<p><em>For each row in table pending_orders:</em></p>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 1:</small>
+<p style="">Pending: {row.id} - {row.customer_name}</p>
+</div>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 2:</small>
+<p style="">Pending: {row.id} - {row.customer_name}</p>
+</div>
+<div class="loop-iteration" style="margin-left: 10px; margin-bottom: 5px;">
+<small>Iteration 3:</small>
+<p style="">Pending: {row.id} - {row.customer_name}</p>
+</div>
+</div>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+</script>
+</body>
+</html>

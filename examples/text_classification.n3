@@ -1,0 +1,25 @@
+app "Text Classifier".
+
+dataset "reviews" from csv "data/reviews.csv":
+  columns: text, sentiment
+  cache:
+    strategy: memory
+
+model "sentiment_local" using python:
+  from dataset reviews
+  target: sentiment
+  features: text
+  registry:
+    version: "v1"
+    accuracy: 0.91
+
+define template "feedback_prompt":
+  prompt = "Classify the sentiment for: {text}"
+
+page "Classify" at "/":
+  show form "Predict sentiment":
+    fields: text
+    on submit:
+      call python "models/sentiment.py" method "predict" with:
+        text = form.text
+      show toast "Prediction (stub) ready"

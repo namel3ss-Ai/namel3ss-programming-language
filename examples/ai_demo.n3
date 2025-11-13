@@ -1,0 +1,24 @@
+app "AI Demo".
+
+connector "openai" type llm:
+  provider = "openai"
+  model = "gpt-4-turbo"
+  api_key = env.OPENAI_KEY
+
+define template "product_summary":
+  prompt = "Summarise this input: {input}"
+
+define chain "summary_chain":
+  input -> template product_summary -> connector openai
+
+page "AI Playground" at "/ai":
+  show form "Ask the model":
+    fields: message
+    on submit:
+      call python "models/local_model.py" method "predict" with:
+        input = form.message
+      ask connector openai with:
+        prompt = form.message
+      run chain summary_chain with:
+        text = form.message
+      show toast "Stubbed AI response sent"
