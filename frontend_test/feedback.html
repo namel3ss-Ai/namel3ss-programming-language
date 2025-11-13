@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feedback – CoffeeHub</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-n3-page-slug="feedback" data-n3-page-reactive="false">
+<nav><ul>
+  <li><a href="index.html">Home</a></li>
+  <li><a href="feedback.html" class="active">Feedback</a></li>
+  <li><a href="admin.html">Admin</a></li>
+</ul></nav>
+<h2>Feedback</h2>
+<h3>Submit Feedback</h3>
+<form id="form_feedback_0" style="">
+  <label>name: <input name="name" type="text"></label><br>
+  <label>email: <input name="email" type="email"></label><br>
+  <label>message: <input name="message" type="text"></label><br>
+  <button type="submit">Submit</button>
+</form>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+(function() {
+    var apiUrl = "/api/pages/feedback";
+    window.N3_VARS = window.N3_VARS || {};
+    fetch(apiUrl, { headers: { 'Accept': 'application/json' } })
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('Failed to load page data: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            var vars = (data && data.vars) ? data.vars : {};
+            window.N3_VARS = vars;
+            document.querySelectorAll('[data-n3-text-template]').forEach(function(el) {
+                var tpl = el.getAttribute('data-n3-text-template') || '';
+                el.textContent = tpl.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function(match, name) {
+                    return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : '';
+                });
+            });
+            if (window.N3Realtime && window.N3Realtime.applySnapshot) {
+                window.N3Realtime.applySnapshot("feedback", data || {}, { source: 'bootstrap' });
+            }
+        })
+        .catch(function(err) {
+            console.error('Namel3ss frontend bootstrap failed:', err);
+        });
+})();
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var formEl = document.getElementById('form_feedback_0');
+  if (formEl) {
+    formEl.addEventListener('submit', function(e) {
+      e.preventDefault();
+      window.N3Widgets.showToast("Thank you for your feedback!");
+    });
+  }
+});
+</script>
+</body>
+</html>

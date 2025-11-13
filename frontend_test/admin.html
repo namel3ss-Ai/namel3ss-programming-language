@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin – CoffeeHub</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-n3-page-slug="admin" data-n3-page-reactive="false">
+<nav><ul>
+  <li><a href="index.html">Home</a></li>
+  <li><a href="feedback.html">Feedback</a></li>
+  <li><a href="admin.html" class="active">Admin</a></li>
+</ul></nav>
+<h2>Admin</h2>
+<section class="n3-widget n3-widget-table" data-n3-component-index="0" data-n3-endpoint="/api/pages/admin/tables/0">
+  <h3>Orders</h3>
+  <div class="n3-table-container"><table id="table_admin_0" class="n3-table"></table></div>
+</section>
+<button id="action_btn_admin_0">Approve</button>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+(function() {
+    var apiUrl = "/api/pages/admin";
+    window.N3_VARS = window.N3_VARS || {};
+    fetch(apiUrl, { headers: { 'Accept': 'application/json' } })
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('Failed to load page data: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            var vars = (data && data.vars) ? data.vars : {};
+            window.N3_VARS = vars;
+            document.querySelectorAll('[data-n3-text-template]').forEach(function(el) {
+                var tpl = el.getAttribute('data-n3-text-template') || '';
+                el.textContent = tpl.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function(match, name) {
+                    return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : '';
+                });
+            });
+            if (window.N3Realtime && window.N3Realtime.applySnapshot) {
+                window.N3Realtime.applySnapshot("admin", data || {}, { source: 'bootstrap' });
+            }
+        })
+        .catch(function(err) {
+            console.error('Namel3ss frontend bootstrap failed:', err);
+        });
+})();
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.N3Widgets && window.N3Widgets.bootstrap) { window.N3Widgets.bootstrap([{"type": "table", "id": "table_admin_0", "data": {"title": "Orders", "columns": ["id", "customer_name", "total", "status"], "rows": [{"id": 4546, "customer_name": "Customer Name 1", "total": 8895.71, "status": "2024-01-01T12:04:00"}, {"id": 8831, "customer_name": "Customer Name 2", "total": 6540.65, "status": "2024-01-01T10:02:00"}, {"id": 4857, "customer_name": "Customer Name 3", "total": 4804.69, "status": "2024-01-01T20:08:00"}, {"id": 1817, "customer_name": "Customer Name 4", "total": 8688.71, "status": "2024-01-01T09:25:00"}, {"id": 463, "customer_name": "Customer Name 5", "total": 3078.95, "status": "2024-01-01T14:42:00"}, {"id": 5626, "customer_name": "Customer Name 6", "total": 7649.47, "status": "2024-01-01T12:45:00"}], "insight": null}, "layout": {}, "style": {}, "insight": null, "componentIndex": 0, "endpoint": "/api/pages/admin/tables/0"}]); }
+  var btnEl = document.getElementById('action_btn_admin_0');
+  if (btnEl) {
+    btnEl.addEventListener('click', function() {
+      console.log('Update orders: status = "APPROVED" where ');
+      window.N3Widgets.showToast('Updated orders');
+      window.N3Widgets.showToast("Order approved");
+      window.location.href = 'admin.html';
+    });
+  }
+});
+</script>
+</body>
+</html>

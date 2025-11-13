@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend Integration Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #4caf50; }
+        .error { color: #f44336; }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Namel3ss Backend Integration Test</h1>
+    
+    <div class="section">
+        <h2>Backend Status</h2>
+        <p id="status">Checking...</p>
+        <button onclick="checkBackend()">Refresh Status</button>
+    </div>
+
+    <div class="section">
+        <h2>API Tests</h2>
+        <button onclick="testPageEndpoint()">Test /api/pages/home</button>
+        <button onclick="testDocsEndpoint()">Test /docs</button>
+        <button onclick="testOpenAPI()">Test /openapi.json</button>
+        <div id="results"></div>
+    </div>
+
+    <div class="section">
+        <h2>Available Endpoints</h2>
+        <div id="endpoints">Loading...</div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+
+        async function checkBackend() {
+            const statusEl = document.getElementById('status');
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                if (response.ok) {
+                    statusEl.innerHTML = '<span class="success">✓ Backend is running at http://127.0.0.1:8000</span>';
+                } else {
+                    statusEl.innerHTML = `<span class="error">⚠ Backend returned status ${response.status}</span>`;
+                }
+            } catch (error) {
+                statusEl.innerHTML = `<span class="error">✗ Backend is not accessible: ${error.message}</span>`;
+            }
+        }
+
+        async function testPageEndpoint() {
+            const resultsEl = document.getElementById('results');
+            resultsEl.innerHTML = '<p>Testing /api/pages/home...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/pages/home`);
+                const data = await response.json();
+                
+                resultsEl.innerHTML = `
+                    <h3 class="success">✓ Page API Response</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultsEl.innerHTML = `<p class="error">✗ Error: ${error.message}</p>`;
+            }
+        }
+
+        async function testDocsEndpoint() {
+            const resultsEl = document.getElementById('results');
+            resultsEl.innerHTML = '<p>Opening /docs in new tab...</p>';
+            window.open(`${API_BASE}/docs`, '_blank');
+        }
+
+        async function testOpenAPI() {
+            const resultsEl = document.getElementById('results');
+            resultsEl.innerHTML = '<p>Testing /openapi.json...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/openapi.json`);
+                const data = await response.json();
+                
+                const paths = Object.keys(data.paths || {});
+                resultsEl.innerHTML = `
+                    <h3 class="success">✓ OpenAPI Schema</h3>
+                    <p><strong>Available Endpoints:</strong></p>
+                    <ul>
+                        ${paths.map(path => `<li>${path}</li>`).join('')}
+                    </ul>
+                `;
+            } catch (error) {
+                resultsEl.innerHTML = `<p class="error">✗ Error: ${error.message}</p>`;
+            }
+        }
+
+        async function loadEndpoints() {
+            const endpointsEl = document.getElementById('endpoints');
+            
+            try {
+                const response = await fetch(`${API_BASE}/openapi.json`);
+                const data = await response.json();
+                
+                const paths = data.paths || {};
+                let html = '<ul>';
+                
+                for (const [path, methods] of Object.entries(paths)) {
+                    html += `<li><strong>${path}</strong>: ${Object.keys(methods).join(', ').toUpperCase()}</li>`;
+                }
+                
+                html += '</ul>';
+                endpointsEl.innerHTML = html;
+            } catch (error) {
+                endpointsEl.innerHTML = `<p class="error">Failed to load endpoints: ${error.message}</p>`;
+            }
+        }
+
+        // Run on page load
+        checkBackend();
+        loadEndpoints();
+    </script>
+</body>
+</html>
