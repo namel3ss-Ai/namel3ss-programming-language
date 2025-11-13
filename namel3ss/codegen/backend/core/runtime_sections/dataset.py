@@ -4,6 +4,98 @@ from textwrap import dedent
 
 DATASET_SECTION = dedent(
     '''
+from namel3ss.codegen.backend.core.runtime.datasets import (
+    fetch_dataset_rows as _fetch_dataset_rows_impl,
+    execute_sql as _execute_sql_impl,
+    load_dataset_source as _load_dataset_source_impl,
+    execute_dataset_pipeline as _execute_dataset_pipeline_impl,
+    resolve_connector as _resolve_connector_impl,
+)
+
+
+async def fetch_dataset_rows(
+    key: str,
+    session: AsyncSession,
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    return await _fetch_dataset_rows_impl(
+        key,
+        session,
+        context,
+        datasets=DATASETS,
+        resolve_connector=_resolve_connector,
+        dataset_cache_settings=_dataset_cache_settings,
+        make_dataset_cache_key=_make_dataset_cache_key,
+        dataset_cache_index=DATASET_CACHE_INDEX,
+        cache_get=_cache_get,
+        clone_rows=_clone_rows,
+        load_dataset_source=_load_dataset_source,
+        execute_dataset_pipeline=_execute_dataset_pipeline,
+        cache_set=_cache_set,
+        broadcast_dataset_refresh=_broadcast_dataset_refresh,
+        schedule_dataset_refresh=_schedule_dataset_refresh,
+    )
+
+
+async def _execute_sql(session: Optional[AsyncSession], query: Any) -> Any:
+    return await _execute_sql_impl(
+        session,
+        query,
+        async_session_type=AsyncSession,
+        sync_session_type=Session,
+        run_in_threadpool=run_in_threadpool,
+    )
+
+
+async def _load_dataset_source(
+    dataset: Dict[str, Any],
+    connector: Dict[str, Any],
+    session: AsyncSession,
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    return await _load_dataset_source_impl(
+        dataset,
+        connector,
+        session,
+        context,
+        connector_drivers=CONNECTOR_DRIVERS,
+        httpx_client_cls=_HTTPX_CLIENT_CLS,
+        normalize_connector_rows=_normalize_connector_rows,
+        execute_sql=_execute_sql,
+        logger=logger,
+        fetch_dataset_rows_fn=fetch_dataset_rows,
+    )
+
+
+async def _execute_dataset_pipeline(
+    dataset: Dict[str, Any],
+    rows: List[Dict[str, Any]],
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    return await _execute_dataset_pipeline_impl(
+        dataset,
+        rows,
+        context,
+        clone_rows=_clone_rows,
+        apply_filter=_apply_filter,
+        apply_computed_column=_apply_computed_column,
+        apply_order=_apply_order,
+        apply_window_operation=_apply_window_operation,
+        apply_group_aggregate=_apply_group_aggregate,
+        apply_transforms=_apply_transforms,
+        evaluate_quality_checks=_evaluate_quality_checks,
+    )
+
+
+def _resolve_connector(dataset: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    return _resolve_connector_impl(
+        dataset,
+        context,
+        deepcopy=copy.deepcopy,
+        resolve_placeholders=_resolve_placeholders,
+    )
+
+
 def _parse_aggregate_expression(expression: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if expression is None:
         return None, None
