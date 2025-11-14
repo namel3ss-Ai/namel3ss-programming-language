@@ -34,19 +34,109 @@ def _render_helpers_package() -> str:
 
 from __future__ import annotations
 
-from typing import Iterable
+import importlib
+import logging
+import os
+from typing import Any, Callable, Iterable, List, Optional
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 
-from ..routers import GENERATED_ROUTERS
+__all__ = [
+    "GENERATED_ROUTERS",
+    "include_generated_routers",
+    "router_dependencies",
+]
 
-__all__ = ["GENERATED_ROUTERS", "include_generated_routers"]
+
+_LOGGER = logging.getLogger("namel3ss.security")
+_API_KEY = os.getenv("NAMEL3SS_API_KEY")
+_CUSTOM_DEPENDENCY_PATH = os.getenv("NAMEL3SS_ROUTER_DEPENDENCY")
+_CUSTOM_DEPENDENCY: Optional[Callable[..., Any]] = None
 
 
-def include_generated_routers(app: FastAPI, routers: Iterable = GENERATED_ROUTERS) -> None:
+def _load_custom_dependency() -> Optional[Callable[..., Any]]:
+    path = _CUSTOM_DEPENDENCY_PATH
+    if not path:
+        return None
+    candidate_path = path.strip()
+    if not candidate_path:
+        return None
+    module_name: Optional[str]
+    attr_name: Optional[str]
+    if ":" in candidate_path:
+        module_name, attr_name = candidate_path.rsplit(":", 1)
+    else:
+        module_name, attr_name = candidate_path.rsplit(".", 1)
+    try:
+        module = importlib.import_module(module_name)
+        candidate = getattr(module, attr_name)
+    except Exception:
+        _LOGGER.exception("Failed to import router dependency '%s'", candidate_path)
+        return None
+    if not callable(candidate):
+        _LOGGER.warning("Router dependency '%s' is not callable", candidate_path)
+        return None
+    return candidate
+
+
+def _clean_authorization(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    token = value.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token or None
+
+
+async def _require_api_key(request: Request) -> None:
+    if not _API_KEY:
+        return
+    headers = request.headers
+    provided = headers.get("x-api-key") or _clean_authorization(headers.get("authorization"))
+    if provided != _API_KEY:
+        _LOGGER.warning("Rejected request with invalid API key header")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def router_dependencies() -> List[Any]:
+    """Return dependencies applied to every generated router."""
+
+    global _CUSTOM_DEPENDENCY
+    dependencies: List[Any] = []
+    if _CUSTOM_DEPENDENCY_PATH and _CUSTOM_DEPENDENCY is None:
+        _CUSTOM_DEPENDENCY = _load_custom_dependency()
+    if _CUSTOM_DEPENDENCY is not None:
+        dependencies.append(Depends(_CUSTOM_DEPENDENCY))
+    if _API_KEY:
+        dependencies.append(Depends(_require_api_key))
+    return dependencies
+
+
+def _generated_routers() -> Iterable:
+    from ..routers import GENERATED_ROUTERS  # local import to avoid circular dependency
+
+    return GENERATED_ROUTERS
+
+
+class _GeneratedRoutersProxy:
+    def __iter__(self):
+        return iter(_generated_routers())
+
+    def __len__(self) -> int:
+        return len(list(_generated_routers()))
+
+    def __getitem__(self, index: int) -> Any:
+        return list(_generated_routers())[index]
+
+
+GENERATED_ROUTERS = _GeneratedRoutersProxy()
+
+
+def include_generated_routers(app: FastAPI, routers: Optional[Iterable] = None) -> None:
     """Attach generated routers to ``app`` while allowing custom overrides."""
 
-    for router in routers:
+    target = routers or _generated_routers()
+    for router in target:
         app.include_router(router)
 '''
     return textwrap.dedent(template).strip() + "\n"

@@ -76,3 +76,6 @@ include = ["namel3ss", "namel3ss.*"]
 
 [tool.setuptools.package-data]
 "namel3ss.codegen.backend.core" = ["runtime_sections/*.py"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"

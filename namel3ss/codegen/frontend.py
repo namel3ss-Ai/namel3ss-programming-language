@@ -653,43 +653,64 @@ def _render_statements(
         elif isinstance(stmt, ShowForm):
             form_id = f"form_{slug}_{counters.setdefault('form', 0)}"
             counters['form'] += 1
+            layout_payload = _layout_to_payload(stmt.layout)
             styles = _style_to_inline(stmt.styles)
-            body_lines.append(f"<h3>{html.escape(stmt.title)}</h3>")
-            body_lines.append(f"<form id=\"{form_id}\" style=\"{styles}\">")
+            wrapper_classes = ['n3-widget', 'n3-widget-form']
+            if layout_payload and layout_payload.get('variant'):
+                wrapper_classes.append(f"n3-widget--{str(layout_payload['variant']).lower()}")
+            wrapper_attrs = [f'class="{' '.join(wrapper_classes)}"']
+            if layout_payload:
+                wrapper_attrs.append(
+                    f'data-n3-layout="{html.escape(json.dumps(layout_payload), quote=True)}"'
+                )
+            if stmt.layout and getattr(stmt.layout, 'align', None):
+                wrapper_attrs.append(f'data-n3-align="{html.escape(str(stmt.layout.align))}"')
+            if component_index is not None:
+                wrapper_attrs.append(f'data-n3-component-index="{component_index}"')
+                wrapper_attrs.append(f'data-n3-endpoint="/api/pages/{backend_slug}/forms/{component_index}"')
+
+            body_lines.append(f"<section {' '.join(wrapper_attrs)}>")
+            body_lines.append(f"  <h3>{html.escape(stmt.title)}</h3>")
+            form_attrs = [f'id="{form_id}"', 'class="n3-form"', 'data-n3-form="true"']
+            if styles:
+                form_attrs.append(f'style="{styles}"')
+            if component_index is not None:
+                form_attrs.append(f'data-n3-component-index="{component_index}"')
+                form_attrs.append(f'data-n3-endpoint="/api/pages/{backend_slug}/forms/{component_index}"')
+            body_lines.append(f"  <form {' '.join(form_attrs)}>")
             for field in stmt.fields:
                 field_type = field.field_type or 'text'
                 body_lines.append(
-                    f"  <label>{html.escape(field.name)}: <input name=\"{field.name}\" type=\"{field_type}\"></label><br>"
+                    "    <label>"
+                    f"<span>{html.escape(field.name)}:</span> "
+                    f"<input name=\"{field.name}\" type=\"{field_type}\" required>"
+                    "</label>"
                 )
-            body_lines.append("  <button type=\"submit\">Submit</button>")
-            body_lines.append("</form>")
+            body_lines.append("    <button type=\"submit\">Submit</button>")
+            body_lines.append("  </form>")
+            body_lines.append("</section>")
 
-            handler_lines = [
-                f"var formEl = document.getElementById('{form_id}');",
-                "if (formEl) {",
-                "  formEl.addEventListener('submit', function(e) {",
-                "    e.preventDefault();",
+            form_fields = [
+                {"name": field.name, "type": field.field_type or 'text'}
+                for field in stmt.fields
             ]
-            for op in stmt.on_submit_ops:
-                if isinstance(op, ToastOperation):
-                    handler_lines.append(f"    window.N3Widgets.showToast({json.dumps(op.message)});")
-                elif isinstance(op, GoToPageOperation):
-                    target_slug = _slugify_route(
-                        next((p.route for p in app.pages if p.name == op.page_name), op.page_name)
-                    )
-                    handler_lines.append(f"    window.location.href = '{target_slug}.html';")
-                elif isinstance(op, UpdateOperation):
-                    handler_lines.append(
-                        f"    console.log('Update {op.table}: {op.set_expression} where {op.where_expression or ''}');"
-                    )
-                    handler_lines.append(f"    window.N3Widgets.showToast('Updated {op.table}');")
-                else:
-                    handler_lines.append("    window.N3Widgets.showToast('Executed operation');")
-            handler_lines.extend([
-                "  });",
-                "}",
-            ])
-            inline_scripts.append('\n'.join(handler_lines))
+            success_message = next(
+                (op.message for op in stmt.on_submit_ops if isinstance(op, ToastOperation)),
+                None,
+            )
+            form_def: Dict[str, Any] = {
+                "type": "form",
+                "id": form_id,
+                "title": stmt.title,
+                "fields": form_fields,
+                "layout": layout_payload or {},
+            }
+            if success_message:
+                form_def["successMessage"] = success_message
+            if component_index is not None:
+                form_def["componentIndex"] = component_index
+                form_def["endpoint"] = f"/api/pages/{backend_slug}/forms/{component_index}"
+            widget_defs.append(form_def)
         elif isinstance(stmt, Action):
             button_label = stmt.name
             match = re.search(r'clicks\s+"([^"]+)"', stmt.trigger)
@@ -697,33 +718,23 @@ def _render_statements(
                 button_label = match.group(1)
             btn_id = f"action_btn_{slug}_{counters.setdefault('action', 0)}"
             counters['action'] += 1
-            body_lines.append(f"<button id=\"{btn_id}\">{html.escape(button_label)}</button>")
+            button_attrs = [f'id="{btn_id}"', 'class="n3-action-button"', 'data-n3-action="true"']
+            if component_index is not None:
+                button_attrs.append(f'data-n3-component-index="{component_index}"')
+                button_attrs.append(f'data-n3-endpoint="/api/pages/{backend_slug}/actions/{component_index}"')
+            body_lines.append(f"<button {' '.join(button_attrs)}>{html.escape(button_label)}</button>")
 
-            handler_lines = [
-                f"var btnEl = document.getElementById('{btn_id}');",
-                "if (btnEl) {",
-                "  btnEl.addEventListener('click', function() {",
-            ]
-            for op in stmt.operations:
-                if isinstance(op, ToastOperation):
-                    handler_lines.append(f"    window.N3Widgets.showToast({json.dumps(op.message)});")
-                elif isinstance(op, GoToPageOperation):
-                    target_slug = _slugify_route(
-                        next((p.route for p in app.pages if p.name == op.page_name), op.page_name)
-                    )
-                    handler_lines.append(f"    window.location.href = '{target_slug}.html';")
-                elif isinstance(op, UpdateOperation):
-                    handler_lines.append(
-                        f"    console.log('Update {op.table}: {op.set_expression} where {op.where_expression or ''}');"
-                    )
-                    handler_lines.append(f"    window.N3Widgets.showToast('Updated {op.table}');")
-                else:
-                    handler_lines.append("    window.N3Widgets.showToast('Executed operation');")
-            handler_lines.extend([
-                "  });",
-                "}",
-            ])
-            inline_scripts.append('\n'.join(handler_lines))
+            action_def: Dict[str, Any] = {
+                "type": "action",
+                "id": btn_id,
+                "name": stmt.name,
+                "label": button_label,
+                "trigger": stmt.trigger,
+            }
+            if component_index is not None:
+                action_def["componentIndex"] = component_index
+                action_def["endpoint"] = f"/api/pages/{backend_slug}/actions/{component_index}"
+            widget_defs.append(action_def)
 
         elif isinstance(stmt, IfBlock):
             condition_text = getattr(stmt.condition, 'raw', repr(stmt.condition))
@@ -897,6 +908,53 @@ th, td {{
 .n3-table {{
     width: 100%;
     border-collapse: collapse;
+}}
+.n3-widget-form {{
+    max-width: 420px;
+}}
+.n3-form {{
+    display: grid;
+    gap: 0.75rem;
+}}
+.n3-form label {{
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 500;
+}}
+.n3-form input {{
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+}}
+.n3-form button[type="submit"] {{
+    padding: 0.65rem 1.25rem;
+    border-radius: 0.65rem;
+    border: none;
+    background: var(--primary, #2563eb);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}}
+.n3-form button[type="submit"]:disabled {{
+    opacity: 0.6;
+    cursor: not-allowed;
+}}
+.n3-form--submitting {{
+    opacity: 0.75;
+    pointer-events: none;
+}}
+.n3-action-button {{
+    padding: 0.65rem 1.35rem;
+    border-radius: 0.65rem;
+    border: none;
+    background: var(--secondary, #6366f1);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}}
+.n3-action-button:disabled {{
+    opacity: 0.6;
+    cursor: not-allowed;
 }}
 .n3-table-dense td,
 .n3-table-dense th {{
@@ -1088,6 +1146,41 @@ def _generate_widget_library() -> str:
                 global.showToast = widgets.showToast;
             }
 
+            widgets.routeToPath = function(route) {
+                if (!route || route === '/') {
+                    return 'index.html';
+                }
+                var cleaned = String(route).trim();
+                cleaned = cleaned.replace(/^\/+|\/+$/g, '');
+                cleaned = cleaned.replace(/\//g, '_');
+                if (!cleaned) {
+                    cleaned = 'index';
+                }
+                return cleaned + '.html';
+            };
+
+            widgets.getPageSlug = function() {
+                if (typeof document === 'undefined') {
+                    return null;
+                }
+                var body = document.body;
+                if (!body) {
+                    return null;
+                }
+                return body.getAttribute('data-n3-page-slug');
+            };
+
+            widgets.findDefinitionByIndex = function(index) {
+                var defs = widgets.__definitions__ || [];
+                for (var i = 0; i < defs.length; i++) {
+                    var item = defs[i];
+                    if (item && typeof item.componentIndex === 'number' && item.componentIndex === index) {
+                        return item;
+                    }
+                }
+                return null;
+            };
+
             widgets.renderChart = function(canvasId, config, layout, insightName) {
                 var canvas = document.getElementById(canvasId);
                 if (!canvas || typeof Chart === 'undefined') {
@@ -1269,6 +1362,47 @@ def _generate_widget_library() -> str:
                 if (meta) {
                     entry.meta = meta;
                 }
+            };
+
+            widgets.fetchComponentData = function(def) {
+                if (!def || typeof def.endpoint !== 'string' || !def.endpoint) {
+                    return;
+                }
+                var endpoint = def.endpoint;
+                var index = typeof def.componentIndex === 'number' ? def.componentIndex : null;
+                fetch(endpoint, { headers: { 'Accept': 'application/json' } })
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        var contentType = response.headers.get('content-type') || '';
+                        if (contentType.indexOf('application/json') === -1) {
+                            return null;
+                        var pagePayload = data || {};
+                        var vars = pagePayload.vars ? pagePayload.vars : {};
+                        window.N3_PAGE_STATE = pagePayload;
+                        window.N3_VARS = vars;
+                    })
+                    .then(function(data) {
+                        if (index !== null && data !== null) {
+                            widgets.updateComponent(index, data, { endpoint: endpoint });
+                        }
+                    })
+                        if (window.N3Widgets && typeof window.N3Widgets.hydratePage === 'function') {
+                            window.N3Widgets.hydratePage("$slug", pagePayload);
+                        }
+                    .catch(function(err) {
+                            window.N3Realtime.applySnapshot("$slug", pagePayload, { source: 'bootstrap' });
+                    });
+            };
+
+            widgets.refreshAllComponents = function() {
+                var defs = widgets.__definitions__ || [];
+                defs.forEach(function(def) {
+                    if (def && (def.type === 'chart' || def.type === 'table') && def.endpoint) {
+                        widgets.fetchComponentData(def);
+                    }
+                });
             };
 
             widgets.rollbackComponent = function(index) {
@@ -1468,10 +1602,205 @@ def _generate_widget_library() -> str:
                     });
             };
 
+            widgets.handleInteractionResponse = function(response, definition) {
+                var def = definition || {};
+                if (!response) {
+                    if (def && def.successMessage) {
+                        widgets.showToast(def.successMessage);
+                    }
+                    return;
+                }
+                var effects = [];
+                if (Array.isArray(response.results)) {
+                    effects = response.results.slice();
+                } else if (Array.isArray(response.effects)) {
+                    effects = response.effects.slice();
+                }
+
+                var shouldRefresh = false;
+                if (effects.length) {
+                    effects.forEach(function(effect) {
+                        if (!effect) {
+                            return;
+                        }
+                        var kind = String(effect.type || '').toLowerCase();
+                        if (kind === 'toast') {
+                            widgets.showToast(effect.message || (def && def.successMessage) || 'Done');
+                        } else if (kind === 'navigate') {
+                            var status = String(effect.status || 'ok').toLowerCase();
+                            if (status === 'ok') {
+                                var targetUrl = effect.url || null;
+                                if (!targetUrl && effect.page_route) {
+                                    targetUrl = widgets.routeToPath(effect.page_route);
+                                } else if (!targetUrl && effect.page_slug) {
+                                    targetUrl = effect.page_slug + '.html';
+                                }
+                                if (targetUrl) {
+                                    window.location.href = targetUrl;
+                                }
+                            }
+                        } else if (kind === 'update') {
+                            if (String(effect.status || 'ok').toLowerCase() === 'ok') {
+                                shouldRefresh = true;
+                                if (!effect.silent) {
+                                    widgets.showToast(effect.message || 'Update completed');
+                                }
+                            }
+                        } else if (kind === 'python_call' || kind === 'connector_call' || kind === 'chain_run') {
+                            widgets.showToast('Action completed');
+                        }
+                    });
+                } else if (def && def.successMessage) {
+                    widgets.showToast(def.successMessage);
+                }
+
+                if (response.refresh && Array.isArray(response.refresh.components)) {
+                    response.refresh.components.forEach(function(idx) {
+                        var target = widgets.findDefinitionByIndex(idx);
+                        if (target) {
+                            widgets.fetchComponentData(target);
+                        }
+                    });
+                } else if (shouldRefresh) {
+                    widgets.refreshAllComponents();
+                }
+            };
+
+            widgets.registerForm = function(definition) {
+                if (!definition || !definition.id) {
+                    return;
+                }
+                var form = document.getElementById(definition.id);
+                if (!form || form.__n3_registered__) {
+                    return;
+                }
+                form.__n3_registered__ = true;
+                form.addEventListener('submit', function(event) {
+                    event.preventDefault();
+                    var endpoint = definition.endpoint || form.getAttribute('data-n3-endpoint');
+                    if (!endpoint) {
+                        widgets.showToast('Form endpoint not configured');
+                        return;
+                    }
+                    var submitButton = form.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+                    form.classList.add('n3-form--submitting');
+                    var formData = new FormData(form);
+                    var payload = {};
+                    formData.forEach(function(value, key) {
+                        if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                            if (!Array.isArray(payload[key])) {
+                                payload[key] = [payload[key]];
+                            }
+                            payload[key].push(value);
+                        } else {
+                            payload[key] = value;
+                        }
+                    });
+                    fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    })
+                        .then(function(response) {
+                            if (!response.ok) {
+                                throw new Error('HTTP ' + response.status);
+                            }
+                            var contentType = response.headers.get('content-type') || '';
+                            if (contentType.indexOf('application/json') === -1) {
+                                return null;
+                            }
+                            return response.json();
+                        })
+                        .then(function(data) {
+                            if (data === null && definition.successMessage) {
+                                widgets.showToast(definition.successMessage);
+                            } else {
+                                widgets.handleInteractionResponse(data, definition);
+                            }
+                            if (typeof form.reset === 'function') {
+                                form.reset();
+                            }
+                        })
+                        .catch(function(err) {
+                            console.warn('Form submission failed', endpoint, err);
+                            widgets.showToast('Unable to submit form right now');
+                        })
+                        .finally(function() {
+                            form.classList.remove('n3-form--submitting');
+                            if (submitButton) {
+                                submitButton.disabled = false;
+                            }
+                        });
+                });
+            };
+
+            widgets.registerAction = function(definition) {
+                if (!definition || !definition.id) {
+                    return;
+                }
+                var button = document.getElementById(definition.id);
+                if (!button || button.__n3_registered__) {
+                    return;
+                }
+                button.__n3_registered__ = true;
+                button.addEventListener('click', function() {
+                    var endpoint = definition.endpoint || button.getAttribute('data-n3-endpoint');
+                    if (!endpoint) {
+                        widgets.showToast('Action endpoint not configured');
+                        return;
+                    }
+                    button.disabled = true;
+                    fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                        body: JSON.stringify({}),
+                    })
+                        .then(function(response) {
+                            if (!response.ok) {
+                                throw new Error('HTTP ' + response.status);
+                            }
+                            var contentType = response.headers.get('content-type') || '';
+                            if (contentType.indexOf('application/json') === -1) {
+                                return null;
+                            }
+                            return response.json();
+                        })
+                        .then(function(data) {
+                            if (data === null && definition.label) {
+                                widgets.showToast(definition.label + ' completed');
+                            } else {
+                                widgets.handleInteractionResponse(data, definition);
+                            }
+                        })
+                        .catch(function(err) {
+                            console.warn('Action execution failed', endpoint, err);
+                            widgets.showToast('Unable to run action');
+                        })
+                        .finally(function() {
+                            button.disabled = false;
+                        });
+                });
+            };
+
+            widgets.hydratePage = function(slug, payload) {
+                widgets.__pageSlug = slug;
+                if (payload && typeof payload === 'object') {
+                    global.N3_PAGE_STATE = payload;
+                    if (payload.vars && typeof payload.vars === 'object') {
+                        global.N3_VARS = payload.vars;
+                    }
+                }
+                widgets.refreshAllComponents();
+            };
+
             widgets.bootstrap = function(definitions) {
                 if (!Array.isArray(definitions)) {
                     return;
                 }
+                widgets.__definitions__ = definitions.slice();
                 definitions.forEach(function(def) {
                     if (!def || !def.id) {
                         return;
@@ -1488,6 +1817,9 @@ def _generate_widget_library() -> str:
                         if (hasIndex) {
                             widgets.rememberSnapshot(def.componentIndex, def.config || {});
                         }
+                        if (def.endpoint) {
+                            widgets.fetchComponentData(def);
+                        }
                     } else if (def.type === 'table') {
                         if (def.insight && def.data && typeof def.data === 'object') {
                             def.data.insight = def.insight;
@@ -1496,8 +1828,17 @@ def _generate_widget_library() -> str:
                         if (hasIndex) {
                             widgets.rememberSnapshot(def.componentIndex, def.data || {});
                         }
+                        if (def.endpoint) {
+                            widgets.fetchComponentData(def);
+                        }
                     } else if (def.type === 'insight') {
                         widgets.renderInsight(def.id, def);
+                    }
+                    if (def.type === 'form') {
+                        widgets.registerForm(def);
+                    }
+                    if (def.type === 'action') {
+                        widgets.registerAction(def);
                     }
                 });
             };

@@ -13,6 +13,30 @@ from namel3ss.codegen.backend.core.runtime.datasets import (
 )
 
 
+class DatasetExpressionError(RuntimeError):
+    """Raised when a dataset expression violates sandbox restrictions."""
+
+
+class _SandboxGuard(dict):
+    __slots__ = ()
+
+    def __setitem__(self, key, value):  # pragma: no cover - defensive guard
+        raise PermissionError("sandbox scope is read-only")
+
+
+def _sandbox_validate(expression: str) -> None:
+    prohibited = {"__import__", "open", "exec", "eval", "compile", "globals", "locals"}
+    for keyword in prohibited:
+        if keyword in expression:
+            raise DatasetExpressionError(f"Use of '{keyword}' is not permitted in dataset expressions")
+
+
+def _sandbox_eval_expression(expression: str, scope: Dict[str, Any]) -> Any:
+    _sandbox_validate(expression)
+    compiled = compile(expression, "<dataset_expr>", "eval")
+    return eval(compiled, {"__builtins__": {}}, _SandboxGuard(scope))
+
+
 async def fetch_dataset_rows(
     key: str,
     session: AsyncSession,
@@ -131,28 +155,26 @@ def _evaluate_dataset_expression(
         "row": row,
         "rows": rows or [],
         "context": context,
-    }
-    scope.update(row)
-    scope.setdefault("math", math)
-    scope.setdefault("len", len)
-    safe_builtins = {
-        "abs": abs,
+        "math": math,
+        "len": len,
         "min": min,
         "max": max,
         "sum": sum,
-        "len": len,
+        "abs": abs,
+        "round": round,
         "int": int,
         "float": float,
         "str": str,
         "bool": bool,
-        "round": round,
     }
+    scope.update(row)
     try:
-        compiled = compile(expr, "<dataset_expr>", "eval")
-        return eval(compiled, {"__builtins__": safe_builtins}, scope)
+        return _sandbox_eval_expression(expr, scope)
+    except DatasetExpressionError as exc:
+        logger.warning("Disallowed dataset expression '%s': %s", expression, exc)
     except Exception:
         logger.debug("Failed to evaluate dataset expression '%s'", expression)
-        return None
+    return None
 
 
 def _apply_filter(rows: List[Dict[str, Any]], condition: Optional[str], context: Dict[str, Any]) -> List[Dict[str, Any]]:

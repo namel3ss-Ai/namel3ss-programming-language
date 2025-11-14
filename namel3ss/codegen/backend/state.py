@@ -77,6 +77,7 @@ from ...ast import (
 	BreakStatement,
 	ContinueStatement,
 	ToastOperation,
+	GoToPageOperation,
 	Template,
 	UnaryOp,
 	UpdateOperation,
@@ -929,6 +930,11 @@ def _encode_action_operation(operation: ActionOperationType, env_keys: Set[str])
 		}
 	if isinstance(operation, ToastOperation):
 		return {"type": "toast", "message": operation.message}
+	if isinstance(operation, GoToPageOperation):
+		return {
+			"type": "navigate",
+			"page_name": operation.page_name,
+		}
 	if isinstance(operation, CallPythonOperation):
 		return {
 			"type": "python_call",

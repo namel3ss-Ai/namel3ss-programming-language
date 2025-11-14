@@ -60,9 +60,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..runtime import evaluate_insight
+from ..helpers import router_dependencies
 from ..schemas import InsightResponse
 
-router = APIRouter(tags=["insights"])
+router = APIRouter(tags=["insights"], dependencies=router_dependencies())
 
 
 @router.get("/api/insights/{slug}", response_model=InsightResponse)
@@ -88,14 +89,14 @@ from fastapi import APIRouter, HTTPException
 from ..runtime import (
     PredictionResponse,
     call_llm_connector,
-    call_python_model,
     explain_prediction,
     get_model_spec,
     predict,
     run_chain,
 )
+from ..helpers import router_dependencies
 
-router = APIRouter(tags=["models"])
+router = APIRouter(tags=["models"], dependencies=router_dependencies())
 
 
 @router.post("/api/models/{model_name}/predict", response_model=PredictionResponse)
@@ -126,11 +127,6 @@ async def run_llm_connector(connector: str, payload: Dict[str, Any]) -> Dict[str
     return call_llm_connector(connector, payload)
 
 
-@router.post("/api/python/{module}.{method}")
-async def call_python_endpoint(module: str, method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return call_python_model(f"{module}.{method}", payload)
-
-
 __all__ = ["router"]
 '''
     return textwrap.dedent(template).strip() + "\n"
@@ -147,8 +143,9 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from ..runtime import ExperimentResult, evaluate_experiment, run_experiment
+from ..helpers import router_dependencies
 
-router = APIRouter(tags=["experiments"])
+router = APIRouter(tags=["experiments"], dependencies=router_dependencies())
 
 
 @router.get("/api/experiments/{slug}", response_model=ExperimentResult)
@@ -179,7 +176,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 try:
     from fastapi import WebSocket, WebSocketDisconnect
@@ -189,9 +186,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database import get_session
 from .. import runtime
+from ..helpers import router_dependencies
 from ..schemas import ChartResponse, TableResponse
 
-router = APIRouter()
+router = APIRouter(dependencies=router_dependencies())
 '''
     parts: List[str] = [textwrap.dedent(header).strip()]
 
@@ -445,6 +443,29 @@ def _render_component_endpoint(
             "    if runtime.REALTIME_ENABLED and is_reactive:",
             f"        await runtime.broadcast_component_update({page.slug!r}, 'chart', {index}, response, meta={meta_expr})",
             "    return response",
+        ]
+    if component.type == "form":
+        return [
+            f"@router.post({base_path!r} + '/forms/{index}', response_model=Dict[str, Any], tags=['pages'])",
+            f"async def {slug}_form_{index}(payload: Dict[str, Any], session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
+            "    try:",
+            f"        return await runtime.submit_form({page.slug!r}, {index}, payload, session=session)",
+            "    except KeyError:",
+            "        raise HTTPException(status_code=404, detail='Form not found')",
+            "    except (IndexError, ValueError) as exc:",
+            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
+        ]
+    if component.type == "action":
+        return [
+            f"@router.post({base_path!r} + '/actions/{index}', response_model=Dict[str, Any], tags=['pages'])",
+            f"async def {slug}_action_{index}(payload: Optional[Dict[str, Any]] = None, session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
+            "    try:",
+            f"        data = payload or {{}}",
+            f"        return await runtime.trigger_action({page.slug!r}, {index}, data, session=session)",
+            "    except KeyError:",
+            "        raise HTTPException(status_code=404, detail='Action not found')",
+            "    except (IndexError, ValueError) as exc:",
+            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
         ]
     return []
 

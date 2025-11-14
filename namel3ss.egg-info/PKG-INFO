@@ -128,70 +128,162 @@ pip install .[all]
 Run `namel3ss doctor` to confirm which integrations are available in the
 current environment and get installation hints for anything that is missing.
 
-## Quick start
+## Quickstart
 
-1. Install the package locally (in editable mode):
+Spin up Namel3ss locally in just a few commands:
 
-   ```bash
-   pip install -e .
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 
-2. Write an `.n3` file.  An example is provided in `examples/app.n3`:
+namel3ss generate examples/app.n3 out
 
-   ```text
-   app "CoffeeHub" connects to postgres "COFFEE_DB".
+cd out/backend
+uvicorn main:app --reload
+```
 
-   theme:
-     primary: "#795548"
-     background: "#FFF8E1"
-     text: "#3E2723"
+`namel3ss generate` compiles any `.n3` program into a ready-to-run project.
+The output folder contains a FastAPI backend (`out/backend`) plus a static
+frontend (`out/frontend`).  With the backend running, open the generated HTML
+in your browser to explore charts, tables and actions backed by deterministic
+demo data.
 
-   dataset "monthly_sales" from table sales:
-     filter by: region == "EU"
-     group by: month
-     sum: revenue as total_revenue
+### Sample language snippet
 
-   page "Home" at "/":
-     show text "Welcome to CoffeeHub!"
-       color: var(--primary)
-       size: large
-       align: center
-       weight: bold
-     show chart "Revenue Growth" from dataset monthly_sales
-       type: line
-       x: month
-       y: total_revenue
-       color: var(--primary)
-       title size: large
-     show table "Recent Orders" from table orders
-       columns: id, customer_name, total, status
-       filter by: status == "Pending"
+The language stays approachable even as apps grow.  The following excerpt is
+identical to `examples/app.n3` and demonstrates themes, datasets, pages and
+actions written in natural language:
 
-   page "Feedback" at "/feedback":
-     show form "Submit Feedback":
-       fields: name, email: email, message
-       on submit:
-         show toast "Thank you for your feedback!"
+```text
+app "CoffeeHub" connects to postgres "COFFEE_DB".
 
-   page "Admin" at "/admin":
-     show table "Orders" from table orders
-       columns: id, customer_name, total, status
-     action "Approve Order":
-       when user clicks "Approve":
-         update orders set status = "APPROVED"
-         show toast "Order approved"
-         go to page "Admin"
-   ```
+theme:
+  primary: "#795548"
+  background: "#FFF8E1"
+  text: "#3E2723"
 
-3. Build the site:
+dataset "monthly_sales" from table sales:
+  filter by: region == "EU"
+  group by: month
+  sum: revenue as total_revenue
 
-   ```bash
-   python -m namel3ss.cli examples/app.n3 --out build
-   ```
+page "Home" at "/":
+  show text "Welcome to CoffeeHub!"
+    color: var(--primary)
+    size: large
+    align: center
+    weight: bold
+  show chart "Revenue Growth" from dataset monthly_sales
+    type: line
+    x: month
+    y: total_revenue
+    color: var(--primary)
+    title size: large
+  show table "Recent Orders" from table orders
+    columns: id, customer_name, total, status
+    filter by: status == "Pending"
 
-4. Open `build/index.html` in your web browser.  You’ll see a
-   three‑page application complete with charts, tables, forms and
-   buttons.
+page "Feedback" at "/feedback":
+  show form "Submit Feedback":
+    fields: name, email: email, message
+    on submit:
+      show toast "Thank you for your feedback!"
+
+page "Admin" at "/admin":
+  show table "Orders" from table orders
+    columns: id, customer_name, total, status
+  action "Approve Order":
+    when user clicks "Approve":
+      update orders set status = "APPROVED"
+      show toast "Order approved"
+      go to page "Admin"
+```
+
+## Sanity-check generated projects
+
+After installing the CLI you can validate the full toolchain end-to-end:
+
+1. Activate the project virtualenv:
+
+  ```bash
+  source .venv/bin/activate
+  ```
+
+2. Generate a backend from a sample program:
+
+  ```bash
+  python -m namel3ss.cli generate-backend examples/app.n3 demo_backend_out
+  ```
+
+3. Generate the matching frontend:
+
+  ```bash
+  python -m namel3ss.cli generate-frontend examples/app.n3 demo_site_out
+  ```
+
+4. Run the backend and visit the site:
+
+  ```bash
+  cd demo_backend_out
+  uvicorn main:app --reload
+  ```
+
+5. Open any HTML page from `demo_site_out` in a browser and confirm that
+  tables, charts, realtime updates and insight panels render without console
+  errors.
+
+Regenerate these folders whenever you tweak the `.n3` program; the CLI will
+keep custom code isolated under the `custom/` namespace so reruns remain
+idempotent.
+
+## React/Vite frontend (experimental)
+
+Prefer working with a modern React toolchain?  Generate a Vite + React +
+TypeScript project by passing the new target flag:
+
+```bash
+namel3ss build examples/app.n3 --target=react-vite --out site_react
+```
+
+Then install and run the dev server from the generated directory:
+
+```bash
+cd site_react
+npm install
+npm run dev
+```
+
+The React build mirrors the static HTML experience—pages, tables, charts and
+forms all render the same preview data—while adding client-side routing,
+runtime fetches against `/api/pages/{slug}` and a toast system wired for form
+submissions.  The legacy static target remains the default, so existing
+workflows continue to function without changes.
+
+## Smoke test generated apps
+
+Run a quick manual smoke test whenever you want to confirm the language still
+produces a healthy project end to end:
+
+```bash
+# 1) Generate backend and frontend from the sample program
+namel3ss generate-backend examples/app.n3 backend_out
+namel3ss generate-frontend examples/app.n3 site_out
+
+# 2) Start the generated backend (in a separate shell)
+uvicorn backend_out.main:app --reload
+```
+
+Then open `site_out/index.html` (or any other page) in your browser and verify:
+
+- Pages render without HTTP or console errors.
+- Charts and tables show the bundled demo/preview data.
+- Toasts/widgets respond to clicks and form submissions as expected.
+- If realtime was enabled, the browser console stays free of runtime errors
+  while events stream.
+
+This walkthrough checks the generated project itself—it complements, but does
+not replace, the automated language test suite.
 
 ## Features
 
@@ -244,6 +336,32 @@ Running Namel3ss with `--build-backend` emits a FastAPI project that includes:
   responses.
 - A lightweight prediction scaffold that turns model metadata into a simple
   weighted scorer for experimental inference endpoints.
+
+### Stubs & explanations
+
+The runtime keeps deterministic stubs available for demos, but they are now
+opt-in.  Set `NAMEL3SS_ALLOW_STUBS=1` before starting the backend to enable
+synthetic model predictions, default explanations and other canned payloads.
+When the variable is unset (the default), the runtime surfaces real loader and
+runner errors, and model predictions no longer include stubbed visualisations
+or attributions.
+
+### Connectors & placeholders
+
+All generated connectors — REST, SQL, gRPC and streaming — route their options
+through `_resolve_placeholders`.  Values such as `env:API_KEY` or `${API_KEY}`
+are resolved from `os.environ`, while dotted context expressions like
+`ctx:user.id` pull data from the request or evaluation context.  This applies
+uniformly to headers, params, payloads and nested connector configuration so
+your `.n3` source can stay environment-agnostic.
+
+### Insights & embed mode
+
+Calling `generate_backend(..., embed_insights=True)` sets `EMBED_INSIGHTS = True`
+inside the generated runtime.  The pages router responds with an additional
+`insight_results` dictionary per page so frontends can render evaluated insight
+widgets without making extra API calls.  Leave the flag unset when you prefer
+on-demand insight evaluation at runtime.
 
 ### Configuring REST connectors
 
@@ -438,6 +556,27 @@ using `env:` or `ctx:` prefixes in your `.n3` file:
   request.
 - `show text "Welcome {ctx:user.name}! Your key is {env:API_TOKEN}"` resolves
   placeholders dynamically when the page endpoint executes.
+
+## Developer workflow
+
+- Run `./scripts/run_tests.sh` before committing changes.  The helper script
+  bootstraps `.venv` if needed, installs editable dependencies and executes the
+  full `pytest` suite (it honours additional arguments, so you can pass test
+  selectors as needed).
+- Wire the optional Git pre-push hook below to guarantee the same checks run
+  before any push:
+
+  ```sh
+  # .git/hooks/pre-push
+  ./scripts/run_tests.sh || {
+    echo "Tests failed, aborting push."
+    exit 1
+  }
+  ```
+
+The script exits non-zero when tests fail, making it safe to use in CI jobs or
+local automation.  Feel free to add `--maxfail=1` or `-k <expr>` flags when
+iterating; the pre-push hook always re-runs the full suite.
 
 Missing context values never crash the app: the runtime logs a warning and
 falls back to an empty string (or `None` for non-string values), keeping the

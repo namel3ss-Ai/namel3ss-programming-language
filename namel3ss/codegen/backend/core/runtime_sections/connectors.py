@@ -11,6 +11,11 @@ import os
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+try:
+    import httpx  # type: ignore
+except Exception:  # pragma: no cover - optional dependency guard
+    httpx = None  # type: ignore
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -103,24 +108,72 @@ async def _default_rest_driver(connector: Dict[str, Any], context: Dict[str, Any
     endpoint = connector.get("options", {}).get("endpoint") if connector else None
     if not endpoint:
         return []
+    if httpx is None:
+        logger.warning("REST connector '%s' requires httpx to be installed", connector.get("name"))
+        return []
     method = str(connector.get("options", {}).get("method") or "get").lower()
     payload = _resolve_placeholders(connector.get("options", {}).get("payload"), context)
     headers = _resolve_placeholders(connector.get("options", {}).get("headers"), context)
-    async with _HTTPX_CLIENT_CLS() as client:
+    timeout_value = connector.get("options", {}).get("timeout_ms")
+    try:
+        timeout = float(timeout_value) / 1000.0 if timeout_value is not None else 10.0
+    except Exception:
+        timeout = 10.0
+    retries_value = connector.get("options", {}).get("max_retries")
+    try:
+        retries = max(int(retries_value), 0) if retries_value is not None else 1
+    except Exception:
+        retries = 1
+    client_kwargs: Dict[str, Any] = {}
+    timeout_config: Optional[Any]
+    if httpx is not None:
+        try:
+            timeout_config = httpx.Timeout(timeout)
+        except Exception:
+            timeout_config = timeout
+    else:
+        timeout_config = timeout
+    if timeout_config is not None:
+        client_kwargs["timeout"] = timeout_config
+    async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
         try:
             request_method = getattr(client, method, client.get)
-            response = await request_method(
-                endpoint,
-                json=payload if isinstance(payload, dict) else None,
-                headers=headers if isinstance(headers, dict) else None,
-            )
-            response.raise_for_status()
-            data = response.json()
-            rows = _normalize_connector_rows(data)
-            if rows:
-                return rows
+            attempt = 0
+            while True:
+                attempt += 1
+                start = _now_ms()
+                try:
+                    response = await request_method(
+                        endpoint,
+                        json=payload if isinstance(payload, dict) else None,
+                        headers=headers if isinstance(headers, dict) else None,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    rows = _normalize_connector_rows(data)
+                    logger.info(
+                        "REST connector '%s' succeeded in %.2f ms",
+                        connector.get("name"),
+                        _now_ms() - start,
+                    )
+                    if rows:
+                        return rows
+                    break
+                except ((httpx.HTTPError, httpx.TimeoutException) if httpx is not None else (Exception,)) as exc:
+                    logger.warning(
+                        "REST connector '%s' attempt %d/%d failed: %s",
+                        connector.get("name"),
+                        attempt,
+                        retries,
+                        exc,
+                    )
+                    if attempt >= retries:
+                        raise
+                except Exception:
+                    logger.exception("Default REST driver failed for endpoint '%s'", endpoint)
+                    break
         except Exception:
-            logger.exception("Default REST driver failed for endpoint '%s'", endpoint)
+            logger.error("REST connector '%s' exhausted retries", connector.get("name"))
     return []
 
 
@@ -130,20 +183,65 @@ async def _default_graphql_driver(connector: Dict[str, Any], context: Dict[str, 
     query = options.get("query")
     if not endpoint or not query:
         return []
+    if httpx is None:
+        logger.warning("GraphQL connector '%s' requires httpx to be installed", connector.get("name"))
+        return []
     variables = _resolve_placeholders(options.get("variables"), context)
     headers = _resolve_placeholders(options.get("headers"), context)
     root_field = options.get("root")
-    async with _HTTPX_CLIENT_CLS() as client:
+    timeout_value = options.get("timeout_ms")
+    try:
+        timeout = float(timeout_value) / 1000.0 if timeout_value is not None else 10.0
+    except Exception:
+        timeout = 10.0
+    retries_value = options.get("max_retries")
+    try:
+        retries = max(int(retries_value), 0) if retries_value is not None else 1
+    except Exception:
+        retries = 1
+    client_kwargs: Dict[str, Any] = {}
+    if httpx is not None:
         try:
-            response = await client.post(
-                endpoint,
-                json={"query": query, "variables": variables or {}},
-                headers=headers if isinstance(headers, dict) else None,
-            )
-            response.raise_for_status()
-            payload = response.json()
+            client_kwargs["timeout"] = httpx.Timeout(timeout)
         except Exception:
-            logger.exception("Default GraphQL driver failed for endpoint '%s'", endpoint)
+            client_kwargs["timeout"] = timeout
+    else:
+        client_kwargs["timeout"] = timeout
+    async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
+        try:
+            attempt = 0
+            while True:
+                attempt += 1
+                start = _now_ms()
+                try:
+                    response = await client.post(
+                        endpoint,
+                        json={"query": query, "variables": variables or {}},
+                        headers=headers if isinstance(headers, dict) else None,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    logger.info(
+                        "GraphQL connector '%s' succeeded in %.2f ms",
+                        connector.get("name"),
+                        _now_ms() - start,
+                    )
+                    break
+                except ((httpx.HTTPError, httpx.TimeoutException) if httpx is not None else (Exception,)) as exc:
+                    logger.warning(
+                        "GraphQL connector '%s' attempt %d/%d failed: %s",
+                        connector.get("name"),
+                        attempt,
+                        retries,
+                        exc,
+                    )
+                    if attempt >= retries:
+                        raise
+                except Exception:
+                    logger.exception("Default GraphQL driver failed for endpoint '%s'", endpoint)
+                    raise
+        except Exception:
+            logger.error("GraphQL connector '%s' exhausted retries", connector.get("name"))
             return []
     data = payload.get("data") if isinstance(payload, dict) else None
     if isinstance(data, dict):
