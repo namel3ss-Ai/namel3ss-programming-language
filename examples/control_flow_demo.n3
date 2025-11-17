@@ -1,0 +1,69 @@
+app "Control Flow Demo" connects to postgres "DEMO_DB".
+
+# Define a dataset to use in loops
+dataset "active_orders" from table orders:
+  filter by: status == "ACTIVE"
+
+dataset "pending_orders" from table orders:
+  filter by: status == "PENDING"
+
+# Admin dashboard with conditional access
+page "Admin Dashboard" at "/admin":
+  show text "Dashboard"
+  
+  # If/else for role-based access
+  if user.role == "admin":
+    show text "Welcome, Admin!"
+    show text "You have full system access."
+    show table "All Users" from table users
+  else:
+    show text "Access Denied"
+    show text "Admin privileges required."
+  
+  show text "System Status"
+
+# Orders page with for loops
+page "Orders List" at "/orders":
+  show text "Active Orders"
+  
+  # Loop over dataset
+  for order in dataset active_orders:
+    show text "Order #{order.id} - ${order.total}"
+  
+  show text "Pending Orders"
+  
+  # Loop over table directly
+  for row in table pending_orders:
+    show text "Pending: {row.id} - {row.customer_name}"
+
+# Complex nested example
+page "Order Details" at "/order-details":
+  show text "Order Processing"
+  
+  for order in dataset active_orders:
+    # Nested if inside for
+    if order.total > 100:
+      show text "High-value order: {order.id}"
+      show text "Amount: ${order.total}"
+    else:
+      show text "Standard order: {order.id}"
+    
+    # Multiple statements in loop
+    show table "Order Items" from table order_items
+
+# Conditional features page
+page "Features" at "/features":
+  show text "Available Features"
+  
+  if user.subscription == "premium":
+    show text "Premium Features:"
+    show text "Advanced Analytics"
+    show text "Priority Support"
+    show chart "Analytics" from dataset user_stats
+  else:
+    show text "Standard Features:"
+    show text "Basic Reporting"
+  
+  # Common features for all users
+  show text "Common Tools"
+  show table "Recent Activity" from table activity

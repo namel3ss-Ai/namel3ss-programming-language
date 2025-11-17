@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install core dependencies
+        run: pip install -r requirements.txt
+      - name: Install dev/test tools
+        run: pip install -r requirements-dev.txt
+      - name: Install optional extras
+        run: pip install .[all]
+      - name: Run test suite
+        run: pytest

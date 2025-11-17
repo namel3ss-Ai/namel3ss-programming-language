@@ -1,0 +1,7 @@
+include LICENSE
+include CHANGELOG.md
+graft namel3ss/codegen/backend/core
+recursive-include namel3ss/codegen/backend/core/runtime_sections *.py
+
+global-exclude __pycache__
+global-exclude *.py[cod]

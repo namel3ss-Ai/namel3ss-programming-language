@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Features – Control Flow Demo</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<nav><ul>
+<li><a href="admin.html">Admin Dashboard</a></li>
+<li><a href="orders.html">Orders List</a></li>
+<li><a href="order-details.html">Order Details</a></li>
+<li><a href="features.html">Features</a></li>
+</ul></nav>
+<h2>Features</h2>
+<p style="">Available Features</p>
+<!-- If condition: user.subscription == "premium" -->
+<div class="if-block" style="border-left: 3px solid #4CAF50; padding-left: 10px; margin: 10px 0;">
+<p><em>If user.subscription == "premium":</em></p>
+<p style="">Premium Features:</p>
+<p style="">Advanced Analytics</p>
+<p style="">Priority Support</p>
+<h3>Analytics</h3>
+<canvas id="chart_features_0" width="400" height="200"></canvas>
+</div>
+<div class="else-block" style="border-left: 3px solid #FF9800; padding-left: 10px; margin: 10px 0;">
+<p><em>Else:</em></p>
+<p style="">Standard Features:</p>
+<p style="">Basic Reporting</p>
+</div>
+<p style="">Common Tools</p>
+<h3>Recent Activity</h3>
+<table style=""><thead><tr>
+  <th>Column1</th>
+  <th>Column2</th>
+  <th>Column3</th>
+</tr></thead>
+<tbody>
+  <tr>
+    <td>12</td>
+    <td>44</td>
+    <td>70</td>
+  </tr>
+  <tr>
+    <td>75</td>
+    <td>22</td>
+    <td>80</td>
+  </tr>
+  <tr>
+    <td>63</td>
+    <td>21</td>
+    <td>75</td>
+  </tr>
+</tbody></table>
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+function showToast(msg) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+</script>
+</body>
+</html>

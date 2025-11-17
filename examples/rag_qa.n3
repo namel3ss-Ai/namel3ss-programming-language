@@ -1,0 +1,29 @@
+app "RAG QA".
+
+dataset "knowledge" from csv "data/articles.csv":
+  columns: chunk, source
+  cache:
+    strategy: memory
+
+connector "openai" type llm:
+  provider = "openai"
+  model = "gpt-4o-mini"
+
+define template "rag_prompt":
+  prompt = "Use the context to answer the question.\nContext: {context}\nQuestion: {question}"
+  style = "succinct"
+
+define chain "rag_chain":
+  input -> template rag_prompt -> connector openai
+  metadata:
+    description: "Stubbed multimodal RAG chain"
+
+page "Ask" at "/":
+  show form "Ask a question":
+    fields: question
+    on submit:
+      run chain rag_chain with:
+        context = dataset.knowledge
+        question = form.question
+      ask connector openai with:
+        prompt = form.question

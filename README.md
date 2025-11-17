@@ -1,0 +1,698 @@
+# Namel3ss – English‑like full‑stack apps
+
+**Namel3ss** (pronounced “nameless”) is a new programming language that
+lets you build real applications using simple English‑like
+instructions.  It compiles declarative `.n3` files into working
+backend and frontend code.  The goal is to make it trivial to create
+internal tools, dashboards and business apps without writing
+boilerplate Python or JavaScript.
+
+This repository contains a minimal proof‑of‑concept implementation of
+the Namel3ss language.  It includes:
+
+* A **parser** that reads `.n3` source files and produces a rich
+  Abstract Syntax Tree (AST).  The grammar supports apps, themes,
+  datasets, pages, tables, charts, forms, actions and simple data
+  transformations.
+* A **code generator** that turns the AST into a static website.
+  Each page becomes its own HTML file with navigation, tables,
+  placeholder charts using Chart.js, forms, actions and toast
+  notifications.  Basic styling and theming is driven by the `theme`
+  block in your source.
+* A simple **CLI** to parse and build your app:
+
+  ```bash
+  namel3ss build path/to/app.n3 --out build
+  ```
+
+  The generated site will be written to the `build/` directory.  Open
+  `build/index.html` in a browser to view your app.
+
+  To scaffold a FastAPI backend instead, run:
+
+  ```bash
+  namel3ss build path/to/app.n3 --backend-only --backend-out backend --embed-insights
+  ```
+
+  This produces a backend in `backend/` with optional insight embedding ready for
+  local experimentation.  Pass repeatable `--env KEY=VALUE` flags to inject
+  credentials or configuration at build/run time; any `env:KEY` or `${KEY}`
+  placeholders inside connector options will be expanded using the active
+  environment before requests are executed.
+
+  The `run` command also understands natural language shortcuts so you can say
+
+  ```bash
+  namel3ss run app.n3 using .env.dev
+  namel3ss run in production
+  namel3ss run locally
+  ```
+
+  Aliases like `production/prod`, `development/dev`, and `local/locally` map to
+  `.env.prod`, `.env.dev`, and `.env.local` respectively.  Any `--env value`
+  that omits an equals sign is treated as a dotenv file, meaning `--env .env`
+  remains fully supported while loading its keys into the process environment
+  before the backend starts.  If you omit the `.n3` filename, Namel3ss defaults
+  to the first `.n3` file in the current directory.
+
+  You can also execute AI flows without booting the dev server:
+
+  ```bash
+  namel3ss run summarize_chain -f examples/ai_demo.n3
+  namel3ss eval sentiment_playoff -f examples/experiment_comparison.n3 --format text
+  ```
+
+  The `run` command detects when the target looks like a chain and streams a
+  deterministic JSON trace.  Pass `--dev` to force server mode if the target
+  collides with a filename.  The `eval` subcommand performs the same for
+  experiments, returning repeatable metrics ready for dashboards or CI checks.
+
+## Installation
+
+Namel3ss requires **Python 3.10 or newer**.
+
+### From PyPI (recommended)
+
+```bash
+pip install namel3ss
+```
+
+Once installed, verify the CLI is on your path:
+
+```bash
+namel3ss --help
+```
+
+### From source
+
+```bash
+git clone https://github.com/SsebowaDisan/namel3ss-programming-language.git
+cd namel3ss-programming-language
+pip install -e .
+```
+
+The editable install keeps the CLI in sync with your local changes.
+
+### Optional extras
+
+Install extras to enable additional connectors and helpers:
+
+- `pip install namel3ss[cli]` loads `python-dotenv` so `.env` files parsed by the CLI understand edge cases like exported variables and quoted values.
+- `pip install namel3ss[sql]` adds async database drivers (AsyncPG, Psycopg) for production-grade Postgres access.
+- `pip install namel3ss[redis]` enables Redis caching and pub/sub helpers through `redis.asyncio`.
+- `pip install namel3ss[realtime]` bundles WebSockets + Redis so generated realtime dashboards can broadcast safely.
+- `pip install namel3ss[ai-connectors]` installs OpenAI/Anthropic/TikToken dependencies for the LLM connectors.
+- `pip install namel3ss[observability]` wires in OpenTelemetry SDK + FastAPI instrumentation for tracing hooks.
+  The extra now bundles the OTLP exporter so traces can flow straight to any standard collector.
+- `pip install namel3ss[mongo]` wires in the Motor async driver for MongoDB datasets.
+- `pip install namel3ss[all]` brings in every optional connector at once.
+
+When developing from source, replace `namel3ss[...]` with `pip install -e ".[...]"` so the extras stay editable too.
+
+### Development setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows use: .\.venv\Scripts\activate
+pip install -e ".[dev]"
+./scripts/run_tests.sh
+```
+
+The `dev` extra installs linters, type-checkers and pytest. Run `namel3ss doctor`
+afterwards to confirm which optional integrations (SQL, Redis, Mongo, CLI helpers)
+are currently available in your environment.
+
+## Quickstart
+
+Spin up Namel3ss locally in just a few commands:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+namel3ss generate examples/app.n3 out
+
+cd out/backend
+uvicorn main:app --reload
+```
+
+`namel3ss generate` compiles any `.n3` program into a ready-to-run project.
+The output folder contains a FastAPI backend (`out/backend`) plus a static
+frontend (`out/frontend`).  With the backend running, open the generated HTML
+in your browser to explore charts, tables and actions backed by deterministic
+demo data.
+
+## Production deployment
+
+### Generate a production bundle
+
+1. Compile your application:
+   ```bash
+   namel3ss build app.n3 --out out --build-backend --backend-out out/backend
+   ```
+2. Install the backend dependencies inside your deployment environment (virtualenv, container, or build image):
+   ```bash
+   cd out/backend
+   pip install -r requirements.txt
+   ```
+3. Run the ASGI app with a production server such as Uvicorn or Gunicorn:
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port 8000
+   # Or
+   gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+   ```
+
+The generated frontend lives under `out/frontend`. Serve it from a CDN, an object store, or any static web server once you have built the assets you need.
+
+### Environment configuration
+
+Set these environment variables (or inject them via a secrets manager) before starting the backend:
+
+- **Authentication**
+  - `NAMEL3SS_API_KEY` enables static API-key authentication against the generated routers.
+  - `NAMEL3SS_AUTH_MODE` controls JWT enforcement: `disabled` (default), `optional`, or `required`.
+  - `NAMEL3SS_JWT_SECRET` plus optional `NAMEL3SS_JWT_ALGORITHMS`, `NAMEL3SS_JWT_AUDIENCE`, and `NAMEL3SS_JWT_ISSUER` configure token validation.
+  - `NAMEL3SS_JWT_LEEWAY` supplies leeway (seconds) when checking `exp` and `nbf` claims.
+  - Multi-tenancy knobs include `NAMEL3SS_ENABLE_TENANT_RESOLUTION`, `NAMEL3SS_TENANT_HEADER`, `NAMEL3SS_TENANT_CLAIM`, `NAMEL3SS_REQUIRE_TENANT`, and `NAMEL3SS_ALLOW_ANONYMOUS`.
+- **Datastores**
+  - `NAMEL3SS_DATABASE_URL` (or generated aliases such as `NAMEL3SS_POSTGRES_<NAME>_URL`) provides SQLAlchemy with a connection string.
+  - `NAMEL3SS_REDIS_URL`, `NAMEL3SS_REDIS_PUBSUB`, and `NAMEL3SS_REDIS_CHANNEL` control Redis caching and pub/sub.
+  - Mongo connectors expect standard `MONGODB_URI` style secrets when you opt into the `mongo` extra.
+- **Third-party connectors**
+  - Supply provider-specific secrets such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any `env:` placeholders referenced in your `.n3` files.
+- **Runtime switches**
+  - Leave `NAMEL3SS_ALLOW_STUBS` unset in production to disable deterministic demo payloads.
+  - `NAMEL3SS_RUNTIME_ASYNC` toggles async dataset execution if you prefer a synchronous worker pool.
+
+For local testing you can store values in a `.env` file and load it via `namel3ss run --env .env.prod`. Production deployments should source secrets from environment variables or a dedicated secrets manager instead of committing `.env` files.
+
+### Frontend build & delivery
+
+- Static target: upload the contents of `out/frontend` to your file host or CDN.
+- React/Vite target: run `npm install && npm run build`, then publish the resulting `dist/` assets behind your preferred CDN or reverse proxy.
+- When hosting behind the same domain as the backend, configure your web tier (nginx, Caddy, CloudFront) to proxy `/api` requests to the ASGI service and serve the static bundle everywhere else.
+
+### Security checklist
+
+- Terminate TLS at your edge (load balancer, CDN, or reverse proxy) and only expose the ASGI server on private networks.
+- Set `NAMEL3SS_AUTH_MODE=required` and provide `NAMEL3SS_JWT_SECRET` (or API keys) so anonymous access is disabled.
+- Rotate API keys and JWT secrets regularly; never commit them to version control.
+- Scope infrastructure-level permissions so the generated backend only has access to the databases, queues, and buckets it needs.
+
+### Observability endpoints
+
+Generated backends expose production-friendly probes out of the box:
+
+- `GET /api/health` and `GET /healthz` return a lightweight uptime snapshot that load balancers can poll.
+- `GET /readyz` runs asynchronous readiness checks, including a database ping when the project wires up SQLAlchemy.
+- `GET /metrics` emits Prometheus-compatible counters and gauges for request latency, dataset fetches, and connector activity (`text/plain; version=0.0.4`).
+
+The same instrumentation drives structured JSON logs and optional OpenTelemetry tracing (enable via `NAMEL3SS_ENABLE_TRACING=1`). Point your favorite metrics scraper or uptime monitor at these endpoints to keep tabs on deployments without writing extra glue code.
+- Monitor logs for failed authentications or connector errors, and layer rate limiting at the proxy when exposing the runtime publicly.
+
+## Testing
+
+Run the full automated test suite (including coverage reporting) with the
+provided helper script:
+
+```bash
+./scripts/run_tests.sh
+```
+
+The script bootstraps a virtualenv under `.venv`, installs the project in
+editable mode along with the dev dependencies from `requirements-dev.txt`, and
+invokes `pytest` with sensible defaults (`--maxfail=1`, coverage reporting, and
+warnings disabled).  Pass additional arguments to forward them to `pytest`:
+
+```bash
+./scripts/run_tests.sh tests/test_cli.py -vv
+```
+
+Continuous integration uses the same entrypoint, so keeping this command
+green locally ensures the GitHub Actions workflow will pass.
+
+### Sample language snippet
+
+The language stays approachable even as apps grow.  The following excerpt is
+identical to `examples/app.n3` and demonstrates themes, datasets, pages and
+actions written in natural language:
+
+```text
+app "CoffeeHub" connects to postgres "COFFEE_DB".
+  text: "#3E2723"
+
+dataset "monthly_sales" from table sales:
+  filter by: region == "EU"
+  group by: month
+  sum: revenue as total_revenue
+
+page "Home" at "/":
+  show text "Welcome to CoffeeHub!"
+    color: var(--primary)
+    size: large
+    align: center
+    weight: bold
+  show chart "Revenue Growth" from dataset monthly_sales
+    type: line
+    x: month
+    y: total_revenue
+    color: var(--primary)
+    title size: large
+  show table "Recent Orders" from table orders
+    columns: id, customer_name, total, status
+    filter by: status == "Pending"
+
+page "Feedback" at "/feedback":
+  show form "Submit Feedback":
+    fields: name, email: email, message
+    on submit:
+      show toast "Thank you for your feedback!"
+
+page "Admin" at "/admin":
+  show table "Orders" from table orders
+    columns: id, customer_name, total, status
+  action "Approve Order":
+    when user clicks "Approve":
+      update orders set status = "APPROVED"
+      show toast "Order approved"
+      go to page "Admin"
+```
+
+## Sanity-check generated projects
+
+After installing the CLI you can validate the full toolchain end-to-end:
+
+1. Activate the project virtualenv:
+
+  ```bash
+  source .venv/bin/activate
+  ```
+
+2. Generate backend and frontend previews from a sample program:
+
+  ```bash
+  namel3ss build examples/app.n3 --build-backend --backend-out demo_backend_out --out demo_site_out
+  ```
+
+4. Run the backend and visit the site:
+
+  ```bash
+  cd demo_backend_out
+  uvicorn main:app --reload
+  ```
+
+5. Open any HTML page from `demo_site_out` in a browser and confirm that
+  tables, charts, realtime updates and insight panels render without console
+  errors.
+
+Regenerate these folders whenever you tweak the `.n3` program; the CLI will
+keep custom code isolated under the `custom/` namespace so reruns remain
+idempotent.
+
+## React/Vite frontend (experimental)
+
+Prefer working with a modern React toolchain?  Generate a Vite + React +
+TypeScript project by passing the new target flag:
+
+```bash
+namel3ss build examples/app.n3 --target=react-vite --out site_react
+```
+
+Then install and run the dev server from the generated directory:
+
+```bash
+cd site_react
+npm install
+npm run dev
+```
+
+The React build mirrors the static HTML experience—pages, tables, charts and
+forms all render the same preview data—while adding client-side routing,
+runtime fetches against `/api/pages/{slug}` and a toast system wired for form
+submissions.  The legacy static target remains the default, so existing
+workflows continue to function without changes.
+
+## Smoke test generated apps
+
+Run a quick manual smoke test whenever you want to confirm the language still
+produces a healthy project end to end:
+
+```bash
+# 1) Generate backend and frontend from the sample program
+namel3ss build examples/app.n3 --build-backend --backend-out backend_out --out site_out
+
+# 2) Start the generated backend (in a separate shell)
+uvicorn backend_out.main:app --reload
+```
+
+Then open `site_out/index.html` (or any other page) in your browser and verify:
+
+- Pages render without HTTP or console errors.
+- Charts and tables show the bundled demo/preview data.
+- Toasts/widgets respond to clicks and form submissions as expected.
+- If realtime was enabled, the browser console stays free of runtime errors
+  while events stream.
+
+This walkthrough checks the generated project itself—it complements, but does
+not replace, the automated language test suite.
+
+## Features
+
+The current implementation supports a wide range of the features
+envisioned for Namel3ss:
+
+* **Apps** with optional database connections (for future use).
+* **Themes** defined via key/value pairs.  Colours, backgrounds and
+  fonts cascade throughout your pages via CSS variables.
+* **Datasets** that can reference tables, files, other datasets or
+  external connectors (SQL, REST, CSV).  Filters, computed columns,
+  windows, caching and pagination policies are preserved and executed in the
+  generated backend.  Inline `with option key value` directives let you add
+  connector metadata (auth headers, paging hints, timeouts) without leaving the
+  `.n3` file.
+* **Pages** with named routes.  Each page can contain an arbitrary
+  sequence of statements.
+* **Text** blocks with styling attributes (colour, size, alignment,
+  weight).
+* **Tables** rendering a header and sample data.  Columns can be
+  specified explicitly.  Additional properties such as `filter by`
+  and `sort by` are parsed and stored.
+* **Charts** of various types (bar, line, pie, etc.) using the
+  Chart.js library.  The generator uses placeholder data but
+  respects chart properties including axis assignments and colours.
+* **Forms** with arbitrary fields.  On submission your operations are
+  executed and a toast message is displayed.  Fields can specify
+  simple types like `email`.
+* **Actions** attach behaviour to buttons.  You can update a table
+  (logged to the console for now), show toast notifications and
+  navigate to another page.
+* **AI connectors, templates, chains, and experiments** are first-class.
+  Host LLM credentials in `connector` blocks, reuse prompts via `define template`,
+  orchestrate `define chain` pipelines, and compare outcomes with `experiment`
+  variants and metrics — all using deterministic runtime stubs.
+* **Context registry** exposes runtime environment, user, session and date
+  information so you can reference `ctx:` and `env:` values directly inside
+  datasets, expressions and text templates.
+
+## Backend runtime overview
+
+Running Namel3ss with `--build-backend` emits a FastAPI project that includes:
+
+- A dataset registry with per-dataset caching, pagination and optional
+  connector definitions.
+- Dataset execution for SQL/table sources via SQLAlchemy, REST sources via
+  `httpx`, and CSV file connectors through the standard library.
+- Insight evaluation helpers and `/api/insights/{name}` endpoints; pass
+  `--embed-insights` to include the evaluated insights directly in table/chart
+  responses.
+- A lightweight prediction scaffold that turns model metadata into a simple
+  weighted scorer for experimental inference endpoints.
+
+### Stubs & explanations
+
+The runtime keeps deterministic stubs available for demos, but they are now
+opt-in.  Set `NAMEL3SS_ALLOW_STUBS=1` before starting the backend to enable
+synthetic model predictions, default explanations and other canned payloads.
+When the variable is unset (the default), the runtime surfaces real loader and
+runner errors, and model predictions no longer include stubbed visualisations
+or attributions.
+
+### Connectors & placeholders
+
+All generated connectors — REST, SQL, gRPC and streaming — route their options
+through `_resolve_placeholders`.  Values such as `env:API_KEY` or `${API_KEY}`
+are resolved from `os.environ`, while dotted context expressions like
+`ctx:user.id` pull data from the request or evaluation context.  This applies
+uniformly to headers, params, payloads and nested connector configuration so
+your `.n3` source can stay environment-agnostic.
+
+### Insights & embed mode
+
+Calling `generate_backend(..., embed_insights=True)` sets `EMBED_INSIGHTS = True`
+inside the generated runtime.  The pages router responds with an additional
+`insight_results` dictionary per page so frontends can render evaluated insight
+widgets without making extra API calls.  Leave the flag unset when you prefer
+on-demand insight evaluation at runtime.
+
+### Configuring REST connectors
+
+When declaring a dataset you can attach a REST connector, for example:
+
+```text
+dataset "orders" from rest ORDERS_API endpoint "https://api.example.com/orders"
+```
+
+The generated backend understands the following optional REST connector options
+(declared inline using `with option key value` syntax in `.n3` source or merged
+from global connector definitions):
+
+- `method`: HTTP method (default `GET`).
+- `params`: static query parameters (dictionary).
+- `context_params`: names mapped from the evaluation context to query
+  parameters (either a dict of `param: context_key` or a list of keys).
+- `headers`: custom HTTP headers.
+- `body`: JSON or form payload (supports simple `{placeholder}` templating from
+  context values).
+- `body_format`: `json` (default) or `form` to control how the payload is sent.
+- `timeout`: request timeout in seconds (default `10`).
+- `result_path`: dotted path used to pluck the relevant list from the JSON
+  response.
+
+Environment-aware placeholders are supported inside option values: use
+`env:MY_TOKEN` or `${MY_TOKEN}` and provide the secret at runtime via
+`--env` or the process environment.  Nested option keys like
+`headers.Authorization` or `params.api_key` are merged into the generated
+backend automatically.
+
+## Integrated Machine Learning & Deep Learning
+
+Namel3ss now scaffolds deterministic ML/DL plumbing so the generated
+projects are ready to host real models when you are:
+
+  representative sklearn and PyTorch entries.  Extend it freely or wire it to
+  your own model catalogue.
+  traditional ML and deep learning flows, using runtime-discovered model
+  loaders and runners with deterministic fallbacks.  Explanations can be
+  enriched via custom hook registration for Grad-CAM, SHAP, or attention maps.
+  endpoints for model metrics and feature importances, making it easy to build
+  monitoring UIs with the existing frontend generator.
+  simulations or invoke your own Python hooks (defined in model metadata) to
+  trigger real training pipelines or deployment jobs.
+  `evaluate_experiment(name, payload)` helper, and typed GET/POST endpoints at
+  `/api/experiments/{slug}` so you can compare models vs. chains directly from
+  `.n3` source files.
+  incremental adoption of real machine learning or deep learning pipelines.
+
+## Customising The Generated API
+
+The backend now ships in two layers so you can extend or override behaviour
+without losing changes when you re-run the generator:
+
+- The generated layer defines deterministic FastAPI routers for insights,
+  models, experiments, and page components.  Helpers such as
+  `evaluate_insight(slug)`, `run_prediction(model_name, payload)`, and
+  `run_experiment(slug, payload)` keep the typed logic easy to reuse.
+- A `custom_api.py` stub is created the first time a backend is generated.  Add
+  routes to the exported `APIRouter` or wire up a `setup(app)` hook to inject
+  middleware, authentication, or logging.  The generator never overwrites this
+  file once it exists.
+- When you redefine an existing path (for example
+  `@router.get("/api/insights/sales"`), include whatever validation or
+  post-processing you need and call the generated helpers if you still want the
+  default result.
+- If the stub is removed, simply create your own `custom_api.py` (or package)
+  alongside `main.py`; the runtime will import it automatically if present.
+
+## AI Roadmap & Syntax
+
+Namel3ss now threads AI calls through the language and runtime in four
+deterministic phases:
+
+- **Phase 1 – Python Callables**: Use `call python "module.py" method "predict"`
+  inside forms or actions to invoke local Python code through the
+  `call_python_model` helper.  Module imports are sandboxed and fall back to a
+  `{ "result": "stub_prediction" }` payload when unavailable.
+- **Phase 2 – Native Models**: Existing `model` blocks remain the canonical way
+  to describe trainable or deployable artefacts that the `predict()` helper and
+  `/api/models/{name}/predict` endpoint consume.
+- **Phase 3 – Hosted LLM Connectors**: Declare connectors with
+  `connector "openai" type llm:` and call them via `ask connector openai with:`.
+  The runtime exposes `call_llm_connector(name, payload)` plus
+  `/api/ai/connectors/{name}` and returns deterministic responses suitable for
+  testing.
+- **Phase 4 – Templates & Chains**: Author reusable prompts with
+  `define template` and stitch them together with `define chain`.  Chains can
+  orchestrate templates, connectors, and Python hooks through `run_chain()` or
+  `/api/ai/chains/{name}`.
+- **Phase 5 – Experiments & Evaluation**: Use `experiment` blocks to declare
+  variants across models or chains, capture success metrics, and surface the
+  results via `evaluate_experiment()` or `/api/experiments/{slug}/metrics`.
+
+Example `.n3` excerpt:
+
+```text
+connector "openai" type llm:
+  provider = "openai"
+  model = "gpt-4"
+  api_key = env.OPENAI_KEY
+
+define template "product_summary":
+  prompt = "Summarise this: {input}"
+
+define chain "summarize_chain":
+  input -> template product_summary -> connector openai
+
+page "Chatbot" at "/chat":
+  show form "Ask something":
+    fields: message
+    on submit:
+      call python "model.py" method "predict" with:
+        input = form.message
+      ask connector openai with:
+        prompt = form.message
+      run chain summarize_chain with:
+        text = form.message
+      show toast "AI response generated"
+```
+
+Generated backends now ship with `AI_CONNECTORS`, `AI_TEMPLATES`, `AI_CHAINS`,
+and `AI_EXPERIMENTS` registries; helper functions (`call_python_model`,
+`call_llm_connector`, `run_chain`, `evaluate_experiment`); plus `/api/ai/*` and
+`/api/experiments/*` routes.  These are also injected into the request context
+so insights, actions, chains, and dashboards can reference them directly.
+
+### Configuring LLM connectors
+
+LLM connectors declared in `.n3` source support a richer set of configuration
+knobs that map directly into the generated runtime.  The most common options
+are:
+
+- `provider`: logical provider name (`openai`, `anthropic`, `azure`, `vertex`,
+  etc.).  Provider-specific defaults such as base URLs and required headers are
+  inferred when possible.
+- `endpoint`: override the HTTP endpoint used for requests.  If omitted, the
+  runtime will synthesise an endpoint based on the provider (for example
+  `https://api.openai.com/v1/chat/completions`).
+- `api_key_env`: reference to an environment variable containing credentials.
+  The generated runtime resolves this lazily for each request, so you can keep
+  secrets out of source control.  You can still hard-code `api_key` for local
+  experiments, but `api_key_env` is preferred.
+- `mode`: choose between `chat` (default for OpenAI/Anthropic style APIs) and
+  `completion`.  Chat mode constructs the `messages` list automatically using
+  any provided `system` prompt and the user payload.  Completion mode sends the
+  prompt under `prompt_field` (defaults to `prompt`).
+- `max_response_chars`: trims the returned text to a reasonable length (4k by
+  default) so logs and tests stay deterministic.
+- `payload`, `headers`, `params`, or `payload_from_args`: pass through custom
+  JSON bodies, HTTP headers, query params, or echo selected payload keys from
+  the caller.
+
+When an LLM call fails (missing credentials, HTTP error, etc.) the runtime
+logs the error and returns the deterministic stub response that keeps tests
+passing.
+
+### Customising the model registry
+
+The generated backend seeds a `MODEL_REGISTRY` using the defaults from
+`namel3ss.ml.registry`.  You can override or extend this registry without
+touching generated code by setting the `NAMEL3SS_MODEL_REGISTRY` environment
+variable before running the backend or CLI:
+
+- Point it to a JSON/YAML file on disk: `NAMEL3SS_MODEL_REGISTRY=registry.json`.
+- Provide an inline JSON string: `NAMEL3SS_MODEL_REGISTRY='{"my_model": {"framework": "torch"}}'`.
+
+Overrides merge with the defaults; nested `metadata` and `metrics` dictionaries
+are deep-merged so you can add loaders, runners, or metrics incrementally.
+Relative paths in registry metadata honour `NAMEL3SS_MODEL_ROOT`, letting you
+store model artefacts under a shared directory.
+
+Check `examples/ai_demo.n3` for a full-stack sample that wires a form to a
+local Python callable, an OpenAI-style connector stub, and a summarisation
+More focused blueprints live in `examples/text_classification.n3`,
+`examples/rag_qa.n3`, and `examples/experiment_comparison.n3`.
+
+If no list is found the runtime falls back to `sample_rows` defined on the
+dataset so scaffolds remain functional offline.
+
+### Runtime context and interpolation
+
+Every generated backend ships with a `ContextRegistry` that snapshots
+environment variables, user/session metadata and convenient date values for
+each request.  You can reference these values anywhere a scalar is accepted by
+using `env:` or `ctx:` prefixes in your `.n3` file:
+
+- `with option headers.Authorization env:API_TOKEN` pulls secrets from the
+  active environment.
+- `with option params.user_id ctx:user.id` copies the current user into a REST
+  request.
+- `show text "Welcome {ctx:user.name}! Your key is {env:API_TOKEN}"` resolves
+  placeholders dynamically when the page endpoint executes.
+
+## Developer workflow
+
+- Run `./scripts/run_tests.sh` before committing changes.  The helper script
+  bootstraps `.venv` if needed, installs editable dependencies and executes the
+  full `pytest` suite (it honours additional arguments, so you can pass test
+  selectors as needed).
+- Wire the optional Git pre-push hook below to guarantee the same checks run
+  before any push:
+
+  ```sh
+  # .git/hooks/pre-push
+  ./scripts/run_tests.sh || {
+    echo "Tests failed, aborting push."
+    exit 1
+  }
+  ```
+
+The script exits non-zero when tests fail, making it safe to use in CI jobs or
+local automation.  Feel free to add `--maxfail=1` or `-k <expr>` flags when
+iterating; the pre-push hook always re-runs the full suite.
+
+## Limitations & Roadmap
+
+### Current limitations
+
+- The generated React/Vite target is still experimental and lacks production hardening (code splitting, auth-aware routing, accessibility passes).
+- Real-time updates, background jobs, and workflow orchestration are stubbed out — use them for demos but rely on your own infrastructure in production.
+- There is no built-in front-end for authentication flows; teams must supply their own login experience and policies.
+- CRUD helpers generate boilerplate SQL/REST calls but stop short of schema migrations, validation UIs, and conflict resolution.
+- Some connectors default to deterministic stubs when credentials are missing; double-check `NAMEL3SS_ALLOW_STUBS` is disabled before shipping.
+
+### Near-term roadmap
+
+- Harden the realtime layer (WebSocket broadcasts, optimistic UI state, replay-safe caches) and ship a matching syntax for reactive pages.
+- Expand auth tooling with optional OAuth/JWT middleware templates and a minimally styled login surface.
+- Enhance dataset and CRUD generation with schema introspection, typed forms, and migration scaffolds.
+- Polish the CLI (`doctor`, profiling, diff-aware rebuilds) and documentation with end-to-end deployment examples.
+- Publish versioned Docker images and Terraform blueprints once packaging stabilises, so teams can bootstrap infrastructure faster.
+
+## Namel3ss — The AI Language for AI Developers
+
+Namel3ss is now AI-native: datasets, models, connectors, templates, chains, and
+experiments live side by side so you can declare an entire intelligent system
+inside a single `.n3` file.  The compiler turns those declarations into a
+backend with `/api/models/{name}/predict`, `/api/ai/*`, and
+`/api/experiments/{slug}/metrics`, a static frontend, and CLI workflows that all
+stay deterministic.
+
+- **Model & dataset context** — Describe training sources, registry metadata,
+  and runtime inputs without wiring boilerplate.
+- **Prompt engineering & chaining** — Compose reusable templates and go
+  multi-step with `define chain`, then exercise the flow via
+  `namel3ss run <chain>` or `run_chain()`.
+- **Evaluation loops** — Capture hypotheses with `experiment` blocks, compare
+  models versus chains, and automate reporting through
+  `namel3ss eval <experiment>` or the generated experiment APIs.
+
+In short: **Namel3ss — the language where AI developers build in models,
+datasets, prompts, and experiments.**
+
+## Contributing
+
+Contributions are welcome!  Please open issues or pull requests if
+you find bugs or would like to propose new features.  This project
+demonstrates how a language can bridge the gap between plain English
+and robust applications; there is enormous potential to grow beyond
+this proof‑of‑concept.
