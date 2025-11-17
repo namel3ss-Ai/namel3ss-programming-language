@@ -210,19 +210,41 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database import get_session
 from .. import runtime
 from ..helpers import router_dependencies
-from ..schemas import FrameResponse
+from ..schemas import FrameErrorResponse, FrameResponse, FrameSchemaPayload
 
 router = APIRouter(prefix="/api/frames", tags=["frames"], dependencies=router_dependencies())
 
 
 def _frame_not_found(name: str) -> HTTPException:
-    return HTTPException(status_code=404, detail=f"Frame '{name}' is not registered.")
+    return HTTPException(
+        status_code=404,
+        detail={
+            "status_code": 404,
+            "error": "FRAME_NOT_FOUND",
+            "detail": f"Frame '{name}' is not registered.",
+        },
+    )
+
+
+def _ensure_frame_access(name: str) -> Dict[str, Any]:
+    frames = runtime.FRAMES if isinstance(runtime.FRAMES, dict) else None
+    if not isinstance(frames, dict):
+        raise _frame_not_found(name)
+    spec = frames.get(name)
+    if not isinstance(spec, dict):
+        raise _frame_not_found(name)
+    access = spec.get("access") or {}
+    if isinstance(access, dict):
+        if not access.get("public", True):
+            # Placeholder for per-frame access control.
+            pass
+    return spec
 
 
 @router.get("/", response_model=List[str])
@@ -232,35 +254,95 @@ async def list_frames() -> List[str]:
     return sorted(runtime.FRAMES.keys())
 
 
-@router.get("/{name}", response_model=FrameResponse)
+@router.get(
+    "/{name}",
+    response_model=FrameResponse,
+    responses={404: {"model": FrameErrorResponse}, 400: {"model": FrameErrorResponse}},
+)
 async def get_frame(
     name: str,
+    limit: Optional[int] = Query(None, ge=1),
+    offset: Optional[int] = Query(None, ge=0),
+    order_by: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
 ) -> FrameResponse:
-    frame_spec: Optional[Dict[str, Any]]
-    frame_spec = runtime.FRAMES.get(name) if isinstance(runtime.FRAMES, dict) else None
-    if not isinstance(frame_spec, dict):
-        raise _frame_not_found(name)
+    _ensure_frame_access(name)
     context = runtime.build_context(None)
-    rows = await runtime.fetch_frame_rows(name, session, context)
-    source_type = frame_spec.get("source_type") or "dataset"
-    source_name = frame_spec.get("source") or name
-    errors = runtime._collect_runtime_errors(context, scope=name)
-    return FrameResponse(
-        name=name,
-        source={"type": source_type, "name": source_name},
-        description=frame_spec.get("description"),
-        tags=list(frame_spec.get("tags") or []),
-        metadata=dict(frame_spec.get("metadata") or {}),
-        columns=list(frame_spec.get("columns") or []),
-        indexes=list(frame_spec.get("indexes") or []),
-        relationships=list(frame_spec.get("relationships") or []),
-        constraints=list(frame_spec.get("constraints") or []),
-        access=frame_spec.get("access"),
-        options=dict(frame_spec.get("options") or {}),
-        rows=rows,
-        errors=errors,
+    payload = await runtime.fetch_frame_rows(
+        name,
+        session,
+        context,
+        limit=limit,
+        offset=offset,
+        order_by=order_by,
+        as_response=True,
     )
+    return FrameResponse(**payload)
+
+
+@router.get(
+    "/{name}/schema",
+    response_model=FrameSchemaPayload,
+    responses={404: {"model": FrameErrorResponse}},
+)
+async def get_frame_schema(
+    name: str,
+    session: AsyncSession = Depends(get_session),
+) -> FrameSchemaPayload:
+    _ensure_frame_access(name)
+    context = runtime.build_context(None)
+    payload = await runtime.fetch_frame_schema(name, session, context)
+    return FrameSchemaPayload(**payload)
+
+
+@router.get(
+    "/{name}.csv",
+    responses={404: {"model": FrameErrorResponse}, 400: {"model": FrameErrorResponse}},
+)
+async def download_frame_csv(
+    name: str,
+    limit: Optional[int] = Query(None, ge=1),
+    offset: Optional[int] = Query(None, ge=0),
+    order_by: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    _ensure_frame_access(name)
+    context = runtime.build_context(None)
+    payload = await runtime.export_frame_csv(
+        name,
+        session,
+        context,
+        limit=limit,
+        offset=offset,
+        order_by=order_by,
+    )
+    headers = {"Content-Disposition": f"attachment; filename={name}.csv"}
+    return Response(content=payload, media_type="text/csv", headers=headers)
+
+
+@router.get(
+    "/{name}.parquet",
+    responses={404: {"model": FrameErrorResponse}, 400: {"model": FrameErrorResponse}},
+)
+async def download_frame_parquet(
+    name: str,
+    limit: Optional[int] = Query(None, ge=1),
+    offset: Optional[int] = Query(None, ge=0),
+    order_by: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    _ensure_frame_access(name)
+    context = runtime.build_context(None)
+    payload = await runtime.export_frame_parquet(
+        name,
+        session,
+        context,
+        limit=limit,
+        offset=offset,
+        order_by=order_by,
+    )
+    headers = {"Content-Disposition": f"attachment; filename={name}.parquet"}
+    return Response(content=payload, media_type="application/octet-stream", headers=headers)
 
 
 __all__ = ["router"]
