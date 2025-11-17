@@ -9,3 +9,6 @@ pgsql
 # Python build artefacts
 __pycache__/
 *.py[cod]
+.coverage
+coverage.xml
+htmlcov/

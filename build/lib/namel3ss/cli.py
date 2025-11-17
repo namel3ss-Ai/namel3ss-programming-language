@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +41,18 @@ ENV_ALIAS_MAP = {
 DEFAULT_MODEL_REGISTRY = get_default_model_registry()
 
 _RUN_ENV_PREPOSITIONS = {"using", "in", "on", "with"}
+
+_CLI_TRACE_LIMIT = 4000
+
+
+def _format_error_detail(exc: BaseException) -> str:
+    message = f"{exc.__class__.__name__}: {exc}"
+    return message if len(message) <= 280 else f"{message[:277]}..."
+
+
+def _traceback_excerpt() -> str:
+    trace = traceback.format_exc().strip()
+    return trace if len(trace) <= _CLI_TRACE_LIMIT else f"{trace[:_CLI_TRACE_LIMIT - 3]}..."
 
 
 def _find_first_n3_file() -> Optional[Path]:
@@ -228,115 +241,64 @@ def _find_experiment(app: App, name: str) -> Optional[Experiment]:
             return experiment
     return None
 
-
-def _simulate_chain_run(chain: Chain, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Return a stub ``PredictionResponse`` for CLI previews."""
-
-    request_payload = dict(payload or {})
-    steps = []
-    for index, step in enumerate(chain.steps, start=1):
-        steps.append({
-            "index": index,
-            "kind": step.kind,
-            "target": step.target,
-            "options": dict(step.options),
-        })
-
-    metadata: Dict[str, Any] = {
-        "chain": chain.name,
-        "input_key": chain.input_key,
-        "steps": steps,
-    }
-
-    version = None
-    framework = None
-    if isinstance(chain.metadata, dict):
-        version = chain.metadata.get("version")
-        framework = chain.metadata.get("framework") or chain.metadata.get("engine")
-        if chain.metadata:
-            metadata["chain_metadata"] = dict(chain.metadata)
-
-    return {
-        "model": chain.name,
-        "version": version,
-        "framework": framework or "chain",
-        "input": request_payload,
-        "output": {
-            "status": "stub",
-            "result": f"{chain.name}_output",
-        },
-        "explanations": {},
-        "metadata": metadata,
-    }
+_RUNTIME_CACHE: Dict[str, Any] = {}
 
 
-def _simulate_experiment(
-    experiment: Experiment,
-    payload: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Return a stub ``ExperimentResult`` for CLI previews."""
+def _clear_generated_module_cache() -> None:
+    for name in list(sys.modules):
+        if name == "generated" or name.startswith("generated."):
+            sys.modules.pop(name, None)
 
-    request_payload = dict(payload or {})
-    variants = []
-    for index, variant in enumerate(experiment.variants, start=1):
-        variants.append({
-            "name": variant.name or f"variant_{index}",
-            "target_type": variant.target_type,
-            "target_name": variant.target_name,
-            "score": round(0.68 + 0.045 * index, 3),
-            "result": {
-                "status": "stub",
-                "summary": f"Simulated outcome for {variant.target_type}:{variant.target_name}",
-            },
-            "config": dict(variant.config),
-        })
 
-    metrics = []
-    for index, metric in enumerate(experiment.metrics, start=1):
-        metrics.append({
-            "name": metric.name or f"metric_{index}",
-            "value": round(0.74 + 0.03 * index, 3),
-            "goal": metric.goal,
-            "source_kind": metric.source_kind,
-            "source_name": metric.source_name,
-            "metadata": dict(metric.metadata),
-        })
-
-    leaderboard = sorted(
-        (variant for variant in variants if variant.get("score") is not None),
-        key=lambda item: item["score"],
-        reverse=True,
-    )
-    winner = leaderboard[0]["name"] if leaderboard else None
-
-    metadata = dict(experiment.metadata)
-    if experiment.description:
-        metadata.setdefault("description", experiment.description)
-
-    return {
-        "experiment": experiment.name,
-        "slug": _slugify_model_name(experiment.name),
-        "status": "stub",
-        "variants": variants,
-        "metrics": metrics,
-        "leaderboard": [entry["name"] for entry in leaderboard],
-        "winner": winner,
-        "inputs": request_payload,
-        "metadata": metadata,
-    }
+def _load_runtime_module(app: App, cache_key: str) -> Any:
+    runtime = _RUNTIME_CACHE.get(cache_key)
+    if runtime is not None:
+        return runtime
+    backend_dir = tempfile.mkdtemp(prefix="namel3ss_cli_backend_")
+    generate_backend(app, backend_dir, embed_insights=False, enable_realtime=False)
+    _clear_generated_module_cache()
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    runtime = importlib.import_module("generated.runtime")
+    _RUNTIME_CACHE[cache_key] = runtime
+    return runtime
 
 
 def _print_prediction_response_text(response: Dict[str, Any]) -> None:
-    """Pretty-print a stub prediction response for humans."""
+    """Pretty-print chain prediction output with status-aware messaging."""
 
+    status = str(response.get("status") or response.get("output", {}).get("status") or "").lower()
     framework = response.get("framework") or "n/a"
     version = response.get("version") or "n/a"
-    print(f"Model: {response.get('model')} (framework: {framework}, version: {version})")
-    if response.get("input"):
-        print("Input payload:")
-        print(json.dumps(response["input"], indent=2))
-    print("Output:")
-    print(json.dumps(response.get("output", {}), indent=2))
+    print(f"Model: {response.get('model', 'n/a')} (framework: {framework}, version: {version})")
+
+    if status == "error":
+        error_code = response.get("error") or response.get("output", {}).get("error") or "unknown_error"
+        detail = response.get("detail") or response.get("output", {}).get("detail")
+        print(f"[error] {error_code}")
+        if detail:
+            print(f"Detail: {detail}")
+        return
+
+    if status == "partial":
+        print("[warning] Partial result reported by downstream components.")
+
+    inputs = response.get("inputs") or response.get("input")
+    if inputs:
+        print("Inputs:")
+        print(json.dumps(inputs, indent=2))
+
+    if "result" in response:
+        print("Result:")
+        print(json.dumps(response["result"], indent=2) if isinstance(response["result"], dict) else response["result"])
+    elif "output" in response:
+        print("Output:")
+        print(json.dumps(response["output"], indent=2))
+
+    if response.get("notes"):
+        print("Notes:")
+        print(json.dumps(response["notes"], indent=2))
+
     metadata = response.get("metadata", {})
     if metadata:
         print("Metadata:")
@@ -344,13 +306,23 @@ def _print_prediction_response_text(response: Dict[str, Any]) -> None:
 
 
 def _print_experiment_result_text(result: Dict[str, Any]) -> None:
-    """Pretty-print a stub experiment result for humans."""
+    """Pretty-print experiment evaluation output with status awareness."""
 
-    description = result.get("metadata", {}).get("description")
-    print(f"Experiment: {result.get('experiment')} (slug: {result.get('slug')})")
-    print(f"Status: {result.get('status')}")
-    if description:
-        print(f"Description: {description}")
+    status = str(result.get("status") or "").lower()
+    print(f"Experiment: {result.get('experiment', 'n/a')}")
+    print(f"Status: {status or 'unknown'}")
+
+    if status == "error":
+        error_code = result.get("error", "experiment_error")
+        detail = result.get("detail")
+        print(f"[error] {error_code}")
+        if detail:
+            print(f"Detail: {detail}")
+        return
+
+    if status == "partial":
+        print("[warning] Partial metrics returned; inspect notes for details.")
+
     print(f"Winner: {result.get('winner') or 'n/a'}")
 
     variants = result.get("variants") or []
@@ -359,29 +331,25 @@ def _print_experiment_result_text(result: Dict[str, Any]) -> None:
         for entry in variants:
             target = f"{entry.get('target_type')}:{entry.get('target_name') or 'default'}"
             score = entry.get("score")
-            score_display = f"{score:.3f}" if isinstance(score, (int, float)) else "n/a"
-            print(
-                f"  - {entry.get('name')} ({target}) score={score_display}"
-            )
+            score_display = f"{score:.3f}" if isinstance(score, (int, float)) else str(score)
+            print(f"  - {entry.get('name')} ({target}) score={score_display}")
 
     metrics = result.get("metrics") or []
     if metrics:
         print("Metrics:")
         for metric in metrics:
-            source_kind = metric.get("source_kind") or "source"
-            source_name = metric.get("source_name") or "n/a"
+            name = metric.get("name", "metric")
             value = metric.get("value")
-            value_display = f"{value:.3f}" if isinstance(value, (int, float)) else "n/a"
-            goal_display = metric.get("goal") or "n/a"
-            print(
-                f"  - {metric.get('name')}: {value_display} "
-                f"goal={goal_display} "
-                f"source={source_kind}:{source_name}"
-            )
+            value_display = f"{value:.3f}" if isinstance(value, (int, float)) else str(value)
+            print(f"  - {name}: {value_display}")
 
     if result.get("inputs"):
         print("Inputs:")
         print(json.dumps(result["inputs"], indent=2))
+
+    if result.get("notes"):
+        print("Notes:")
+        print(json.dumps(result["notes"], indent=2))
 
 
 def prepare_backend(
@@ -568,8 +536,14 @@ def cmd_build(args: argparse.Namespace) -> None:
 
     if not args.backend_only:
         out_dir = args.out
-        generate_site(app, out_dir, enable_realtime=realtime_flag)
-        print(f"✓ Static site generated in {out_dir}")
+        frontend_target = getattr(args, "target", None)
+        if not isinstance(frontend_target, str) or not frontend_target:
+            frontend_target = "static"
+        generate_site(app, out_dir, enable_realtime=realtime_flag, target=frontend_target)
+        if frontend_target == "static":
+            print(f"✓ Static site generated in {out_dir}")
+        else:
+            print(f"✓ Frontend [{frontend_target}] generated in {out_dir}")
     
     # Generate backend if requested
     if args.build_backend or args.backend_only:
@@ -622,7 +596,27 @@ def cmd_run(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        result = _simulate_chain_run(chain)
+        payload: Optional[Dict[str, Any]] = None
+        cache_key = str(source_path.resolve())
+        try:
+            runtime = _load_runtime_module(app, cache_key)
+            runtime_result = runtime.run_chain(chain_name, payload or {})
+            if not isinstance(runtime_result, dict):
+                raise TypeError("run_chain returned non-dict result")
+            result = dict(runtime_result)
+            result.setdefault("status", "ok")
+            result.setdefault("inputs", payload or {})
+        except Exception as exc:
+            result = {
+                "status": "error",
+                "error": "chain_execution_failed",
+                "detail": _format_error_detail(exc),
+                "traceback": _traceback_excerpt(),
+                "model": chain_name,
+                "inputs": payload or {},
+            }
+        result.setdefault("model", chain_name)
+        result.setdefault("inputs", payload or {})
         if namespace.get('json', False):
             print(json.dumps(result, indent=2))
         else:
@@ -679,7 +673,27 @@ def cmd_eval(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    result = _simulate_experiment(experiment)
+    payload: Optional[Dict[str, Any]] = None
+    cache_key = str(Path(source_arg).resolve())
+    try:
+        runtime = _load_runtime_module(app, cache_key)
+        runtime_result = runtime.evaluate_experiment(experiment_name, payload or {})
+        if not isinstance(runtime_result, dict):
+            raise TypeError("evaluate_experiment returned non-dict result")
+        result = dict(runtime_result)
+        result.setdefault("status", "ok")
+        result.setdefault("inputs", payload or {})
+    except Exception as exc:
+        result = {
+            "status": "error",
+            "error": "experiment_execution_failed",
+            "detail": _format_error_detail(exc),
+            "traceback": _traceback_excerpt(),
+            "experiment": experiment_name,
+        }
+    result.setdefault("experiment", experiment_name)
+    result.setdefault("inputs", payload or {})
+
     if getattr(args, 'format', 'json') == 'text':
         _print_experiment_result_text(result)
         return
@@ -688,7 +702,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    """Handle the 'train' subcommand using optional user hooks."""
+    """Handle the 'train' subcommand using user-provided hooks."""
 
     source_path = Path(args.file)
     app = _load_cli_app(source_path)
@@ -697,25 +711,43 @@ def cmd_train(args: argparse.Namespace) -> None:
     framework = spec.get("framework", "unknown")
     metadata = spec.get("metadata", {})
     trainer_hook: Optional[str] = metadata.get("trainer")
-    if trainer_hook:
-        try:
-            module_path, _, attr = trainer_hook.partition(":")
-            if module_path and attr:
-                module = importlib.import_module(module_path)
-                trainer = getattr(module, attr, None)
-                if callable(trainer):
-                    trainer(model_name, spec, args)
-                    print(f"Training hook completed for '{model_name}'.")
-                    return
-        except Exception as exc:
-            print(f"Warning: trainer hook failed ({exc}). Falling back to stub.")
 
-    print(f"Training model '{model_name}' (framework: {framework})")
-    loss_schedule = metadata.get("loss_schedule") or [0.12, 0.10, 0.09, 0.08, 0.07]
-    total_epochs = len(loss_schedule)
-    for index, loss in enumerate(loss_schedule, start=1):
-        print(f"Epoch {index}/{total_epochs} - loss={float(loss):.2f} (stub)")
-    print("Metrics saved to registry.")
+    if not trainer_hook:
+        print(json.dumps({
+            "status": "error",
+            "error": "trainer_not_configured",
+            "detail": f"No trainer hook configured for model '{model_name}'.",
+        }))
+        return
+
+    module_path, _, attr = trainer_hook.partition(":")
+    if not module_path or not attr:
+        print(json.dumps({
+            "status": "error",
+            "error": "trainer_invalid_hook",
+            "detail": f"Trainer hook '{trainer_hook}' is not importable.",
+        }))
+        return
+
+    try:
+        module = importlib.import_module(module_path)
+        trainer = getattr(module, attr)
+        if not callable(trainer):
+            raise TypeError(f"Trainer '{trainer_hook}' is not callable")
+        trainer(model_name, spec, args)
+    except Exception as exc:
+        print(json.dumps({
+            "status": "error",
+            "error": "trainer_failed",
+            "detail": str(exc),
+        }))
+        return
+
+    print(json.dumps({
+        "status": "ok",
+        "model": model_name,
+        "detail": "Training hook completed.",
+    }))
 
 
 def cmd_deploy(args: argparse.Namespace) -> None:
@@ -729,24 +761,47 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     version = spec.get("version", "v1")
     metadata = spec.get("metadata", {})
     deployer_hook: Optional[str] = metadata.get("deployer")
-    if deployer_hook:
-        try:
-            module_path, _, attr = deployer_hook.partition(":")
-            if module_path and attr:
-                module = importlib.import_module(module_path)
-                deployer = getattr(module, attr, None)
-                if callable(deployer):
-                    endpoint = deployer(model_name, spec, args)
-                    if endpoint:
-                        print(f"Model '{model_name}' deployed at {endpoint}")
-                    else:
-                        print(f"Model '{model_name}' deployment hook executed.")
-                    return
-        except Exception as exc:
-            print(f"Warning: deployer hook failed ({exc}). Falling back to stub.")
+    if not deployer_hook:
+        print(json.dumps({
+            "status": "error",
+            "error": "deployer_not_configured",
+            "detail": f"No deployer hook configured for model '{model_name}'.",
+        }))
+        return
 
-    print(f"Model '{model_name}' deployed at /api/models/{slug}/predict")
-    print(f"Framework: {spec.get('framework', 'unknown')} | version: {version} (stub deploy)")
+    module_path, _, attr = deployer_hook.partition(":")
+    if not module_path or not attr:
+        print(json.dumps({
+            "status": "error",
+            "error": "deployer_invalid_hook",
+            "detail": f"Deployer hook '{deployer_hook}' is not importable.",
+        }))
+        return
+
+    try:
+        module = importlib.import_module(module_path)
+        deployer = getattr(module, attr)
+        if not callable(deployer):
+            raise TypeError(f"Deployer '{deployer_hook}' is not callable")
+        output = deployer(model_name, spec, args)
+    except Exception as exc:
+        print(json.dumps({
+            "status": "error",
+            "error": "deployer_failed",
+            "detail": str(exc),
+        }))
+        return
+
+    if isinstance(output, dict):
+        result = {"status": output.get("status", "ok"), **{k: v for k, v in output.items() if k != "status"}}
+    elif isinstance(output, str) and output:
+        result = {"status": "ok", "endpoint": output}
+    else:
+        result = {"status": "ok", "detail": "Deployment hook executed."}
+    result.setdefault("model", model_name)
+    result.setdefault("version", version)
+    result.setdefault("endpoint", result.get("endpoint"))
+    print(json.dumps(result))
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -815,6 +870,12 @@ def main(argv: Optional[list] = None) -> None:
     )
     build_parser.add_argument(
         '--realtime', action='store_true', help='Enable realtime websocket scaffolding'
+    )
+    build_parser.add_argument(
+        '--target',
+        choices=['static', 'react-vite'],
+        default='static',
+        help='Frontend target to generate (default: static)'
     )
     build_parser.add_argument(
         '--backend-only', action='store_true', help='Only generate backend, skip static site'
@@ -895,13 +956,13 @@ def main(argv: Optional[list] = None) -> None:
     run_parser.add_argument(
         '--json',
         action='store_true',
-        help='Emit structured JSON when executing a chain stub'
+        help='Emit structured JSON when executing a chain'
     )
     run_parser.set_defaults(func=cmd_run)
 
     eval_parser = subparsers.add_parser(
-        'eval',
-        help='Evaluate experiment variants using deterministic stubs'
+            'eval',
+        help='Evaluate experiment variants'
     )
     eval_parser.add_argument('experiment', help='Name of the experiment to evaluate')
     eval_parser.add_argument(
@@ -919,7 +980,7 @@ def main(argv: Optional[list] = None) -> None:
 
     train_parser = subparsers.add_parser(
         'train',
-        help='Simulate model training for registered ML/DL assets'
+        help='Run model training hooks'
     )
     train_parser.add_argument('file', help='Path to the .n3 source file')
     train_parser.add_argument(
@@ -931,7 +992,7 @@ def main(argv: Optional[list] = None) -> None:
 
     deploy_parser = subparsers.add_parser(
         'deploy',
-        help='Simulate deployment of a model prediction endpoint'
+        help='Deploy a model prediction endpoint'
     )
     deploy_parser.add_argument('file', help='Path to the .n3 source file')
     deploy_parser.add_argument(

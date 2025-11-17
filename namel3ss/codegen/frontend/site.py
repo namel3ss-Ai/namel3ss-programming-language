@@ -132,6 +132,9 @@ def _generate_page_html(
     theme_mode = infer_theme_mode(app, page)
 
     body_lines.append(f"<h2>{html.escape(page.name)}</h2>")
+    body_lines.append(
+        '<div class="n3-page-errors n3-widget-errors n3-widget-errors--hidden" data-n3-page-errors></div>'
+    )
 
     preview_provider = PreviewDataResolver(app)
 
@@ -222,6 +225,9 @@ def _generate_page_html(
                     .then(function(data) {
                         var vars = (data && data.vars) ? data.vars : {};
                         window.N3_VARS = vars;
+                        if (window.N3Widgets && typeof window.N3Widgets.hydratePage === 'function') {
+                            window.N3Widgets.hydratePage("$slug", data || {});
+                        }
                         document.querySelectorAll('[data-n3-text-template]').forEach(function(el) {
                             var tpl = el.getAttribute('data-n3-text-template') || '';
                             el.textContent = tpl.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function(match, name) {

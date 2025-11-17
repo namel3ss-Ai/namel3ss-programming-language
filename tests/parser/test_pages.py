@@ -362,6 +362,36 @@ def test_parse_page_reactive_and_predict_statement() -> None:
     assert predict.parameters['horizon'] == 7
 
 
+def test_parse_page_reactive_header_short_form() -> None:
+    source = (
+        'app "Realtime".\n'
+        '\n'
+        'page "Live Dashboard" reactive:\n'
+        '  show text "Hi"\n'
+    )
+
+    app = Parser(source).parse()
+    page = app.pages[0]
+
+    assert page.route == '/live-dashboard'
+    assert page.reactive is True
+
+
+def test_parse_page_reactive_kind_with_explicit_route() -> None:
+    source = (
+        'app "Realtime".\n'
+        '\n'
+        'page "Ops" at "/ops" kind reactive:\n'
+        '  show text "Hi"\n'
+    )
+
+    app = Parser(source).parse()
+    page = app.pages[0]
+
+    assert page.route == '/ops'
+    assert page.reactive is True
+
+
 def test_parse_variable_assignment() -> None:
     source = (
         'app "Vars".\n'

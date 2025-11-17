@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from typing import Optional
+
 from namel3ss.ast import Page, PageStatement, RefreshPolicy
 
 from .components import ComponentParserMixin
@@ -12,12 +14,55 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
     """Parsing logic for page declarations and statements."""
 
     def _parse_page(self, line: str, line_no: int, base_indent: int) -> Page:
-        match = re.match(r'page\s+"([^"]+)"\s+at\s+"([^"]+)"\s*:?', line.strip())
+        stripped = line.strip()
+        if stripped.endswith(':'):
+            stripped = stripped[:-1].rstrip()
+        match = re.match(r'page\s+"([^"]+)"(.*)', stripped)
         if not match:
-            raise self._error('Expected: page "Name" at "/route":', line_no, line)
+            raise self._error('Expected: page "Name" [at "route"] [reactive]:', line_no, line)
         name = match.group(1)
-        route = match.group(2)
-        page = Page(name=name, route=route)
+        remainder = (match.group(2) or '').strip()
+        route: Optional[str] = None
+        reactive_flag = False
+
+        while remainder:
+            lowered = remainder.lower()
+            if lowered.startswith('at '):
+                route_match = re.match(r'at\s+"([^"]+)"(.*)', remainder, flags=re.IGNORECASE)
+                if not route_match:
+                    raise self._error('Expected: at "route"', line_no, line)
+                route = route_match.group(1)
+                remainder = (route_match.group(2) or '').strip()
+                continue
+            if lowered.startswith('kind '):
+                remainder = remainder[5:].strip()
+                lowered = remainder.lower()
+                if lowered.startswith('reactive'):
+                    remainder = remainder[len('reactive') :].strip()
+                    reactive_flag = True
+                    continue
+                if lowered.startswith('static'):
+                    remainder = remainder[len('static') :].strip()
+                    reactive_flag = False
+                    continue
+                raise self._error("Unknown page kind declaration", line_no, line)
+            if lowered.startswith('reactive'):
+                remainder = remainder[len('reactive') :].strip()
+                reactive_flag = True
+                continue
+            if lowered.startswith('static'):
+                remainder = remainder[len('static') :].strip()
+                reactive_flag = False
+                continue
+            raise self._error('Unexpected page modifier', line_no, line)
+
+        if remainder:
+            raise self._error('Unexpected trailing content in page declaration', line_no, line)
+
+        if route is None:
+            route = self._default_page_route(name)
+
+        page = Page(name=name, route=route, reactive=reactive_flag)
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -66,6 +111,12 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
             stmt = self._parse_page_statement(indent)
             page.statements.append(stmt)
         return page
+
+    def _default_page_route(self, name: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name.strip()).strip('-').lower()
+        if not slug:
+            slug = "page"
+        return f"/{slug}"
 
     def _parse_page_statement(self, parent_indent: int) -> PageStatement:
         line = self._advance()

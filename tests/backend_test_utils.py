@@ -17,6 +17,7 @@ def install_backend_stubs(monkeypatch) -> None:
     class FakeFastAPI:  # pragma: no cover - minimal FastAPI stand-in
         def __init__(self, *args, **kwargs) -> None:
             _ = (args, kwargs)
+            self._middleware = []
 
         def get(self, *args, **kwargs):
             def decorator(func):
@@ -38,6 +39,22 @@ def install_backend_stubs(monkeypatch) -> None:
 
         def include_router(self, *args, **kwargs):  # pragma: no cover - hook
             return None
+
+        def middleware(self, _event: str):  # pragma: no cover - decorator shim
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def add_middleware(self, *args, **kwargs):  # pragma: no cover - storage shim
+            self._middleware.append((args, kwargs))
+            return None
+
+        def exception_handler(self, _exc_type):  # pragma: no cover - decorator shim
+            def decorator(func):
+                return func
+
+            return decorator
 
     class FakeAPIRouter:  # pragma: no cover - minimal APIRouter stand-in
         def __init__(self, *args, **kwargs) -> None:
@@ -61,6 +78,14 @@ def install_backend_stubs(monkeypatch) -> None:
 
             return decorator
 
+    class FakeRequest:  # pragma: no cover - minimal Request stand-in
+        def __init__(self, headers: dict | None = None, cookies: dict | None = None, method: str = "GET") -> None:
+            self.headers = headers or {}
+            self.cookies = cookies or {}
+            self.state = SimpleNamespace()
+            self.method = method
+            self.client = SimpleNamespace(host="testclient")
+
     class FakeWebSocket:  # pragma: no cover - WebSocket stand-in
         async def accept(self) -> None:
             return None
@@ -76,6 +101,7 @@ def install_backend_stubs(monkeypatch) -> None:
         async def receive_json(self):
             raise NotImplementedError
 
+    fake_fastapi.Request = FakeRequest
     fake_fastapi.WebSocket = FakeWebSocket
     fake_fastapi.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
     fake_fastapi.FastAPI = FakeFastAPI
@@ -90,7 +116,18 @@ def install_backend_stubs(monkeypatch) -> None:
             self.content = content
             self.media_type = media_type
 
+    class _JSONResponse:  # pragma: no cover - minimal JSON response stand-in
+        def __init__(self, content=None, status_code: int = 200) -> None:
+            self.content = content or {}
+            self.status_code = status_code
+            self.headers = {}
+
+        def set_cookie(self, *args, **kwargs) -> None:
+            _ = (args, kwargs)
+            return None
+
     fake_fastapi_responses.StreamingResponse = _StreamingResponse
+    fake_fastapi_responses.JSONResponse = _JSONResponse
     monkeypatch.setitem(sys.modules, "fastapi.responses", fake_fastapi_responses)
     fake_fastapi.responses = fake_fastapi_responses
 

@@ -1,0 +1,2 @@
+[console_scripts]
+namel3ss = namel3ss.cli:main

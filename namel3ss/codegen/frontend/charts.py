@@ -147,9 +147,16 @@ def build_chart_config(
                 entry_copy.setdefault("tension", 0.35)
             normalised.append(entry_copy)
 
-    if not labels or not normalised:
-        labels = list(labels) if labels else []
-        normalised = []
+    if not labels:
+        labels = ["No data"]
+    if not normalised:
+        normalised = [
+            {
+                "label": heading_label,
+                "data": [0 for _ in range(len(labels) or 1)],
+                "borderWidth": 1,
+            }
+        ]
 
     palette = theme_palette(theme)
 

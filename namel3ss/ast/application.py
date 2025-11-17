@@ -8,11 +8,11 @@ from typing import Any, Dict, List, Optional
 from .base import Theme
 from .ai import Chain, Connector, Template
 from .experiments import Experiment
-from .experiments import Experiment
 from .datasets import Dataset, RefreshPolicy
 from .insights import Insight
 from .models import Model
 from .pages import PageStatement, VariableAssignment
+from .crud import CrudResource
 
 
 @dataclass
@@ -39,7 +39,7 @@ class App:
     templates: List[Template] = field(default_factory=list)
     chains: List[Chain] = field(default_factory=list)
     experiments: List[Experiment] = field(default_factory=list)
-    experiments: List[Experiment] = field(default_factory=list)
+    crud_resources: List[CrudResource] = field(default_factory=list)
 
 
 __all__ = [

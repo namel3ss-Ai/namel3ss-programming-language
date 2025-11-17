@@ -1,6 +1,7 @@
 """Public AST API for the Namel3ss language."""
 
 from .application import App, Page
+from .crud import CrudResource
 from .base import (
     AttributeRef,
     BinaryOp,
@@ -137,7 +138,6 @@ __all__ = [
     "VariableAssignment",
     "IfBlock",
     "ForLoop",
-    WhileLoop,
     "WhileLoop",
     "PredictStatement",
     "ElifBlock",
@@ -181,4 +181,5 @@ __all__ = [
     "Experiment",
     "ExperimentVariant",
     "ExperimentMetric",
+    "CrudResource",
 ]

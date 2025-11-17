@@ -1,3 +1,4 @@
+LICENSE
 MANIFEST.in
 README.md
 pyproject.toml
@@ -8,6 +9,7 @@ pyproject.toml
 ./namel3ss/ast/ai.py
 ./namel3ss/ast/application.py
 ./namel3ss/ast/base.py
+./namel3ss/ast/crud.py
 ./namel3ss/ast/datasets.py
 ./namel3ss/ast/experiments.py
 ./namel3ss/ast/insights.py
@@ -30,6 +32,7 @@ pyproject.toml
 ./namel3ss/codegen/backend/core/runtime/__init__.py
 ./namel3ss/codegen/backend/core/runtime/context.py
 ./namel3ss/codegen/backend/core/runtime/datasets.py
+./namel3ss/codegen/backend/core/runtime/expression_sandbox.py
 ./namel3ss/codegen/backend/core/runtime/header.py
 ./namel3ss/codegen/backend/core/runtime/insights.py
 ./namel3ss/codegen/backend/core/runtime/pages.py
@@ -41,6 +44,7 @@ pyproject.toml
 ./namel3ss/codegen/backend/core/runtime_sections/config.py
 ./namel3ss/codegen/backend/core/runtime_sections/connectors.py
 ./namel3ss/codegen/backend/core/runtime_sections/context.py
+./namel3ss/codegen/backend/core/runtime_sections/crud.py
 ./namel3ss/codegen/backend/core/runtime_sections/dataset.py
 ./namel3ss/codegen/backend/core/runtime_sections/insights.py
 ./namel3ss/codegen/backend/core/runtime_sections/llm.py
@@ -76,6 +80,7 @@ pyproject.toml
 ./namel3ss/parser/base.py
 ./namel3ss/parser/components.py
 ./namel3ss/parser/control_flow.py
+./namel3ss/parser/crud.py
 ./namel3ss/parser/datasets.py
 ./namel3ss/parser/experiments.py
 ./namel3ss/parser/expressions.py
@@ -91,12 +96,14 @@ namel3ss/cli.py
 namel3ss.egg-info/PKG-INFO
 namel3ss.egg-info/SOURCES.txt
 namel3ss.egg-info/dependency_links.txt
+namel3ss.egg-info/entry_points.txt
 namel3ss.egg-info/requires.txt
 namel3ss.egg-info/top_level.txt
 namel3ss/ast/__init__.py
 namel3ss/ast/ai.py
 namel3ss/ast/application.py
 namel3ss/ast/base.py
+namel3ss/ast/crud.py
 namel3ss/ast/datasets.py
 namel3ss/ast/experiments.py
 namel3ss/ast/insights.py
@@ -119,6 +126,7 @@ namel3ss/codegen/backend/core/utils.py
 namel3ss/codegen/backend/core/runtime/__init__.py
 namel3ss/codegen/backend/core/runtime/context.py
 namel3ss/codegen/backend/core/runtime/datasets.py
+namel3ss/codegen/backend/core/runtime/expression_sandbox.py
 namel3ss/codegen/backend/core/runtime/header.py
 namel3ss/codegen/backend/core/runtime/insights.py
 namel3ss/codegen/backend/core/runtime/pages.py
@@ -130,6 +138,7 @@ namel3ss/codegen/backend/core/runtime_sections/actions.py
 namel3ss/codegen/backend/core/runtime_sections/config.py
 namel3ss/codegen/backend/core/runtime_sections/connectors.py
 namel3ss/codegen/backend/core/runtime_sections/context.py
+namel3ss/codegen/backend/core/runtime_sections/crud.py
 namel3ss/codegen/backend/core/runtime_sections/dataset.py
 namel3ss/codegen/backend/core/runtime_sections/insights.py
 namel3ss/codegen/backend/core/runtime_sections/llm.py
@@ -144,6 +153,7 @@ namel3ss/codegen/frontend/assets.py
 namel3ss/codegen/frontend/charts.py
 namel3ss/codegen/frontend/placeholders.py
 namel3ss/codegen/frontend/preview.py
+namel3ss/codegen/frontend/react_vite.py
 namel3ss/codegen/frontend/site.py
 namel3ss/codegen/frontend/slugs.py
 namel3ss/codegen/frontend/theme.py
@@ -164,6 +174,7 @@ namel3ss/parser/ai.py
 namel3ss/parser/base.py
 namel3ss/parser/components.py
 namel3ss/parser/control_flow.py
+namel3ss/parser/crud.py
 namel3ss/parser/datasets.py
 namel3ss/parser/experiments.py
 namel3ss/parser/expressions.py
@@ -177,6 +188,7 @@ tests/test_cli.py
 tests/test_codegen.py
 tests/test_connector_drivers.py
 tests/test_dataset_sql_compiler.py
+tests/test_frontend_delegation.py
 tests/test_llm_connectors.py
 tests/test_ml_hooks.py
 tests/test_model_registry.py

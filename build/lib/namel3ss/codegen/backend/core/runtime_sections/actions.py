@@ -33,6 +33,23 @@ async def _execute_action_operation(
         inputs = _resolve_placeholders(inputs_raw, context)
         payload = run_chain(name, inputs)
         result = {"type": "chain_run", "result": payload}
+    elif otype == "navigate":
+        target_page = operation.get("page_name") or operation.get("page") or operation.get("target")
+        resolved = _resolve_page_reference(target_page)
+        if resolved is None:
+            result = {
+                "type": "navigate",
+                "status": "not_found",
+                "target": target_page,
+            }
+        else:
+            result = {
+                "type": "navigate",
+                "status": "ok",
+                "page": resolved.get("name"),
+                "page_slug": resolved.get("slug"),
+                "page_route": resolved.get("route"),
+            }
     elif otype == "update":
         table = operation.get("table")
         set_expression = operation.get("set_expression")
@@ -362,6 +379,219 @@ async def _handle_post_action_effects(
         if event_payload is not None:
             message["payload"] = event_payload
         await publish_event(str(event_topic), message)
+
+
+def _resolve_page_reference(target: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not target:
+        return None
+    lowered = str(target).strip().lower()
+    if not lowered:
+        return None
+    for page in PAGES:
+        name = str(page.get("name") or "").strip()
+        slug = str(page.get("slug") or "").strip()
+        route = str(page.get("route") or "").strip()
+        candidates = {
+            name.lower(),
+            slug.lower(),
+            route.lower(),
+        }
+        if lowered in candidates:
+            return {
+                "name": name or page.get("name"),
+                "slug": slug or page.get("slug"),
+                "route": route or page.get("route"),
+            }
+    return None
+
+
+def _get_component_spec(slug: str, component_index: int) -> Dict[str, Any]:
+    page_spec = PAGE_SPEC_BY_SLUG.get(slug)
+    if not page_spec:
+        raise KeyError(f"Unknown page '{slug}'")
+    components = page_spec.get("components") or []
+    if component_index < 0 or component_index >= len(components):
+        raise IndexError(f"Component index {component_index} out of range for '{slug}'")
+    component = components[component_index]
+    if not isinstance(component, dict):
+        raise ValueError("Invalid component payload")
+    return component
+
+
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set)):
+        return len(value) == 0
+    if isinstance(value, dict):
+        return len(value) == 0
+    return False
+
+
+def _validate_form_submission(
+    component: Dict[str, Any],
+    submitted: Dict[str, Any],
+    context: Dict[str, Any],
+) -> bool:
+    fields = component.get("fields") or []
+    has_errors = False
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if not name:
+            continue
+        required = field.get("required", True)
+        if not required:
+            continue
+        value = submitted.get(name)
+        if _is_missing_value(value):
+            has_errors = True
+            field_label = field.get("label") or name
+            _record_runtime_error(
+                context,
+                code="missing_required_field",
+                message="This field is required.",
+                scope=f"field:{name}",
+                source="form",
+                detail=f"Expected value for '{field_label}'.",
+            )
+    return has_errors
+
+
+def _partition_interaction_errors(
+    slug: str,
+    errors: Sequence[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not errors:
+        return [], []
+    widget_errors: List[Dict[str, Any]] = []
+    page_errors: List[Dict[str, Any]] = []
+    slug_value = slug or ""
+    slug_lower = slug_value.lower()
+    page_scope = f"page:{slug_value}"
+    page_scope_lower = page_scope.lower()
+    page_dot_scope_lower = f"page.{slug_value}".lower()
+    for entry in errors:
+        if not isinstance(entry, dict):
+            continue
+        scope_value = entry.get("scope")
+        normalized_scope = str(scope_value).strip().lower() if scope_value is not None else ""
+        if normalized_scope in {"", slug_lower, page_scope_lower, page_dot_scope_lower, "page"}:
+            entry["scope"] = page_scope
+            page_errors.append(entry)
+            continue
+        if normalized_scope.startswith("page:") or normalized_scope.startswith("page.") or normalized_scope.startswith("app:"):
+            page_errors.append(entry)
+            continue
+        widget_errors.append(entry)
+    return widget_errors, page_errors
+
+
+async def _execute_component_interaction(
+    slug: str,
+    component_index: int,
+    payload: Optional[Dict[str, Any]],
+    session: Optional[AsyncSession],
+    *,
+    kind: str,
+) -> Dict[str, Any]:
+    component = _get_component_spec(slug, component_index)
+    component_type = str(component.get("type") or "").lower()
+    if component_type != kind.lower():
+        raise ValueError(f"Component {component_index} on '{slug}' is not of type '{kind}'")
+
+    component_payload = component.get("payload") if isinstance(component.get("payload"), dict) else component
+
+    submitted: Dict[str, Any] = dict(payload or {})
+    context = build_context(slug)
+    if session is not None:
+        context["session"] = session
+    context.setdefault("vars", {})
+    for key, value in submitted.items():
+        if isinstance(key, str):
+            context["vars"].setdefault(key, value)
+    context.setdefault("payload", {}).update(submitted)
+    if kind == "form":
+        context.setdefault("form", {}).update(submitted)
+
+    scope = ScopeFrame()
+    scope.set("context", context)
+    scope.bind("payload", submitted)
+    if kind == "form":
+        scope.bind("form", submitted)
+
+    operations = component_payload.get("operations") or []
+    results: List[Dict[str, Any]] = []
+    validation_failed = False
+    if kind == "form":
+        validation_failed = _validate_form_submission(component_payload, submitted, context)
+    if not validation_failed:
+        for operation in operations:
+            outcome = await _execute_action_operation(operation, context, scope)
+            if outcome:
+                results.append(outcome)
+
+    response: Dict[str, Any] = {
+        "status": "ok",
+        "slug": slug,
+        "component_index": component_index,
+        "type": kind,
+        "results": results,
+    }
+    if kind == "form":
+        response["accepted"] = submitted
+    if results:
+        response["effects"] = results
+    collected_errors: List[Dict[str, Any]] = []
+    if slug:
+        collected_errors.extend(_collect_runtime_errors(context, scope=slug))
+    collected_errors.extend(_collect_runtime_errors(context))
+    widget_errors, page_errors = _partition_interaction_errors(slug, collected_errors)
+    if widget_errors:
+        response["errors"] = widget_errors
+    if page_errors:
+        response["page_errors"] = page_errors
+        response["pageErrors"] = page_errors
+    if widget_errors or page_errors:
+        combined = widget_errors + page_errors
+        if any((entry.get("severity") or "error").lower() == "error" for entry in combined if isinstance(entry, dict)):
+            response["status"] = "error"
+    return response
+
+
+async def submit_form(
+    slug: str,
+    component_index: int,
+    payload: Optional[Dict[str, Any]],
+    *,
+    session: Optional[AsyncSession] = None,
+) -> Dict[str, Any]:
+    return await _execute_component_interaction(
+        slug,
+        component_index,
+        payload,
+        session,
+        kind="form",
+    )
+
+
+async def trigger_action(
+    slug: str,
+    component_index: int,
+    payload: Optional[Dict[str, Any]],
+    *,
+    session: Optional[AsyncSession] = None,
+) -> Dict[str, Any]:
+    return await _execute_component_interaction(
+        slug,
+        component_index,
+        payload,
+        session,
+        kind="action",
+    )
 
     '''
 ).strip()

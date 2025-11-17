@@ -193,13 +193,54 @@ def _http_post_json(
     import json as _json
     import urllib.request
 
-    payload_bytes = _json.dumps(data).encode("utf-8")
     request_headers = {
         str(key): str(value)
         for key, value in headers.items()
     }
     request_headers.setdefault("Content-Type", "application/json")
 
+    try:
+        import httpx as _httpx  # type: ignore
+    except Exception:  # pragma: no cover - optional dependency guard
+        _httpx = None  # type: ignore
+
+    if _httpx is not None:
+        client_kwargs: Dict[str, Any] = {}
+        try:
+            client_kwargs["timeout"] = _httpx.Timeout(timeout)
+        except Exception:
+            client_kwargs["timeout"] = timeout
+        with _httpx.Client(**client_kwargs) as client:
+            response = client.request(
+                "POST",
+                url,
+                json=data,
+                headers=request_headers,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            status_code = int(getattr(response, "status_code", 0))
+            parsed: Optional[Any]
+            try:
+                parsed = response.json()
+            except Exception:
+                parsed = None
+            text = ""
+            raw_text_candidate = getattr(response, "text", "")
+            if isinstance(raw_text_candidate, str) and raw_text_candidate:
+                text = raw_text_candidate
+            elif parsed is not None:
+                try:
+                    text = _json.dumps(parsed)
+                except Exception:
+                    text = ""
+            else:
+                raw_bytes = getattr(response, "content", b"")
+                if isinstance(raw_bytes, (bytes, bytearray)):
+                    text = bytes(raw_bytes).decode("utf-8", "replace")
+            return status_code, text, parsed
+
+    payload_bytes = _json.dumps(data).encode("utf-8")
     request = urllib.request.Request(url, data=payload_bytes, headers=request_headers, method="POST")
     with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
         status_code = getattr(response, "status", None)

@@ -11,19 +11,25 @@ from unittest import mock
 import pytest
 
 from namel3ss.cli import (
+    CLIContext,
     _apply_env_overrides,
     _format_error_detail,
     _traceback_excerpt,
+    check_uvicorn_available,
     cmd_build,
     cmd_deploy,
     cmd_doctor,
+    cmd_lint,
     cmd_run,
+    cmd_test,
     cmd_train,
+    cmd_typecheck,
     main,
     prepare_backend,
     run_dev_server,
-    check_uvicorn_available,
 )
+from namel3ss.config import load_workspace_config
+from namel3ss.plugins import PluginManager
 from namel3ss.parser import N3SyntaxError
 
 
@@ -49,6 +55,14 @@ def invalid_n3_file(tmp_path):
     n3_file = tmp_path / "invalid.n3"
     n3_file.write_text('app "Test".\npage "Home" at "/":\n  invalid syntax here')
     return n3_file
+
+
+@pytest.fixture
+def cli_context(tmp_path):
+    manager = PluginManager([])
+    manager.load()
+    config = load_workspace_config(tmp_path)
+    return CLIContext(workspace_root=tmp_path, config=config, plugin_manager=manager)
 
 
 def test_format_error_detail_truncates_long_messages():
@@ -107,7 +121,7 @@ def test_check_uvicorn_available():
     assert isinstance(result, bool)
 
 
-def test_cmd_build_static_only(temp_n3_file, tmp_path, capsys):
+def test_cmd_build_static_only(temp_n3_file, tmp_path, capsys, cli_context):
     """Test build command generates static site."""
     output_dir = tmp_path / "build"
     
@@ -120,6 +134,7 @@ def test_cmd_build_static_only(temp_n3_file, tmp_path, capsys):
     args.build_backend = False
     args.backend_out = str(tmp_path / "backend")
     args.embed_insights = False
+    args.cli_context = cli_context
     
     cmd_build(args)
     
@@ -132,7 +147,7 @@ def test_cmd_build_static_only(temp_n3_file, tmp_path, capsys):
     assert "Static site generated" in captured.out
 
 
-def test_cmd_build_with_backend(temp_n3_file, tmp_path, capsys):
+def test_cmd_build_with_backend(temp_n3_file, tmp_path, capsys, cli_context):
     """Test build command with --build-backend flag."""
     output_dir = tmp_path / "build"
     backend_dir = tmp_path / "backend"
@@ -146,6 +161,7 @@ def test_cmd_build_with_backend(temp_n3_file, tmp_path, capsys):
     args.build_backend = True
     args.backend_out = str(backend_dir)
     args.embed_insights = False
+    args.cli_context = cli_context
     
     cmd_build(args)
     
@@ -162,7 +178,7 @@ def test_cmd_build_with_backend(temp_n3_file, tmp_path, capsys):
     assert "insights routed" in captured.out
 
 
-def test_cmd_build_backend_only(temp_n3_file, tmp_path, capsys):
+def test_cmd_build_backend_only(temp_n3_file, tmp_path, capsys, cli_context):
     """Test build command with --backend-only flag."""
     backend_dir = tmp_path / "backend"
     
@@ -175,6 +191,7 @@ def test_cmd_build_backend_only(temp_n3_file, tmp_path, capsys):
     args.build_backend = False
     args.backend_out = str(backend_dir)
     args.embed_insights = False
+    args.cli_context = cli_context
     
     cmd_build(args)
     
@@ -190,7 +207,7 @@ def test_cmd_build_backend_only(temp_n3_file, tmp_path, capsys):
     assert "insights routed" in captured.out
 
 
-def test_cmd_build_applies_env_overrides(temp_n3_file, tmp_path):
+def test_cmd_build_applies_env_overrides(temp_n3_file, tmp_path, cli_context):
     """Ensure env overrides passed via --env are applied."""
     backend_dir = tmp_path / "backend"
 
@@ -204,6 +221,7 @@ def test_cmd_build_applies_env_overrides(temp_n3_file, tmp_path):
     args.backend_out = str(backend_dir)
     args.embed_insights = False
     args.env = ["API_TOKEN=secret"]
+    args.cli_context = cli_context
 
     with mock.patch.dict(os.environ, {}, clear=True):
         cmd_build(args)
@@ -214,7 +232,7 @@ def test_cmd_build_applies_env_overrides(temp_n3_file, tmp_path):
     assert (backend_dir / "main.py").exists()
 
 
-def test_cmd_build_print_ast(temp_n3_file, capsys):
+def test_cmd_build_print_ast(temp_n3_file, capsys, cli_context):
     """Test build command with --print-ast flag."""
     args = mock.Mock()
     args.env = []
@@ -223,6 +241,7 @@ def test_cmd_build_print_ast(temp_n3_file, capsys):
     args.backend_only = False
     args.build_backend = False
     args.embed_insights = False
+    args.cli_context = cli_context
     
     cmd_build(args)
     
@@ -230,6 +249,46 @@ def test_cmd_build_print_ast(temp_n3_file, capsys):
     # Check AST was printed as JSON
     assert "Test App" in captured.out
     assert "name" in captured.out
+
+
+def test_cmd_build_uses_config_realtime(temp_n3_file, tmp_path):
+    config_path = tmp_path / "namel3ss.toml"
+    config_path.write_text(
+        """
+[defaults]
+enable_realtime = true
+target = "react-vite"
+backend_out = "generated/backend"
+frontend_out = "generated/frontend"
+"""
+    )
+    manager = PluginManager([])
+    manager.load()
+    config = load_workspace_config(tmp_path)
+    context = CLIContext(workspace_root=tmp_path, config=config, plugin_manager=manager)
+
+    args = mock.Mock()
+    args.env = []
+    args.file = str(temp_n3_file)
+    args.out = str(tmp_path / "ignored")
+    args.print_ast = False
+    args.backend_only = False
+    args.build_backend = True
+    args.backend_out = str(tmp_path / "custom_backend")
+    args.embed_insights = False
+    args.realtime = False
+    args.cli_context = context
+
+    with mock.patch("namel3ss.cli.generate_backend") as backend_mock, mock.patch("namel3ss.cli.generate_site") as site_mock:
+        cmd_build(args)
+
+    backend_mock.assert_called_once()
+    site_mock.assert_called_once()
+    backend_kwargs = backend_mock.call_args.kwargs
+    site_kwargs = site_mock.call_args.kwargs
+    assert backend_kwargs["enable_realtime"] is True
+    assert site_kwargs["enable_realtime"] is True
+    assert site_kwargs["target"] == "react-vite"
 
 
 def test_cmd_doctor_reports_optional_status(monkeypatch, capsys):
@@ -261,7 +320,7 @@ def test_cmd_doctor_reports_optional_status(monkeypatch, capsys):
     assert "✗ Optional SQL connectors: missing" in output
 
 
-def test_cmd_build_file_not_found(tmp_path, capsys):
+def test_cmd_build_file_not_found(tmp_path, capsys, cli_context):
     """Test build command with nonexistent file."""
     args = mock.Mock()
     args.env = []
@@ -271,6 +330,7 @@ def test_cmd_build_file_not_found(tmp_path, capsys):
     args.backend_only = False
     args.build_backend = False
     args.embed_insights = False
+    args.cli_context = cli_context
     args.embed_insights = False
     
     with pytest.raises(SystemExit) as exc_info:
@@ -281,7 +341,7 @@ def test_cmd_build_file_not_found(tmp_path, capsys):
     assert "file not found" in captured.err
 
 
-def test_cmd_build_syntax_error(invalid_n3_file, tmp_path, capsys):
+def test_cmd_build_syntax_error(invalid_n3_file, tmp_path, capsys, cli_context):
     """Test build command with syntax error in N3 file."""
     args = mock.Mock()
     args.env = []
@@ -290,6 +350,7 @@ def test_cmd_build_syntax_error(invalid_n3_file, tmp_path, capsys):
     args.print_ast = False
     args.backend_only = False
     args.build_backend = False
+    args.cli_context = cli_context
     
     with pytest.raises(SystemExit) as exc_info:
         cmd_build(args)
@@ -333,6 +394,7 @@ def test_run_dev_server_success(mock_check, temp_n3_file, tmp_path, capsys):
     captured = capsys.readouterr()
     assert "Parsed: Test App" in captured.out
     assert "Backend generated" in captured.out
+    assert "Frontend generated" in captured.out
     assert "dev server running" in captured.out
     assert "datasets available" in captured.out
     assert "connectors registered" in captured.out
@@ -367,7 +429,7 @@ def test_run_dev_server_syntax_error(mock_check, invalid_n3_file, capsys):
 
 
 @mock.patch('namel3ss.cli.check_uvicorn_available', return_value=True)
-def test_cmd_run(mock_check, temp_n3_file, tmp_path):
+def test_cmd_run(mock_check, temp_n3_file, tmp_path, cli_context):
     """Test cmd_run function."""
     mock_uvicorn = mock.Mock()
     mock_uvicorn.run = mock.Mock()
@@ -380,6 +442,15 @@ def test_cmd_run(mock_check, temp_n3_file, tmp_path):
     args.port = 3000
     args.no_reload = True
     args.embed_insights = False
+    args.dev = False
+    args.apps = None
+    args.workspace = None
+    args.frontend_out = None
+    args.frontend_port = None
+    args.target = None
+    args.realtime = False
+    args.json = False
+    args.cli_context = cli_context
     
     with mock.patch.dict('sys.modules', {'uvicorn': mock_uvicorn}):
         cmd_run(args)
@@ -390,6 +461,69 @@ def test_cmd_run(mock_check, temp_n3_file, tmp_path):
     assert call_args[1]['host'] == "0.0.0.0"
     assert call_args[1]['port'] == 3000
     assert call_args[1]['reload'] is False
+
+
+def test_cmd_run_dev_uses_configured_apps(tmp_path):
+    (tmp_path / "app_one.n3").write_text(SAMPLE_N3)
+    (tmp_path / "app_two.n3").write_text(SAMPLE_N3)
+    (tmp_path / "namel3ss.toml").write_text(
+        """
+[defaults]
+enable_realtime = true
+
+[apps.app_one]
+file = "app_one.n3"
+port = 7001
+
+[apps.app_two]
+file = "app_two.n3"
+port = 7002
+"""
+    )
+
+    manager = PluginManager([])
+    manager.load()
+    config = load_workspace_config(tmp_path)
+    context = CLIContext(workspace_root=tmp_path, config=config, plugin_manager=manager)
+    context.plugin_manager.emit_run = mock.Mock()
+
+    args = mock.Mock()
+    args.env = []
+    args.file = None
+    args.target = None
+    args.backend_out = None
+    args.frontend_out = None
+    args.frontend_port = None
+    args.port = None
+    args.host = "127.0.0.1"
+    args.no_reload = False
+    args.embed_insights = False
+    args.dev = True
+    args.dev_target = None
+    args.workspace = str(tmp_path)
+    args.apps = None
+    args.realtime = False
+    args.json = False
+    args.cli_context = context
+
+    def fake_session(**kwargs):
+        session = mock.Mock()
+        session.is_running.return_value = False
+        session.start = mock.Mock()
+        session.stop = mock.Mock()
+        session.status = mock.Mock()
+        return session
+
+    with mock.patch("namel3ss.cli.DevAppSession", side_effect=fake_session) as session_cls, mock.patch(
+        "namel3ss.cli.summarize_sessions"
+    ) as summarize:
+        cmd_run(args)
+
+    assert session_cls.call_count == 2
+    for call in session_cls.call_args_list:
+        assert call.kwargs["enable_realtime"] is True
+    summarize.assert_called_once()
+    context.plugin_manager.emit_run.assert_called_once()
 
 
 def test_apply_env_overrides_loads_file(tmp_path):
@@ -448,6 +582,46 @@ def test_cmd_deploy_without_deployer_returns_error(temp_n3_file, capsys, monkeyp
 
     payload = json.loads(capsys.readouterr().out.strip())
     assert payload["error"] == "deployer_not_configured"
+
+
+def test_cmd_test_runs_configured_command(tmp_path):
+    (tmp_path / "namel3ss.toml").write_text(
+        """
+[tools]
+test = "pytest -q"
+lint = "ruff check"
+typecheck = "pyright"
+"""
+    )
+    manager = PluginManager([])
+    manager.load()
+    context = CLIContext(tmp_path, load_workspace_config(tmp_path), manager)
+    context.plugin_manager.emit_workspace = mock.Mock()
+
+    args = mock.Mock()
+    args.command = None
+    args.cli_context = context
+
+    completed = mock.Mock(returncode=0)
+    with mock.patch("namel3ss.cli.subprocess.run", return_value=completed) as run_mock:
+        cmd_test(args)
+
+    run_mock.assert_called_once_with("pytest -q", shell=True)
+    context.plugin_manager.emit_workspace.assert_called_once()
+
+
+def test_cmd_test_without_config_prints_message(cli_context, capsys):
+    cli_context.plugin_manager.emit_workspace = mock.Mock()
+    args = mock.Mock()
+    args.command = None
+    args.cli_context = cli_context
+
+    with mock.patch("namel3ss.cli.subprocess.run") as run_mock:
+        cmd_test(args)
+
+    run_mock.assert_not_called()
+    output = capsys.readouterr().out
+    assert "No test command configured" in output
 
 
 def test_main_no_command(capsys):

@@ -19,6 +19,7 @@ from .ast.base import (  # noqa: E402
 )
 from .ast.ai import Connector, Template, Chain, ChainStep  # noqa: E402
 from .ast.experiments import Experiment, ExperimentMetric, ExperimentVariant  # noqa: E402
+from .ast.crud import CrudResource  # noqa: E402
 from .ast.datasets import (  # noqa: E402
     AggregateOp,
     CachePolicy,
@@ -146,4 +147,5 @@ __all__ = [
     "Experiment",
     "ExperimentVariant",
     "ExperimentMetric",
+    "CrudResource",
 ]

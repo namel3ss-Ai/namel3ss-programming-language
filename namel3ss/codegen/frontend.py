@@ -55,6 +55,10 @@ from ..ast import (
 )
 
 from .frontend import placeholders as placeholder_utils
+from namel3ss.codegen.frontend.assets import (
+    generate_styles as _assets_generate_styles,
+    generate_widget_library as _assets_generate_widget_library,
+)
 
 _TEXT_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
@@ -1151,8 +1155,8 @@ def _generate_widget_library() -> str:
                     return 'index.html';
                 }
                 var cleaned = String(route).trim();
-                cleaned = cleaned.replace(/^\/+|\/+$/g, '');
-                cleaned = cleaned.replace(/\//g, '_');
+                var segments = cleaned.split('/').filter(Boolean);
+                cleaned = segments.join('_');
                 if (!cleaned) {
                     cleaned = 'index';
                 }
@@ -2303,3 +2307,14 @@ def _generate_page_html(
     html_parts.append("</body>")
     html_parts.append("</html>")
     return '\n'.join(html_parts)
+
+
+# Override legacy helpers with shared asset implementations for consistency with shared runtime assets.
+def _generate_styles(app: App) -> str:
+    """Generate CSS from the app's theme.  Provides default styling."""
+    return _assets_generate_styles(app)
+
+
+def _generate_widget_library() -> str:
+    """Return the shared widget runtime responsible for rendering charts and tables."""
+    return _assets_generate_widget_library()

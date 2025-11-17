@@ -51,10 +51,12 @@ def render_chart(stmt: ShowChart, ctx: RenderContext, component_index: Optional[
     ctx.body_lines.append(
         f"  <div class=\"n3-chart-container\"><canvas id=\"{chart_id}\" class=\"n3-chart\"></canvas></div>"
     )
+    ctx.body_lines.append("  <div class=\"n3-widget-errors n3-widget-errors--hidden\" data-n3-error-slot></div>")
     ctx.body_lines.append("</section>")
 
     dataset_payload = ctx.preview.chart_preview(stmt)
     chart_config = build_chart_config(stmt, dataset_payload, theme=ctx.theme_mode)
+    preview_errors = dataset_payload.get("errors", []) if isinstance(dataset_payload, dict) else []
     if stmt.insight:
         chart_config['insight'] = stmt.insight
     chart_def: Dict[str, Any] = {
@@ -67,6 +69,7 @@ def render_chart(stmt: ShowChart, ctx: RenderContext, component_index: Optional[
         "legend": stmt.legend or {},
         "title": stmt.title,
         "insight": stmt.insight,
+        "errors": preview_errors,
     }
     if component_index is not None:
         chart_def["componentIndex"] = component_index

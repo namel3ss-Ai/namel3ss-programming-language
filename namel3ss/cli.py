@@ -18,15 +18,30 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from . import __version__
 from .ast import App, Chain, Experiment
 from .parser import Parser, N3SyntaxError
 from .codegen import generate_backend, generate_site
 from .ml import get_default_model_registry
 from .utils import iter_dependency_reports
+from .config import (
+    AppConfig,
+    WorkspaceConfig,
+    apply_cli_overrides,
+    env_strings_from_config,
+    default_app_name,
+    load_workspace_config,
+    merge_env,
+    resolve_apps_from_args,
+)
+from .devserver import DevAppSession, summarize_sessions
+from .plugins import PluginManager
 
 ENV_ALIAS_MAP = {
     "production": ".env.prod",
@@ -43,6 +58,99 @@ DEFAULT_MODEL_REGISTRY = get_default_model_registry()
 _RUN_ENV_PREPOSITIONS = {"using", "in", "on", "with"}
 
 _CLI_TRACE_LIMIT = 4000
+
+
+@dataclass
+class CLIContext:
+    """Shared context resolved from workspace configuration."""
+
+    workspace_root: Path
+    config: WorkspaceConfig
+    plugin_manager: PluginManager
+
+
+def _cli_context(args: argparse.Namespace) -> CLIContext:
+    ctx = getattr(args, "cli_context", None)
+    if ctx is None:
+        raise RuntimeError("CLIContext was not initialised before command execution.")
+    return ctx
+
+
+def _match_app_config(config: WorkspaceConfig, source_path: Path) -> Optional[AppConfig]:
+    resolved = source_path.resolve()
+    for entry in config.apps.values():
+        if entry.file.resolve() == resolved:
+            return entry
+    return None
+
+
+def _runtime_env(config: WorkspaceConfig, app_cfg: AppConfig, cli_env: Sequence[str]) -> List[str]:
+    base = env_strings_from_config(config.defaults.env)
+    base = merge_env(base, env_strings_from_config(app_cfg.env))
+    return merge_env(base, cli_env)
+
+
+def _create_ephemeral_app_config(
+    workspace: WorkspaceConfig,
+    source_path: Path,
+    args: argparse.Namespace,
+) -> AppConfig:
+    defaults = workspace.defaults
+    name = default_app_name(source_path)
+    backend_override = _as_path_string(getattr(args, "backend_out", None))
+    backend = Path(backend_override or defaults.backend_out)
+    if not backend.is_absolute():
+        backend = (source_path.parent / backend).resolve()
+    frontend_override = _as_path_string(getattr(args, "frontend_out", None))
+    frontend = Path(frontend_override or defaults.frontend_out)
+    if not frontend.is_absolute():
+        frontend = (source_path.parent / frontend).resolve()
+    raw_target = _as_string(getattr(args, "target", None))
+    target = raw_target if raw_target in {"static", "react-vite"} else defaults.target
+    port_value = getattr(args, "port", None)
+    port = int(port_value) if isinstance(port_value, int) else defaults.port
+    frontend_port_value = getattr(args, "frontend_port", None) if hasattr(args, "frontend_port") else None
+    if isinstance(frontend_port_value, int):
+        frontend_port = frontend_port_value
+    else:
+        frontend_port = defaults.frontend_port
+    realtime_flag = _bool_from_flag(getattr(args, "realtime", None))
+    enable_realtime = True if realtime_flag else bool(defaults.enable_realtime)
+    env = env_strings_from_config(defaults.env)
+    return AppConfig(
+        name=name,
+        file=source_path,
+        backend_out=backend,
+        frontend_out=frontend,
+        port=port,
+        frontend_port=frontend_port,
+        target=target,
+        enable_realtime=enable_realtime,
+        env=env,
+    )
+
+
+def _effective_realtime(app_cfg: AppConfig, workspace: WorkspaceConfig) -> bool:
+    if app_cfg.enable_realtime is None:
+        return bool(workspace.defaults.enable_realtime)
+    return bool(app_cfg.enable_realtime)
+
+
+@dataclass
+class BuildInvocation:
+    app: App
+    source: Path
+    backend_dir: Path
+    frontend_dir: Path
+    target: str
+    enable_realtime: bool
+
+
+@dataclass
+class RunInvocation:
+    apps: Sequence[AppConfig]
+    dev_mode: bool
+    enable_realtime: bool
 
 
 def _format_error_detail(exc: BaseException) -> str:
@@ -81,6 +189,7 @@ def _normalize_run_command_args(argv: List[str]) -> List[str]:
     tokens = argv[1:]
     idx = 0
     file_seen = False
+    default_file_requested = False
 
     while idx < len(tokens):
         token = tokens[idx]
@@ -91,12 +200,16 @@ def _normalize_run_command_args(argv: List[str]) -> List[str]:
             resolved = _resolve_env_reference(candidate)
             if resolved is not None:
                 env_specs.append(resolved)
+                if not file_seen:
+                    default_file_requested = True
                 idx += 2
                 continue
 
         resolved_single = _resolve_env_reference(token)
         if resolved_single is not None:
             env_specs.append(resolved_single)
+            if not file_seen:
+                default_file_requested = True
             idx += 1
             continue
 
@@ -108,6 +221,11 @@ def _normalize_run_command_args(argv: List[str]) -> List[str]:
 
         new_args.append(token)
         idx += 1
+
+    if not file_seen and default_file_requested:
+        default_file = _find_first_n3_file()
+        if default_file is not None:
+            new_args.append(str(default_file))
 
     for env_entry in env_specs:
         new_args.extend(['--env', env_entry])
@@ -131,6 +249,24 @@ def _apply_env_overrides(overrides: Optional[List[str]]) -> None:
             continue
 
         _load_env_file(entry)
+
+
+def _as_path_string(value: Any) -> Optional[str]:
+    if isinstance(value, (str, os.PathLike)):
+        return os.fspath(value)
+    return None
+
+
+def _as_string(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _bool_from_flag(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    return None
 
 
 def _load_env_file(path_str: str) -> None:
@@ -424,6 +560,9 @@ def run_dev_server(
     *,
     embed_insights: bool = False,
     enable_realtime: bool = False,
+    frontend_out: Optional[str] = None,
+    frontend_target: str = "static",
+    env: Optional[Sequence[str]] = None,
 ) -> None:
     """Run a development server for a Namel3ss app.
     
@@ -459,21 +598,35 @@ def run_dev_server(
     # Import uvicorn only after checking it's available
     import uvicorn  # type: ignore
     
+    # Apply environment overrides before generation
+    if env:
+        _apply_env_overrides(list(env))
+
     # Use temp directory if none specified
     if backend_dir is None:
         backend_dir = os.path.join(tempfile.gettempdir(), '.namel3ss_dev_backend')
+    backend_dir_path = Path(backend_dir).resolve()
+    frontend_dir_path = Path(frontend_out or (backend_dir_path.parent / 'build')).resolve()
     
     try:
         # Prepare backend
         app = prepare_backend(
             source_path,
-            backend_dir,
+            str(backend_dir_path),
             embed_insights=embed_insights,
             enable_realtime=enable_realtime,
         )
+
+        generate_site(
+            app,
+            str(frontend_dir_path),
+            enable_realtime=enable_realtime,
+            target=frontend_target,
+        )
         
         print(f"✓ Parsed: {app.name}")
-        print(f"✓ Backend generated in: {backend_dir}")
+        print(f"✓ Backend generated in: {backend_dir_path}")
+        print(f"✓ Frontend generated in: {frontend_dir_path}")
         for line in _backend_summary_lines(app):
             print(line)
         if enable_realtime:
@@ -483,8 +636,8 @@ def run_dev_server(
         
         # Change to backend directory so imports work
         original_dir = os.getcwd()
-        os.chdir(backend_dir)
-        
+        os.chdir(backend_dir_path)
+
         try:
             # Start uvicorn dev server
             uvicorn.run(
@@ -506,53 +659,90 @@ def run_dev_server(
         sys.exit(1)
 
 
+def _invoke_tool(command: Optional[str], label: str) -> None:
+    if not command:
+        print(f"No {label} command configured. Update [tools.{label}] in namel3ss.toml to enable it.")
+        return
+    print(f"→ Running {label}: {command}")
+    result = subprocess.run(command, shell=True)
+    if result.returncode != 0:
+        raise SystemExit(result.returncode)
+
+
 def cmd_build(args: argparse.Namespace) -> None:
     """Handle the 'build' subcommand."""
-    source_path = Path(args.file)
-    
+
+    ctx = _cli_context(args)
+    source_path = Path(args.file).resolve()
+
     if not source_path.exists():
         print(f"Error: file not found: {source_path}", file=sys.stderr)
         sys.exit(1)
-    
-    source = source_path.read_text(encoding='utf-8')
-    
+
+    workspace = ctx.config
+    workspace.ensure_apps([])
+    app_entry = _match_app_config(workspace, source_path)
+
+    defaults = workspace.defaults
+    backend_override = _as_path_string(getattr(args, "backend_out", None))
+    backend_source = backend_override or (app_entry.backend_out if app_entry else defaults.backend_out)
+    backend_dir = Path(backend_source)
+    if not backend_dir.is_absolute():
+        backend_dir = (source_path.parent / backend_dir).resolve()
+
+    frontend_override = _as_path_string(getattr(args, "out", None))
+    frontend_source = frontend_override or (app_entry.frontend_out if app_entry else defaults.frontend_out)
+    frontend_dir = Path(frontend_source)
+    if not frontend_dir.is_absolute():
+        frontend_dir = (source_path.parent / frontend_dir).resolve()
+
+    explicit_target = _as_string(getattr(args, "target", None))
+    target_default = app_entry.target if app_entry else defaults.target
+    target = explicit_target or target_default
+
+    explicit_rt = _bool_from_flag(getattr(args, "realtime", None))
+    if explicit_rt:
+        realtime_flag = True
+    else:
+        rt_default = app_entry.enable_realtime if app_entry and app_entry.enable_realtime is not None else defaults.enable_realtime
+        realtime_flag = bool(rt_default)
+
+    env_entries: List[str] = env_strings_from_config(workspace.defaults.env)
+    if app_entry:
+        env_entries = merge_env(env_entries, env_strings_from_config(app_entry.env))
+    env_entries = merge_env(env_entries, getattr(args, "env", []))
+    _apply_env_overrides(env_entries)
+
+    source = source_path.read_text(encoding="utf-8")
+
     try:
         app: App = Parser(source).parse()
     except N3SyntaxError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    
+
     if args.print_ast:
-        # Pretty print AST as JSON
         def default(o):
-            if hasattr(o, '__dict__'):
+            if hasattr(o, "__dict__"):
                 return o.__dict__
             return str(o)
+
         print(json.dumps(app, default=default, indent=2))
         return
-    
-    # Generate static site
-    realtime_flag = getattr(args, 'realtime', False)
+
+    embed_flag = getattr(args, "embed_insights", False)
 
     if not args.backend_only:
-        out_dir = args.out
-        frontend_target = getattr(args, "target", None)
-        if not isinstance(frontend_target, str) or not frontend_target:
-            frontend_target = "static"
-        generate_site(app, out_dir, enable_realtime=realtime_flag, target=frontend_target)
-        if frontend_target == "static":
-            print(f"✓ Static site generated in {out_dir}")
+        generate_site(app, str(frontend_dir), enable_realtime=realtime_flag, target=target)
+        if target == "static":
+            print(f"✓ Static site generated in {frontend_dir}")
         else:
-            print(f"✓ Frontend [{frontend_target}] generated in {out_dir}")
-    
-    # Generate backend if requested
+            print(f"✓ Frontend [{target}] generated in {frontend_dir}")
+
     if args.build_backend or args.backend_only:
-        backend_dir = args.backend_out
-        embed_flag = getattr(args, 'embed_insights', False)
-        _apply_env_overrides(getattr(args, 'env', []))
         generate_backend(
             app,
-            backend_dir,
+            str(backend_dir),
             embed_insights=embed_flag,
             enable_realtime=realtime_flag,
         )
@@ -560,16 +750,29 @@ def cmd_build(args: argparse.Namespace) -> None:
         for line in _backend_summary_lines(app):
             print(line)
 
+    ctx.plugin_manager.emit_build(
+        BuildInvocation(
+            app=app,
+            source=source_path,
+            backend_dir=backend_dir,
+            frontend_dir=frontend_dir,
+            target=target,
+            enable_realtime=realtime_flag,
+        ),
+        args=args,
+    )
+
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Handle the 'run' subcommand."""
+    ctx = _cli_context(args)
     namespace = vars(args)
-    target = namespace.get('target')
-    _apply_env_overrides(namespace.get('env', []))
-    force_dev = namespace.get('dev', False)
+    target = namespace.get("target")
+    force_dev = namespace.get("dev", False)
+
     chain_mode = False
     if not force_dev and target:
-        if target.endswith('.n3'):
+        if target.endswith(".n3"):
             chain_mode = False
         else:
             potential_path = Path(target)
@@ -577,9 +780,12 @@ def cmd_run(args: argparse.Namespace) -> None:
     elif not target:
         chain_mode = False
 
+    workspace = ctx.config
+    workspace_root = ctx.workspace_root
+
     if chain_mode:
-        chain_name = target or ''
-        source_arg = namespace.get('file')
+        chain_name = target or ""
+        source_arg = namespace.get("file")
         if source_arg is None:
             default_file = _find_first_n3_file()
             if default_file is None:
@@ -587,6 +793,10 @@ def cmd_run(args: argparse.Namespace) -> None:
                 sys.exit(1)
             source_arg = str(default_file)
         source_path = Path(source_arg)
+        app_cfg = _match_app_config(workspace, source_path)
+        if app_cfg is None:
+            app_cfg = _create_ephemeral_app_config(workspace, source_path, args)
+        _apply_env_overrides(_runtime_env(workspace, app_cfg, namespace.get("env", [])))
         app = _load_cli_app(source_path)
         chain = _find_chain(app, chain_name)
         if chain is None:
@@ -617,38 +827,149 @@ def cmd_run(args: argparse.Namespace) -> None:
             }
         result.setdefault("model", chain_name)
         result.setdefault("inputs", payload or {})
-        if namespace.get('json', False):
+        if namespace.get("json", False):
             print(json.dumps(result, indent=2))
         else:
             _print_prediction_response_text(result)
         return
 
-    source_path_arg = None
-    if target and (target.endswith('.n3') or Path(target).exists()):
+    selected_names = getattr(args, "apps", None)
+    source_path_arg: Optional[str] = None
+    if target and (target.endswith(".n3") or Path(target).exists()):
         source_path_arg = target
-    if source_path_arg is None:
-        fallback = namespace.get('file')
-        if fallback:
-            source_path_arg = fallback
+    if source_path_arg is None and namespace.get("file"):
+        source_path_arg = namespace["file"]
+
+    apps: List[AppConfig]
+    if selected_names:
+        apps = resolve_apps_from_args(workspace, selected_names, workspace_root)
+    elif source_path_arg:
+        source_path = Path(source_path_arg)
+        matched = _match_app_config(workspace, source_path)
+        if matched is None:
+            apps = [_create_ephemeral_app_config(workspace, source_path, args)]
         else:
+            apps = [matched]
+    elif namespace.get("workspace") or workspace.apps:
+        apps = resolve_apps_from_args(workspace, None, workspace_root)
+    else:
+        if source_path_arg is None:
             default_file = _find_first_n3_file()
             if default_file is None:
                 print("Error: no .n3 file found in the current directory.", file=sys.stderr)
                 sys.exit(1)
             source_path_arg = str(default_file)
+        source_path = Path(source_path_arg)
+        matched = _match_app_config(workspace, source_path)
+        if matched is None:
+            apps = [_create_ephemeral_app_config(workspace, source_path, args)]
+        else:
+            apps = [matched]
 
-    source_path = Path(source_path_arg)
-    embed_flag = namespace.get('embed_insights', False)
-    realtime_flag = namespace.get('realtime', False)
-    run_dev_server(
-        source_path,
-        backend_dir=namespace.get('backend_out'),
-        host=namespace.get('host', '127.0.0.1'),
-        port=namespace.get('port', 8000),
-        reload=not namespace.get('no_reload', False),
-        embed_insights=embed_flag,
-        enable_realtime=realtime_flag,
+    if not apps:
+        print("Error: no applications resolved to run.", file=sys.stderr)
+        sys.exit(1)
+
+    realtime_toggle = _bool_from_flag(getattr(args, "realtime", None))
+    enable_override = True if realtime_toggle else None
+    apps = apply_cli_overrides(
+        apps,
+        backend_out=namespace.get("backend_out"),
+        frontend_out=getattr(args, "frontend_out", None),
+        port=namespace.get("port"),
+        frontend_port=getattr(args, "frontend_port", None),
+        target=None,
+        enable_realtime=enable_override,
     )
+
+    env_union: List[str] = []
+    effective_envs: Dict[str, List[str]] = {}
+    for app_cfg in apps:
+        env_values = _runtime_env(workspace, app_cfg, namespace.get("env", []))
+        effective_envs[app_cfg.name] = env_values
+        env_union = merge_env(env_union, env_values)
+
+    if env_union:
+        _apply_env_overrides(env_union)
+
+    dev_mode = namespace.get("dev", False) or len(apps) > 1
+    realtime_enabled = any(_effective_realtime(app, workspace) for app in apps)
+
+    if dev_mode:
+        sessions: List[DevAppSession] = []
+        try:
+            for app_cfg in apps:
+                enable_rt = _effective_realtime(app_cfg, workspace)
+                session = DevAppSession(
+                    name=app_cfg.name,
+                    source=app_cfg.file,
+                    backend_out=app_cfg.backend_out,
+                    frontend_out=app_cfg.frontend_out,
+                    host=namespace.get("host", workspace.defaults.host),
+                    port=app_cfg.port,
+                    frontend_target=app_cfg.target,
+                    enable_realtime=enable_rt,
+                    env=effective_envs.get(app_cfg.name, []),
+                )
+                session.start()
+                sessions.append(session)
+            summarize_sessions(sessions)
+            ctx.plugin_manager.emit_run(
+                RunInvocation(apps=apps, dev_mode=True, enable_realtime=realtime_enabled),
+                args=args,
+            )
+            try:
+                while any(session.is_running() for session in sessions):
+                    time.sleep(0.5)
+            except KeyboardInterrupt:
+                pass
+        finally:
+            for session in sessions:
+                session.stop()
+        return
+
+    app_cfg = apps[0]
+    enable_rt = _effective_realtime(app_cfg, workspace)
+    run_dev_server(
+        app_cfg.file,
+        backend_dir=str(app_cfg.backend_out),
+        host=namespace.get("host", workspace.defaults.host),
+        port=app_cfg.port,
+        reload=not namespace.get("no_reload", False),
+        embed_insights=namespace.get("embed_insights", False),
+        enable_realtime=enable_rt,
+        frontend_out=str(app_cfg.frontend_out),
+        frontend_target=app_cfg.target,
+        env=effective_envs.get(app_cfg.name, []),
+    )
+    ctx.plugin_manager.emit_run(
+        RunInvocation(apps=[app_cfg], dev_mode=False, enable_realtime=realtime_enabled),
+        args=args,
+    )
+
+
+def cmd_test(args: argparse.Namespace) -> None:
+    ctx = _cli_context(args)
+    override = getattr(args, "command", None)
+    command = override or ctx.config.tools.test
+    ctx.plugin_manager.emit_workspace(task="test", command=command, args=args)
+    _invoke_tool(command, "test")
+
+
+def cmd_lint(args: argparse.Namespace) -> None:
+    ctx = _cli_context(args)
+    override = getattr(args, "command", None)
+    command = override or ctx.config.tools.lint
+    ctx.plugin_manager.emit_workspace(task="lint", command=command, args=args)
+    _invoke_tool(command, "lint")
+
+
+def cmd_typecheck(args: argparse.Namespace) -> None:
+    ctx = _cli_context(args)
+    override = getattr(args, "command", None)
+    command = override or ctx.config.tools.typecheck
+    ctx.plugin_manager.emit_workspace(task="typecheck", command=command, args=args)
+    _invoke_tool(command, "typecheck")
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
@@ -743,6 +1064,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         }))
         return
 
+    print(f"Training hook completed for '{model_name}'")
     print(json.dumps({
         "status": "ok",
         "model": model_name,
@@ -801,6 +1123,9 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     result.setdefault("model", model_name)
     result.setdefault("version", version)
     result.setdefault("endpoint", result.get("endpoint"))
+    endpoint = result.get("endpoint")
+    if endpoint:
+        print(f"Model '{model_name}' deployed at {endpoint}")
     print(json.dumps(result))
 
 
@@ -829,29 +1154,55 @@ def cmd_doctor(args: argparse.Namespace) -> None:
 
 def main(argv: Optional[list] = None) -> None:
     """Main CLI entrypoint with subcommand support."""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if (
+        len(argv) > 0
+        and not argv[0].startswith('-')
+        and argv[0] not in ['build', 'run', 'help']
+        and (argv[0].endswith('.n3') or Path(argv[0]).exists())
+    ):
+        print("Note: Using legacy invocation. Consider using 'namel3ss build' instead.", file=sys.stderr)
+        argv = ['build'] + argv
+
+    if argv and argv[0] == 'run':
+        argv = _normalize_run_command_args(argv)
+
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument('--config')
+    pre_parser.add_argument('--workspace')
+    pre_args, _ = pre_parser.parse_known_args(argv)
+    workspace_root = Path(pre_args.workspace).resolve() if pre_args.workspace else Path.cwd()
+    config_path = Path(pre_args.config).resolve() if pre_args.config else None
+    config = load_workspace_config(workspace_root, config_path)
+    plugin_manager = PluginManager(config.plugins)
+    plugin_manager.load()
+
     parser = argparse.ArgumentParser(
         description="Namel3ss (N3) language compiler – build full‑stack apps in plain English",
         prog="namel3ss"
     )
-    
-    # Check if old-style invocation (no subcommand, just a file)
-    # For backward compatibility
-    if argv is None:
-        argv = sys.argv[1:]
-    
-    # If first arg looks like a file and not a known subcommand, use legacy mode
-    if (len(argv) > 0 and 
-        not argv[0].startswith('-') and 
-        argv[0] not in ['build', 'run', 'help'] and
-        (argv[0].endswith('.n3') or Path(argv[0]).exists())):
-        # Legacy mode: treat as build command
-        print("Note: Using legacy invocation. Consider using 'namel3ss build' instead.", file=sys.stderr)
-        argv = ['build'] + argv
-    
-    if argv and argv[0] == 'run':
-        argv = _normalize_run_command_args(argv)
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+
+    parser.add_argument(
+        '--config',
+        default=str(config_path) if config_path else None,
+        help='Path to a namel3ss.toml configuration file'
+    )
+    parser.add_argument(
+        '--workspace',
+        default=str(workspace_root),
+        help='Workspace root directory (defaults to current working directory)'
+    )
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    plugin_manager.register_commands(subparsers)
     
     # Build subcommand
     build_parser = subparsers.add_parser(
@@ -947,6 +1298,22 @@ def main(argv: Optional[list] = None) -> None:
         help='Enable realtime websocket scaffolding'
     )
     run_parser.add_argument(
+        '--apps',
+        nargs='+',
+        help='Names of apps defined in the workspace configuration to run'
+    )
+    run_parser.add_argument(
+        '--frontend-out',
+        default=None,
+        help='Override frontend output directory for generated assets'
+    )
+    run_parser.add_argument(
+        '--frontend-port',
+        type=int,
+        default=None,
+        help='Base frontend port when running multiple apps concurrently'
+    )
+    run_parser.add_argument(
         '--env',
         action='append',
         default=[],
@@ -1007,13 +1374,56 @@ def main(argv: Optional[list] = None) -> None:
         help='Diagnose installed dependencies and optional extras'
     )
     doctor_parser.set_defaults(func=cmd_doctor)
+
+    test_parser = subparsers.add_parser(
+        'test',
+        help='Execute the configured test command for the workspace'
+    )
+    test_parser.add_argument(
+        '--command',
+        help='Override the configured test command'
+    )
+    test_parser.set_defaults(func=cmd_test)
+
+    lint_parser = subparsers.add_parser(
+        'lint',
+        help='Run the configured lint command'
+    )
+    lint_parser.add_argument(
+        '--command',
+        help='Override the configured lint command'
+    )
+    lint_parser.set_defaults(func=cmd_lint)
+
+    typecheck_parser = subparsers.add_parser(
+        'typecheck',
+        help='Run the configured type checking command'
+    )
+    typecheck_parser.add_argument(
+        '--command',
+        help='Override the configured typecheck command'
+    )
+    typecheck_parser.set_defaults(func=cmd_typecheck)
     
     args = parser.parse_args(argv)
+
+    runtime_workspace = Path(args.workspace).resolve() if getattr(args, 'workspace', None) else workspace_root
+    runtime_config_path = Path(args.config).resolve() if getattr(args, 'config', None) else config_path
+    if runtime_workspace != workspace_root or runtime_config_path != config_path:
+        config = load_workspace_config(runtime_workspace, runtime_config_path)
+        plugin_manager = PluginManager(config.plugins)
+        plugin_manager.load()
     
     # If no command specified, print help
     if not hasattr(args, 'func'):
         parser.print_help()
         sys.exit(1)
+    
+    args.cli_context = CLIContext(
+        workspace_root=runtime_workspace,
+        config=config,
+        plugin_manager=plugin_manager,
+    )
     
     # Execute the command
     args.func(args)

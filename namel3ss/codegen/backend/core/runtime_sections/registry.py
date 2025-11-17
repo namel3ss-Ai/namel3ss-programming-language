@@ -4,6 +4,38 @@ from textwrap import dedent
 
 REGISTRY_SECTION = dedent(
     '''
+
+_ALLOWED_MODULE_ROOTS: List[Path] = []
+if os.getenv("NAMEL3SS_APP_ROOT"):
+    try:
+        _ALLOWED_MODULE_ROOTS.append(Path(os.getenv("NAMEL3SS_APP_ROOT")).resolve())
+    except Exception:
+        logger.warning("Invalid NAMEL3SS_APP_ROOT configured")
+if os.getenv("NAMEL3SS_ALLOWED_MODULE_ROOTS"):
+    for entry in os.getenv("NAMEL3SS_ALLOWED_MODULE_ROOTS", "").split(":"):
+        candidate = entry.strip()
+        if not candidate:
+            continue
+        try:
+            _ALLOWED_MODULE_ROOTS.append(Path(candidate).resolve())
+        except Exception:
+            logger.warning("Invalid module root %s", candidate)
+try:
+    _ALLOWED_MODULE_ROOTS.append(Path(__file__).resolve().parent.parent)
+except Exception:
+    pass
+_ALLOWED_MODULE_ROOTS.append(Path.cwd().resolve())
+
+
+def _is_allowed_module_path(candidate: Path) -> bool:
+    resolved = candidate.resolve()
+    for root in _ALLOWED_MODULE_ROOTS:
+        try:
+            resolved.relative_to(root)
+            return True
+        except Exception:
+            continue
+    return False
 def _page_meta(slug: str) -> Dict[str, Any]:
     spec = PAGE_SPEC_BY_SLUG.get(slug, {})
     return {
@@ -94,6 +126,9 @@ def _import_python_module(module: str) -> Optional[Any]:
                     path = Path.cwd() / path
             if not path.exists():
                 return None
+            if not _is_allowed_module_path(path):
+                logger.warning("Rejected python import outside allowed roots: %s", path)
+                return None
             module_name = path.stem
             spec = importlib.util.spec_from_file_location(module_name, path)
             if spec and spec.loader:
@@ -112,102 +147,36 @@ def _import_python_module(module: str) -> Optional[Any]:
         return None
 
 
-def _is_truthy_env(name: str) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _trim_traceback(limit: int = 5, max_chars: int = 3000) -> str:
-    import traceback
-
-    try:
-        formatted = traceback.format_exc(limit=limit)
-    except Exception:  # pragma: no cover - safety guard
-        return ""
-    if not formatted:
-        return ""
-    text = formatted.strip()
-    if len(text) > max_chars:
-        return text[:max_chars]
-    return text
-
-
-def _short_error(exc: BaseException) -> str:
-    message = str(exc).strip()
-    if message:
-        return f"{type(exc).__name__}: {message}"
-    return type(exc).__name__
-
-
 def call_python_model(
     module: str,
     method: str,
     arguments: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Invoke a Python callable and return structured status details.
-
-    Args:
-        module: Fully qualified module path or file path that can be imported.
-        method: Attribute name to resolve on the imported module; defaults to ``predict`` when empty.
-        arguments: Keyword arguments passed to the callable when invoked.
-
-    Returns:
-        A dictionary containing ``status`` alongside contextual fields:
-
-        * ``status = 'ok'`` includes the callable result.
-        * ``status = 'error'`` reports structured failure details and a trimmed traceback when stubs are disabled.
-        * ``status = 'stub'`` mirrors legacy stub behaviour when ``NAMEL3SS_ALLOW_STUBS`` is truthy.
-    """
-
     args = dict(arguments or {})
+    module_obj = _import_python_module(module)
     attr_name = method or "predict"
-    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
-
-    try:
-        module_obj = _import_python_module(module)
-        if module_obj is None:
-            raise ImportError(f"Module '{module}' could not be imported")
-
-        callable_obj = getattr(module_obj, attr_name)
-        if not callable(callable_obj):
-            raise TypeError(f"Attribute '{attr_name}' on module '{module}' is not callable")
-
-        result = callable_obj(**args)
-        return {
-            "status": "ok",
-            "result": result,
-            "inputs": args,
-            "module": module,
-            "method": attr_name,
-        }
-    except Exception as exc:  # pragma: no cover - user callable failure
-        logger.exception("Python callable %s.%s raised an error", module, attr_name)
-        error_message = _short_error(exc)
-        if allow_stubs:
-            return {
-                "status": "stub",
-                "result": "stub_prediction",
-                "inputs": args,
-                "module": module,
-                "method": attr_name,
-                "error": error_message,
-            }
-
-        response = {
-            "status": "error",
-            "inputs": args,
-            "module": module,
-            "method": attr_name,
-            "error": error_message,
-        }
-
-        traceback_text = _trim_traceback()
-        if traceback_text:
-            response["traceback"] = traceback_text
-
-        return response
+    if module_obj is not None:
+        callable_obj = getattr(module_obj, attr_name, None)
+        if callable(callable_obj):
+            try:
+                result = callable_obj(**args)
+                payload = result if isinstance(result, dict) else {"value": result}
+                return {
+                    "result": payload,
+                    "inputs": args,
+                    "module": module,
+                    "method": attr_name,
+                    "status": "ok",
+                }
+            except Exception:  # pragma: no cover - user callable failure
+                logger.exception("Python callable %s.%s raised an error", module, attr_name)
+    return {
+        "result": "stub_prediction",
+        "inputs": args,
+        "module": module,
+        "method": attr_name,
+        "status": "stub",
+    }
 
 
 def _ensure_dict(value: Any) -> Dict[str, Any]:

@@ -14,6 +14,8 @@ __all__ = [
     "_render_models_router_module",
     "_render_experiments_router_module",
     "_render_pages_router_module",
+    "_render_crud_router_module",
+    "_render_observability_router_module",
     "_render_page_endpoint",
     "_render_component_endpoint",
     "_render_insight_endpoint",
@@ -26,18 +28,22 @@ def _render_routers_package() -> str:
 
 from __future__ import annotations
 
-from . import experiments, insights, models, pages
+from . import crud, experiments, insights, models, observability, pages
 
 insights_router = insights.router
 models_router = models.router
 experiments_router = experiments.router
 pages_router = pages.router
+crud_router = crud.router
+observability_router = observability.router
 
 GENERATED_ROUTERS = (
     insights_router,
     models_router,
     experiments_router,
     pages_router,
+    crud_router,
+    observability_router,
 )
 
 __all__ = [
@@ -45,6 +51,8 @@ __all__ = [
     "models_router",
     "experiments_router",
     "pages_router",
+    "crud_router",
+    "observability_router",
     "GENERATED_ROUTERS",
 ]
 '''
@@ -59,8 +67,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ..helpers import rate_limit_dependency, router_dependencies
 from ..runtime import evaluate_insight
-from ..helpers import router_dependencies
 from ..schemas import InsightResponse
 
 router = APIRouter(tags=["insights"], dependencies=router_dependencies())
@@ -86,20 +94,25 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
+from ..helpers import rate_limit_dependency, router_dependencies
 from ..runtime import (
     PredictionResponse,
     call_llm_connector,
+    call_python_model,
     explain_prediction,
     get_model_spec,
     predict,
     run_chain,
 )
-from ..helpers import router_dependencies
 
 router = APIRouter(tags=["models"], dependencies=router_dependencies())
 
 
-@router.post("/api/models/{model_name}/predict", response_model=PredictionResponse)
+@router.post(
+    "/api/models/{model_name}/predict",
+    response_model=PredictionResponse,
+    dependencies=[rate_limit_dependency("ai")],
+)
 async def predict_model(model_name: str, payload: Dict[str, Any]) -> PredictionResponse:
     try:
         return predict(model_name, payload)
@@ -107,7 +120,10 @@ async def predict_model(model_name: str, payload: Dict[str, Any]) -> PredictionR
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("/api/models/{model_name}/explain")
+@router.post(
+    "/api/models/{model_name}/explain",
+    dependencies=[rate_limit_dependency("ai")],
+)
 async def explain_model_prediction(model_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return explain_prediction(model_name, payload)
 
@@ -117,12 +133,18 @@ async def get_model_specification(model_name: str) -> Dict[str, Any]:
     return get_model_spec(model_name)
 
 
-@router.post("/api/chains/{chain_name}")
+@router.post(
+    "/api/chains/{chain_name}",
+    dependencies=[rate_limit_dependency("ai")],
+)
 async def run_registered_chain(chain_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return run_chain(chain_name, payload)
 
 
-@router.post("/api/llm/{connector}")
+@router.post(
+    "/api/llm/{connector}",
+    dependencies=[rate_limit_dependency("ai")],
+)
 async def run_llm_connector(connector: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return call_llm_connector(connector, payload)
 
@@ -142,8 +164,8 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from ..helpers import rate_limit_dependency, router_dependencies
 from ..runtime import ExperimentResult, evaluate_experiment, run_experiment
-from ..helpers import router_dependencies
 
 router = APIRouter(tags=["experiments"], dependencies=router_dependencies())
 
@@ -153,12 +175,20 @@ async def get_experiment(slug: str) -> ExperimentResult:
     return evaluate_experiment(slug, payload=None)
 
 
-@router.post("/api/experiments/{slug}", response_model=ExperimentResult)
+@router.post(
+    "/api/experiments/{slug}",
+    response_model=ExperimentResult,
+    dependencies=[rate_limit_dependency("experiments")],
+)
 async def evaluate_experiment_endpoint(slug: str, payload: Dict[str, Any]) -> ExperimentResult:
     return evaluate_experiment(slug, payload)
 
 
-@router.post("/api/experiments/{slug}/run", response_model=ExperimentResult)
+@router.post(
+    "/api/experiments/{slug}/run",
+    response_model=ExperimentResult,
+    dependencies=[rate_limit_dependency("experiments")],
+)
 async def run_experiment_endpoint(slug: str, payload: Dict[str, Any]) -> ExperimentResult:
     return run_experiment(slug, payload)
 
@@ -279,7 +309,15 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
         await websocket.accept()
         await websocket.close(code=1000)
         return
-    await runtime.BROADCAST.connect(slug, websocket)
+    try:
+        context = await runtime.resolve_websocket_context(websocket)
+    except WebSocketDisconnect:  # pragma: no cover - propagated disconnect
+        raise
+    except Exception:
+        runtime.logger.exception("Realtime authentication failure for page %s", slug)
+        await websocket.close(code=4403)
+        return
+    connection_id = await runtime.BROADCAST.connect(slug, websocket, context=context)
     try:
         page_spec = runtime.PAGE_SPEC_BY_SLUG.get(slug, {})
         handler = runtime.PAGE_HANDLERS.get(slug)
@@ -287,10 +325,10 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
             try:
                 payload = await handler(None)
                 await websocket.send_json(runtime._with_timestamp({
-                    "type": "hydration",
+                    "type": "snapshot",
                     "slug": slug,
                     "payload": payload,
-                    "meta": runtime._page_meta(slug),
+                    "meta": {"page": runtime._page_meta(slug), "source": "hydration"},
                 }))
             except Exception:
                 runtime.logger.exception("Failed to hydrate reactive page %s", slug)
@@ -311,6 +349,7 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
                 "type": "ack",
                 "slug": slug,
                 "status": "ok",
+                "connection_id": connection_id,
             }
             if isinstance(message, dict):
                 if "id" in message:
@@ -328,6 +367,188 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
 
     parts.append("__all__ = ['router']")
     return "\n\n".join(part for part in parts if part).strip() + "\n"
+
+
+def _render_crud_router_module(state: BackendState) -> str:
+    template = '''
+"""Generated FastAPI router for CRUD resources."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ...database import get_session
+from .. import runtime
+from ..helpers import router_dependencies
+from ..schemas import (
+    CrudCatalogResponse,
+    CrudDeleteResponse,
+    CrudItemResponse,
+    CrudListResponse,
+)
+
+router = APIRouter(prefix="/api/crud", tags=["crud"], dependencies=router_dependencies())
+
+
+def _crud_not_found(slug: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"CRUD resource '{slug}' is not registered.")
+
+
+def _crud_operation_forbidden(slug: str, operation: str) -> HTTPException:
+    return HTTPException(status_code=403, detail=f"Operation '{operation}' is not allowed for resource '{slug}'.")
+
+
+def _route(method: str, *args, **kwargs):
+    """Return a router decorator, falling back when FastAPI stand-ins lack HTTP verbs."""
+    decorator = getattr(router, method, None)
+    if callable(decorator):
+        return decorator(*args, **kwargs)
+    fallback = router.post if method != "get" and hasattr(router, "post") else router.get
+    return fallback(*args, **kwargs)
+
+
+@router.get("/", response_model=CrudCatalogResponse)
+async def list_crud_resources() -> CrudCatalogResponse:
+    resources = runtime.describe_crud_resources()
+    return CrudCatalogResponse(resources=resources)
+
+
+@router.get("/{slug}", response_model=CrudListResponse)
+async def list_crud_items(
+    slug: str,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    session: AsyncSession = Depends(get_session),
+) -> CrudListResponse:
+    try:
+        payload = await runtime.list_crud_resource(slug, session, limit=limit, offset=offset)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "list")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudListResponse(**payload)
+
+
+@router.get("/{slug}/{identifier}", response_model=CrudItemResponse)
+async def get_crud_item(
+    slug: str,
+    identifier: str,
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        payload = await runtime.retrieve_crud_resource(slug, identifier, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "retrieve")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    result = CrudItemResponse(**payload)
+    if result.status == "not_found":
+        raise HTTPException(404, detail=f"Record '{identifier}' was not found for resource '{slug}'.")
+    return result
+
+
+@_route("post", "/{slug}", response_model=CrudItemResponse)
+async def create_crud_item(
+    slug: str,
+    payload: Dict[str, Any],
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        result = await runtime.create_crud_resource(slug, payload, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "create")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudItemResponse(**result)
+
+
+@_route("put", "/{slug}/{identifier}", response_model=CrudItemResponse)
+async def update_crud_item(
+    slug: str,
+    identifier: str,
+    payload: Dict[str, Any],
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        result = await runtime.update_crud_resource(slug, identifier, payload, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "update")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudItemResponse(**result)
+
+
+@_route("delete", "/{slug}/{identifier}", response_model=CrudDeleteResponse)
+async def delete_crud_item(
+    slug: str,
+    identifier: str,
+    session: AsyncSession = Depends(get_session),
+) -> CrudDeleteResponse:
+    try:
+        result = await runtime.delete_crud_resource(slug, identifier, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "delete")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudDeleteResponse(**result)
+
+
+__all__ = ["router"]
+'''
+    return textwrap.dedent(template).strip() + "\n"
+
+
+def _render_observability_router_module() -> str:
+    template = '''
+"""Generated FastAPI router exposing health and metrics endpoints."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from fastapi import APIRouter
+try:
+    from fastapi.responses import PlainTextResponse
+except ImportError:  # pragma: no cover - fallback for slim installs
+    from starlette.responses import PlainTextResponse  # type: ignore
+
+from ..runtime import health_summary, readiness_checks, render_prometheus_metrics
+
+router = APIRouter(tags=["observability"])
+
+
+@router.get("/healthz")
+async def healthz() -> Dict[str, Any]:
+    return health_summary()
+
+
+@router.get("/readyz")
+async def readyz() -> Dict[str, Any]:
+    return await readiness_checks()
+
+
+@router.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    payload = render_prometheus_metrics()
+    return PlainTextResponse(payload, media_type="text/plain; version=0.0.4")
+
+
+__all__ = ["router"]
+'''
+    return textwrap.dedent(template).strip() + "\n"
 
 
 def _render_page_endpoint(page: PageSpec) -> List[str]:
@@ -443,29 +664,6 @@ def _render_component_endpoint(
             "    if runtime.REALTIME_ENABLED and is_reactive:",
             f"        await runtime.broadcast_component_update({page.slug!r}, 'chart', {index}, response, meta={meta_expr})",
             "    return response",
-        ]
-    if component.type == "form":
-        return [
-            f"@router.post({base_path!r} + '/forms/{index}', response_model=Dict[str, Any], tags=['pages'])",
-            f"async def {slug}_form_{index}(payload: Dict[str, Any], session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
-            "    try:",
-            f"        return await runtime.submit_form({page.slug!r}, {index}, payload, session=session)",
-            "    except KeyError:",
-            "        raise HTTPException(status_code=404, detail='Form not found')",
-            "    except (IndexError, ValueError) as exc:",
-            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
-        ]
-    if component.type == "action":
-        return [
-            f"@router.post({base_path!r} + '/actions/{index}', response_model=Dict[str, Any], tags=['pages'])",
-            f"async def {slug}_action_{index}(payload: Optional[Dict[str, Any]] = None, session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
-            "    try:",
-            f"        data = payload or {{}}",
-            f"        return await runtime.trigger_action({page.slug!r}, {index}, data, session=session)",
-            "    except KeyError:",
-            "        raise HTTPException(status_code=404, detail='Action not found')",
-            "    except (IndexError, ValueError) as exc:",
-            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
         ]
     return []
 

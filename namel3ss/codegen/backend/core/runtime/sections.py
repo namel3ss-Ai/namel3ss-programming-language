@@ -10,13 +10,17 @@ from ..runtime_sections import (
     CONNECTORS_SECTION,
     CONTEXT_SECTION,
     DATASET_SECTION,
+    CRUD_SECTION,
+    ERRORS_SECTION,
     INSIGHTS_SECTION,
     LLM_SECTION,
     MODELS_SECTION,
     PUBSUB_SECTION,
+    OBSERVABILITY_SECTION,
     PREDICTION_SECTION,
     REGISTRY_SECTION,
     RENDERING_SECTION,
+    SECURITY_SECTION,
     STREAMS_SECTION,
 )
 
@@ -25,10 +29,14 @@ def collect_runtime_sections() -> List[str]:
     """Return the ordered runtime section snippets."""
     return [
         CONFIG_SECTION,
+        SECURITY_SECTION,
+        ERRORS_SECTION,
+        OBSERVABILITY_SECTION,
         PUBSUB_SECTION,
         STREAMS_SECTION,
         CONTEXT_SECTION,
         DATASET_SECTION,
+    CRUD_SECTION,
         ACTIONS_SECTION,
         RENDERING_SECTION,
         REGISTRY_SECTION,

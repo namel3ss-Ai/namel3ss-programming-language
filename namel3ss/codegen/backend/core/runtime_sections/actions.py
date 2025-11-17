@@ -418,6 +418,78 @@ def _get_component_spec(slug: str, component_index: int) -> Dict[str, Any]:
     return component
 
 
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set)):
+        return len(value) == 0
+    if isinstance(value, dict):
+        return len(value) == 0
+    return False
+
+
+def _validate_form_submission(
+    component: Dict[str, Any],
+    submitted: Dict[str, Any],
+    context: Dict[str, Any],
+) -> bool:
+    fields = component.get("fields") or []
+    has_errors = False
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        name = field.get("name")
+        if not name:
+            continue
+        required = field.get("required", True)
+        if not required:
+            continue
+        value = submitted.get(name)
+        if _is_missing_value(value):
+            has_errors = True
+            field_label = field.get("label") or name
+            _record_runtime_error(
+                context,
+                code="missing_required_field",
+                message="This field is required.",
+                scope=f"field:{name}",
+                source="form",
+                detail=f"Expected value for '{field_label}'.",
+            )
+    return has_errors
+
+
+def _partition_interaction_errors(
+    slug: str,
+    errors: Sequence[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not errors:
+        return [], []
+    widget_errors: List[Dict[str, Any]] = []
+    page_errors: List[Dict[str, Any]] = []
+    slug_value = slug or ""
+    slug_lower = slug_value.lower()
+    page_scope = f"page:{slug_value}"
+    page_scope_lower = page_scope.lower()
+    page_dot_scope_lower = f"page.{slug_value}".lower()
+    for entry in errors:
+        if not isinstance(entry, dict):
+            continue
+        scope_value = entry.get("scope")
+        normalized_scope = str(scope_value).strip().lower() if scope_value is not None else ""
+        if normalized_scope in {"", slug_lower, page_scope_lower, page_dot_scope_lower, "page"}:
+            entry["scope"] = page_scope
+            page_errors.append(entry)
+            continue
+        if normalized_scope.startswith("page:") or normalized_scope.startswith("page.") or normalized_scope.startswith("app:"):
+            page_errors.append(entry)
+            continue
+        widget_errors.append(entry)
+    return widget_errors, page_errors
+
+
 async def _execute_component_interaction(
     slug: str,
     component_index: int,
@@ -430,6 +502,8 @@ async def _execute_component_interaction(
     component_type = str(component.get("type") or "").lower()
     if component_type != kind.lower():
         raise ValueError(f"Component {component_index} on '{slug}' is not of type '{kind}'")
+
+    component_payload = component.get("payload") if isinstance(component.get("payload"), dict) else component
 
     submitted: Dict[str, Any] = dict(payload or {})
     context = build_context(slug)
@@ -449,12 +523,16 @@ async def _execute_component_interaction(
     if kind == "form":
         scope.bind("form", submitted)
 
-    operations = component.get("operations") or []
+    operations = component_payload.get("operations") or []
     results: List[Dict[str, Any]] = []
-    for operation in operations:
-        outcome = await _execute_action_operation(operation, context, scope)
-        if outcome:
-            results.append(outcome)
+    validation_failed = False
+    if kind == "form":
+        validation_failed = _validate_form_submission(component_payload, submitted, context)
+    if not validation_failed:
+        for operation in operations:
+            outcome = await _execute_action_operation(operation, context, scope)
+            if outcome:
+                results.append(outcome)
 
     response: Dict[str, Any] = {
         "status": "ok",
@@ -467,6 +545,20 @@ async def _execute_component_interaction(
         response["accepted"] = submitted
     if results:
         response["effects"] = results
+    collected_errors: List[Dict[str, Any]] = []
+    if slug:
+        collected_errors.extend(_collect_runtime_errors(context, scope=slug))
+    collected_errors.extend(_collect_runtime_errors(context))
+    widget_errors, page_errors = _partition_interaction_errors(slug, collected_errors)
+    if widget_errors:
+        response["errors"] = widget_errors
+    if page_errors:
+        response["page_errors"] = page_errors
+        response["pageErrors"] = page_errors
+    if widget_errors or page_errors:
+        combined = widget_errors + page_errors
+        if any((entry.get("severity") or "error").lower() == "error" for entry in combined if isinstance(entry, dict)):
+            response["status"] = "error"
     return response
 
 

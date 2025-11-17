@@ -16,7 +16,8 @@ def render_table(stmt: ShowTable, ctx: RenderContext, component_index: Optional[
     table_id = f"table_{ctx.slug}_{ctx.counters.setdefault('table', 0)}"
     ctx.counters['table'] += 1
     preview_payload = ctx.preview.table_preview(stmt)
-    columns = preview_payload.get("columns") or stmt.columns or ['Column 1', 'Column 2', 'Column 3']
+    preview_data = preview_payload if isinstance(preview_payload, dict) else {}
+    columns = preview_data.get("columns") or stmt.columns or ['Column 1', 'Column 2', 'Column 3']
     layout_payload = layout_to_payload(stmt.layout)
     variant = (layout_payload or {}).get('variant', '')
     style_inline = style_to_inline(stmt.style or {}) if stmt.style else ''
@@ -57,13 +58,15 @@ def render_table(stmt: ShowTable, ctx: RenderContext, component_index: Optional[
     ctx.body_lines.append(
         f"  <div class=\"n3-table-container\"><table id=\"{table_id}\" class=\"{table_class_attr}\"></table></div>"
     )
+    ctx.body_lines.append("  <div class=\"n3-widget-errors n3-widget-errors--hidden\" data-n3-error-slot></div>")
     ctx.body_lines.append("</section>")
 
     table_data = {
         "title": stmt.title,
         "columns": columns,
-        "rows": preview_payload.get("rows", []),
+        "rows": preview_data.get("rows", []),
         "insight": stmt.insight,
+        "errors": preview_data.get("errors", []),
     }
     table_def: Dict[str, Any] = {
         "type": "table",

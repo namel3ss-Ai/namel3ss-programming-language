@@ -14,13 +14,17 @@ CORE_DEPENDENCIES: Dict[str, str] = {
 }
 
 OPTIONAL_DEPENDENCIES: Dict[str, Dict[str, Iterable[str]]] = {
+    "cli": {
+        "title": "CLI helpers",
+        "modules": ("dotenv",),
+    },
     "sql": {
         "title": "SQL connectors",
         "modules": ("sqlalchemy",),
     },
     "redis": {
         "title": "Redis caching & pub/sub",
-        "modules": ("redis", "aioredis"),
+        "modules": ("redis.asyncio",),
     },
     "mongo": {
         "title": "MongoDB connectors",

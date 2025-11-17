@@ -38,3 +38,31 @@ the scaffolding is intentionally laid out to make future
 enhancements—such as dynamic data loading, forms, authentication and
 inline Python/React blocks—straightforward to add.
 """
+
+import re
+from pathlib import Path
+from importlib import metadata as _metadata
+
+
+def _local_version() -> str | None:
+  root = Path(__file__).resolve().parents[1]
+  pyproject = root / "pyproject.toml"
+  if not pyproject.exists():
+    return None
+  try:
+    text = pyproject.read_text(encoding="utf-8")
+  except OSError:  # pragma: no cover - IO errors should not break imports
+    return None
+  match = re.search(r"^version\s*=\s*\"([^\"]+)\"", text, flags=re.MULTILINE)
+  if match:
+    return match.group(1)
+  return None
+
+try:  # pragma: no cover - metadata fallback for editable installs
+    __version__ = _metadata.version("namel3ss")
+except _metadata.PackageNotFoundError:  # pragma: no cover - source tree
+  __version__ = _local_version() or "0.4.0"
+else:  # pragma: no cover - version override for in-repo runs
+  __version__ = _local_version() or __version__
+
+__all__ = ["__version__"]

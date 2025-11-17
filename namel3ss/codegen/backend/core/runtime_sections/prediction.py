@@ -507,29 +507,42 @@ def predict(model_name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[s
         "version": version,
     }
 
+    stub_output: Optional[Dict[str, Any]] = None
+    loader_error: Optional[str] = None
     try:
         model_instance = _load_model_instance(model_name, model_spec)
     except Exception as exc:
         logger.exception("Failed to load model instance for %s", model_name)
-        error_message = f"{type(exc).__name__}: {exc}"
-        return {
-            "model": model_name,
-            "version": version,
-            "framework": framework,
-            "inputs": inputs,
-            "input": inputs,
-            "output": {
-                "score": None,
-                "label": None,
-                "scores": None,
-                "raw": None,
+        loader_error = f"{type(exc).__name__}: {exc}"
+        metadata_payload["loader_error"] = loader_error
+        env_value = os.getenv("NAMEL3SS_ALLOW_STUBS")
+        allow_stub_predictions = True
+        if env_value is not None:
+            normalized = env_value.strip().lower()
+            allow_stub_predictions = normalized in {"1", "true", "yes", "on"}
+        if allow_stub_predictions:
+            stub_output = _deterministic_stub_output(model_name, inputs, model_spec)
+            metadata_payload["stubbed"] = True
+            model_instance = None
+        else:
+            return {
+                "model": model_name,
+                "version": version,
+                "framework": framework,
+                "inputs": inputs,
+                "input": inputs,
+                "output": {
+                    "score": None,
+                    "label": None,
+                    "scores": None,
+                    "raw": None,
+                    "status": "error",
+                    "error": loader_error,
+                },
+                "spec_metadata": model_spec.get("metadata") or {},
+                "metadata": metadata_payload,
                 "status": "error",
-                "error": error_message,
-            },
-            "spec_metadata": model_spec.get("metadata") or {},
-            "metadata": metadata_payload,
-            "status": "error",
-        }
+            }
     framework_key = framework.lower()
     model_type = str(model_spec.get("type") or "").lower()
     metadata = model_spec.get("metadata") or {}
@@ -542,12 +555,14 @@ def predict(model_name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[s
             logger.exception("Failed to import custom runner for %s", model_name)
             runner_callable = None
 
-    runner = (
-        runner_callable
-        or MODEL_RUNNERS.get(framework_key)
-        or MODEL_RUNNERS.get(model_type)
-        or MODEL_RUNNERS.get("generic")
-    )
+    runner = None
+    if stub_output is None:
+        runner = (
+            runner_callable
+            or MODEL_RUNNERS.get(framework_key)
+            or MODEL_RUNNERS.get(model_type)
+            or MODEL_RUNNERS.get("generic")
+        )
 
     runner_name = getattr(runner, "__name__", None) if runner else None
     if not runner_name and runner_callable is not None:
@@ -560,7 +575,11 @@ def predict(model_name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[s
     runner_error: Optional[BaseException] = None
     timing_ms: Optional[float] = None
 
-    if runner is None:
+    if stub_output is not None:
+        output = dict(stub_output)
+        raw_output = output
+        overall_status = output.get("status", "ok")
+    elif runner is None:
         overall_status = "error"
         output = {
             "score": None,
@@ -646,6 +665,9 @@ def predict(model_name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[s
     else:
         result.pop("_explanation_context", None)
 
+    if explanations is None and stub_output is not None:
+        explanations = _default_stub_explanations(model_name, inputs, {"output": output})
+
     if explanations:
         result["explanations"] = explanations
 
@@ -658,13 +680,16 @@ def predict(model_name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[s
 async def broadcast_page_snapshot(slug: str, payload: Dict[str, Any]) -> None:
     if not REALTIME_ENABLED:
         return
-    message = {
-        "type": "snapshot",
-        "slug": slug,
-        "payload": payload,
-        "meta": _page_meta(slug),
-    }
-    await BROADCAST.broadcast(slug, _with_timestamp(message))
+    meta = {"page": _page_meta(slug), "status": "ok"}
+    await broadcast_page_event(
+        slug,
+        event_type="snapshot",
+        dataset=None,
+        payload=payload,
+        source="page-hydrate",
+        status="ok",
+        meta=meta,
+    )
 
 
 async def broadcast_component_update(
@@ -677,29 +702,33 @@ async def broadcast_component_update(
     if not REALTIME_ENABLED:
         return
     payload = _model_to_payload(model)
-    message: Dict[str, Any] = {
-        "type": "component",
-        "slug": slug,
-        "component_type": component_type,
-        "component_index": component_index,
-        "payload": payload,
-        "meta": {"page": _page_meta(slug)},
-    }
+    event_meta: Dict[str, Any] = {"page": _page_meta(slug), "component_type": component_type, "component_index": component_index}
     if meta:
-        message["meta"].update(meta)
-    await BROADCAST.broadcast(slug, _with_timestamp(message))
+        event_meta.update(meta)
+    await broadcast_page_event(
+        slug,
+        event_type="update",
+        dataset=None,
+        payload=payload,
+        source="model-prediction",
+        status="ok",
+        meta=event_meta,
+    )
 
 
 async def broadcast_rollback(slug: str, component_index: int) -> None:
     if not REALTIME_ENABLED:
         return
-    message = {
-        "type": "rollback",
-        "slug": slug,
-        "component_index": component_index,
-        "meta": {"page": _page_meta(slug)},
-    }
-    await BROADCAST.broadcast(slug, _with_timestamp(message))
+    meta = {"page": _page_meta(slug), "component_index": component_index, "status": "rollback"}
+    await broadcast_page_event(
+        slug,
+        event_type="mutation",
+        dataset=None,
+        payload={"component_index": component_index},
+        source="ui-rollback",
+        status="rollback",
+        meta=meta,
+    )
 
     '''
 ).strip()

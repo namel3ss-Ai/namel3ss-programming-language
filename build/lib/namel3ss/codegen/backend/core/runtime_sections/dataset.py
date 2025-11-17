@@ -4,6 +4,108 @@ from textwrap import dedent
 
 DATASET_SECTION = dedent(
     '''
+from namel3ss.codegen.backend.core.runtime.datasets import (
+    fetch_dataset_rows as _fetch_dataset_rows_impl,
+    execute_sql as _execute_sql_impl,
+    load_dataset_source as _load_dataset_source_impl,
+    execute_dataset_pipeline as _execute_dataset_pipeline_impl,
+    resolve_connector as _resolve_connector_impl,
+)
+from namel3ss.codegen.backend.core.runtime.expression_sandbox import (
+    ExpressionSandboxError as DatasetExpressionError,
+    evaluate_sandboxed_expression as _evaluate_sandboxed_expression,
+)
+
+
+async def fetch_dataset_rows(
+    key: str,
+    session: AsyncSession,
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    return await _fetch_dataset_rows_impl(
+        key,
+        session,
+        context,
+        datasets=DATASETS,
+        resolve_connector=_resolve_connector,
+        dataset_cache_settings=_dataset_cache_settings,
+        make_dataset_cache_key=_make_dataset_cache_key,
+        dataset_cache_index=DATASET_CACHE_INDEX,
+        cache_get=_cache_get,
+        clone_rows=_clone_rows,
+        load_dataset_source=_load_dataset_source,
+        execute_dataset_pipeline=_execute_dataset_pipeline,
+        cache_set=_cache_set,
+        broadcast_dataset_refresh=_broadcast_dataset_refresh,
+        schedule_dataset_refresh=_schedule_dataset_refresh,
+        record_error=_record_runtime_error,
+        record_event=_record_runtime_event,
+        record_metric=_record_runtime_metric,
+    )
+
+
+async def _execute_sql(session: Optional[AsyncSession], query: Any) -> Any:
+    return await _execute_sql_impl(
+        session,
+        query,
+        async_session_type=AsyncSession,
+        sync_session_type=Session,
+        run_in_threadpool=run_in_threadpool,
+    )
+
+
+async def _load_dataset_source(
+    dataset: Dict[str, Any],
+    connector: Dict[str, Any],
+    session: AsyncSession,
+    context: Dict[str, Any],
+    record_error: Optional[Callable[..., Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    return await _load_dataset_source_impl(
+        dataset,
+        connector,
+        session,
+        context,
+        connector_drivers=CONNECTOR_DRIVERS,
+        httpx_client_cls=_HTTPX_CLIENT_CLS,
+        normalize_connector_rows=_normalize_connector_rows,
+        extract_connector_rows=_extract_rows_from_connector_response,
+        execute_sql=_execute_sql,
+        logger=logger,
+        fetch_dataset_rows_fn=fetch_dataset_rows,
+        record_error=record_error or _record_runtime_error,
+    )
+
+
+async def _execute_dataset_pipeline(
+    dataset: Dict[str, Any],
+    rows: List[Dict[str, Any]],
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    return await _execute_dataset_pipeline_impl(
+        dataset,
+        rows,
+        context,
+        clone_rows=_clone_rows,
+        apply_filter=_apply_filter,
+        apply_computed_column=_apply_computed_column,
+        apply_order=_apply_order,
+        apply_window_operation=_apply_window_operation,
+        apply_group_aggregate=_apply_group_aggregate,
+        apply_transforms=_apply_transforms,
+        evaluate_quality_checks=_evaluate_quality_checks,
+    )
+
+
+def _resolve_connector(dataset: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    return _resolve_connector_impl(
+        dataset,
+        context,
+        deepcopy=copy.deepcopy,
+        resolve_placeholders=_resolve_placeholders,
+    )
+
+
 def _parse_aggregate_expression(expression: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if expression is None:
         return None, None
@@ -29,6 +131,7 @@ def _evaluate_dataset_expression(
     row: Dict[str, Any],
     context: Dict[str, Any],
     rows: Optional[List[Dict[str, Any]]] = None,
+    dataset_name: Optional[str] = None,
 ) -> Any:
     if expression is None:
         return None
@@ -39,36 +142,55 @@ def _evaluate_dataset_expression(
         "row": row,
         "rows": rows or [],
         "context": context,
-    }
-    scope.update(row)
-    scope.setdefault("math", math)
-    scope.setdefault("len", len)
-    safe_builtins = {
-        "abs": abs,
+        "math": math,
+        "len": len,
         "min": min,
         "max": max,
         "sum": sum,
-        "len": len,
+        "abs": abs,
+        "round": round,
         "int": int,
         "float": float,
         "str": str,
         "bool": bool,
-        "round": round,
     }
+    scope.update(row)
     try:
-        compiled = compile(expr, "<dataset_expr>", "eval")
-        return eval(compiled, {"__builtins__": safe_builtins}, scope)
-    except Exception:
+        return _evaluate_sandboxed_expression(expr, scope)
+    except DatasetExpressionError as exc:
+        _record_runtime_error(
+            context,
+            code="dataset_expression_disallowed",
+            message=f"Dataset expression '{expression}' is not permitted.",
+            scope=dataset_name,
+            source="dataset",
+            detail=str(exc),
+        )
+        logger.warning("Disallowed dataset expression '%s': %s", expression, exc)
+    except Exception as exc:
+        _record_runtime_error(
+            context,
+            code="dataset_expression_failed",
+            message=f"Dataset expression '{expression}' failed during evaluation.",
+            scope=dataset_name,
+            source="dataset",
+            detail=str(exc),
+        )
         logger.debug("Failed to evaluate dataset expression '%s'", expression)
-        return None
+    return None
 
 
-def _apply_filter(rows: List[Dict[str, Any]], condition: Optional[str], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _apply_filter(
+    rows: List[Dict[str, Any]],
+    condition: Optional[str],
+    context: Dict[str, Any],
+    dataset_name: Optional[str],
+) -> List[Dict[str, Any]]:
     if not rows or not condition:
         return rows
     filtered: List[Dict[str, Any]] = []
     for row in rows:
-        value = _evaluate_dataset_expression(condition, row, context, rows)
+        value = _evaluate_dataset_expression(condition, row, context, rows, dataset_name)
         if _runtime_truthy(value):
             filtered.append(row)
     return filtered
@@ -79,11 +201,12 @@ def _apply_computed_column(
     name: str,
     expression: Optional[str],
     context: Dict[str, Any],
+    dataset_name: Optional[str],
 ) -> None:
     if not name:
         return
     for row in rows:
-        row[name] = _evaluate_dataset_expression(expression, row, context, rows)
+        row[name] = _evaluate_dataset_expression(expression, row, context, rows, dataset_name)
 
 
 def _apply_group_aggregate(
@@ -91,6 +214,7 @@ def _apply_group_aggregate(
     columns: Sequence[str],
     aggregates: Sequence[Tuple[str, str]],
     context: Dict[str, Any],
+    dataset_name: Optional[str],
 ) -> List[Dict[str, Any]]:
     if not columns:
         key = tuple()
@@ -111,7 +235,7 @@ def _apply_group_aggregate(
             values = []
             if expr_source:
                 for row in items:
-                    values.append(_evaluate_dataset_expression(expr_source, row, context, items))
+                    values.append(_evaluate_dataset_expression(expr_source, row, context, items, dataset_name))
             numeric_values = [_ensure_numeric(value) for value in values if value is not None]
             func_lower = str(function or "").lower()
             if func_lower == "sum":
@@ -189,6 +313,7 @@ def _apply_transforms(
     rows: List[Dict[str, Any]],
     transforms: Sequence[Dict[str, Any]],
     context: Dict[str, Any],
+    dataset_name: Optional[str],
 ) -> List[Dict[str, Any]]:
     current = _clone_rows(rows)
     for step in transforms:
@@ -199,7 +324,15 @@ def _apply_transforms(
         options = _resolve_option_dict(step.get("options") if isinstance(step, dict) else {})
         try:
             current = handler(current, options, context)
-        except Exception:
+        except Exception as exc:
+            _record_runtime_error(
+                context,
+                code="dataset_transform_failed",
+                message=f"Dataset transform '{transform_type}' failed.",
+                scope=dataset_name,
+                source="dataset",
+                detail=str(exc),
+            )
             logger.exception("Dataset transform '%s' failed", transform_type)
     return current
 
@@ -208,6 +341,7 @@ def _evaluate_quality_checks(
     rows: List[Dict[str, Any]],
     checks: Sequence[Dict[str, Any]],
     context: Dict[str, Any],
+    dataset_name: Optional[str],
 ) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for check in checks:
@@ -234,7 +368,7 @@ def _evaluate_quality_checks(
         if condition:
             violations = [
                 row for row in rows
-                if not _runtime_truthy(_evaluate_dataset_expression(condition, row, context, rows))
+                if not _runtime_truthy(_evaluate_dataset_expression(condition, row, context, rows, dataset_name))
             ]
             passed = not violations
         elif isinstance(threshold, (int, float)) and metric_value is not None:
@@ -283,15 +417,49 @@ def _dataset_cache_settings(dataset: Dict[str, Any], context: Dict[str, Any]) ->
     return scope, enabled, ttl
 
 
-def _make_dataset_cache_key(dataset_name: str, scope: str, context: Dict[str, Any]) -> str:
+def _normalize_identity_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _normalize_identity_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_identity_value(item) for item in value]
+    if isinstance(value, set):
+        return sorted(str(item) for item in value)
+    if isinstance(value, tuple):
+        return [_normalize_identity_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _dataset_identity_signature(context: Dict[str, Any]) -> Tuple[str, str]:
     vars_snapshot = context.get("vars") if isinstance(context.get("vars"), dict) else {}
-    try:
-        serialised = json.dumps(vars_snapshot, sort_keys=True, default=str)
-    except TypeError:
-        safe_snapshot = {key: str(value) for key, value in vars_snapshot.items()}
-        serialised = json.dumps(safe_snapshot, sort_keys=True)
+    request_ctx = context.get("request") if isinstance(context.get("request"), dict) else {}
+    tenant_value = context.get("tenant") or request_ctx.get("tenant") or "global"
+    subject_value = context.get("subject") or request_ctx.get("subject")
+    scopes_value = request_ctx.get("scopes")
+    if isinstance(scopes_value, (list, tuple, set)):
+        scopes_list = sorted({str(item).strip() for item in scopes_value if str(item).strip()})
+    elif isinstance(scopes_value, str):
+        scopes_list = sorted({segment.strip() for segment in scopes_value.replace(",", " ").split() if segment.strip()})
+    else:
+        scopes_list = []
+
+    identity = {
+        "vars": _normalize_identity_value(vars_snapshot),
+        "tenant": str(tenant_value).strip() if tenant_value is not None else "global",
+        "subject": str(subject_value).strip() if subject_value else None,
+        "scopes": scopes_list,
+    }
+    serialised = json.dumps(identity, sort_keys=True)
     digest = hashlib.sha1(serialised.encode("utf-8")).hexdigest()
-    return f"dataset::{scope}::{dataset_name}::{digest}"
+    tenant_fragment = identity["tenant"] or "global"
+    tenant_fragment = re.sub(r"[^0-9A-Za-z_.-]+", "_", tenant_fragment) or "global"
+    return tenant_fragment, digest
+
+
+def _make_dataset_cache_key(dataset_name: str, scope: str, context: Dict[str, Any]) -> str:
+    tenant_fragment, digest = _dataset_identity_signature(context)
+    return f"dataset::{scope}::{tenant_fragment}::{dataset_name}::{digest}"
 
 
 def _coerce_dataset_names(value: Any) -> List[str]:
@@ -325,6 +493,11 @@ async def _invalidate_dataset(dataset_name: str) -> None:
     STREAM_CONFIG.setdefault(dataset_name, {})["last_invalidate_ts"] = time.time()
     message = {"type": "dataset.invalidate", "dataset": dataset_name}
     await publish_dataset_event(dataset_name, message)
+    if tracked_keys:
+        for cache_key in tracked_keys:
+            targeted = dict(message)
+            targeted["recipient"] = cache_key
+            await publish_dataset_event(dataset_name, targeted)
     if REALTIME_ENABLED:
         timestamped = _with_timestamp(dict(message))
         subscribers = list(DATASET_SUBSCRIBERS.get(dataset_name, set()))
@@ -352,7 +525,13 @@ async def _invalidate_datasets(dataset_names: Iterable[str]) -> None:
     await asyncio.gather(*[_invalidate_dataset(name) for name in unique])
 
 
-async def _broadcast_dataset_refresh(slug: Optional[str], dataset_name: str, payload: List[Dict[str, Any]]) -> None:
+async def _broadcast_dataset_refresh(
+    slug: Optional[str],
+    dataset_name: str,
+    payload: List[Dict[str, Any]],
+    context: Dict[str, Any],
+    cache_key: str,
+) -> None:
     message = {
         "type": "dataset",
         "slug": slug,
@@ -360,6 +539,7 @@ async def _broadcast_dataset_refresh(slug: Optional[str], dataset_name: str, pay
         "rows": payload,
         "meta": _page_meta(slug) if slug else {},
     }
+    message["recipient"] = cache_key
     await publish_dataset_event(dataset_name, message)
     if REALTIME_ENABLED:
         await BROADCAST.broadcast(slug or dataset_name, _with_timestamp(dict(message)))

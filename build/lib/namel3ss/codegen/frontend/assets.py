@@ -171,12 +171,97 @@ th, td {{
     font-size: 0.85rem;
     color: var(--warning, #ef4444);
 }}
+.n3-widget-errors {{
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid transparent;
+    background-color: rgba(15, 23, 42, 0.05);
+    color: var(--text, #1f2937);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}}
+.n3-widget-errors--hidden {{
+    display: none;
+}}
+.n3-widget-errors--severity-info {{
+    border-left-color: var(--info, #2563eb);
+    background-color: rgba(37, 99, 235, 0.08);
+    color: var(--info-text, #1e3a8a);
+}}
+.n3-widget-errors--severity-warning {{
+    border-left-color: var(--warning, #f97316);
+    background-color: rgba(249, 115, 22, 0.12);
+    color: var(--warning-text, #7c2d12);
+}}
+.n3-widget-errors--severity-error {{
+    border-left-color: var(--warning, #ef4444);
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--warning-text, #991b1b);
+}}
+.n3-widget-errors--severity-debug {{
+    border-left-color: rgba(107, 114, 128, 0.6);
+    background-color: rgba(107, 114, 128, 0.08);
+    color: rgba(55, 65, 81, 0.9);
+}}
+.n3-widget-error {{
+    display: block;
+}}
+.n3-widget-error + .n3-widget-error {{
+    margin-top: 0.5rem;
+}}
+.n3-widget-error__code {{
+    display: inline-block;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-right: 0.5rem;
+}}
+.n3-widget-error__message {{
+    font-weight: 500;
+}}
+.n3-widget-error__detail {{
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+    opacity: 0.85;
+}}
+.n3-field-error {{
+    display: none;
+    margin-top: 0.35rem;
+    font-size: 0.82rem;
+    color: var(--warning, #dc2626);
+}}
+.n3-field-error--visible {{
+    display: block;
+}}
+.n3-input-error,
+.n3-input-error:focus {{
+    border-color: var(--warning, #dc2626);
+    outline-color: var(--warning, #dc2626);
+}}
+.n3-form-field {{
+    margin-bottom: 1rem;
+}}
+.n3-form--submitting {{
+    opacity: 0.85;
+}}
+.n3-button--pending {{
+    opacity: 0.7;
+    pointer-events: none;
+}}
+.n3-action--pending {{
+    opacity: 0.7;
+    pointer-events: none;
+}}
+.n3-page-errors {{
+    margin: 1rem 0;
+}}
 """
     return "\n".join([theme_block, base_css]) if theme_block else base_css
 
 
 def generate_widget_library() -> str:
-    """Return the shared widget runtime responsible for rendering charts and tables."""
+    """Return the shared widget runtime responsible for rendering interactive widgets."""
 
     return textwrap.dedent(
         """
@@ -184,6 +269,47 @@ def generate_widget_library() -> str:
             'use strict';
 
             var widgets = global.N3Widgets || (global.N3Widgets = {});
+
+            var SEVERITY_ORDER = { debug: 0, info: 1, warning: 2, error: 3 };
+            var SEVERITY_LEVELS = ['debug', 'info', 'warning', 'error'];
+
+            function normalizeSeverity(value) {
+                var text = value == null ? '' : String(value).toLowerCase();
+                return Object.prototype.hasOwnProperty.call(SEVERITY_ORDER, text) ? text : 'error';
+            }
+
+            function normalizeError(entry) {
+                if (!entry || typeof entry !== 'object') {
+                    return null;
+                }
+                return {
+                    code: entry.code ? String(entry.code) : 'error',
+                    message: entry.message ? String(entry.message) : 'Runtime error encountered.',
+                    detail: entry.detail != null ? String(entry.detail) : null,
+                    scope: entry.scope != null ? String(entry.scope) : null,
+                    source: entry.source != null ? String(entry.source) : null,
+                    severity: normalizeSeverity(entry.severity),
+                };
+            }
+
+            function highestSeverity(list) {
+                var rank = -1;
+                var severity = null;
+                if (!Array.isArray(list)) {
+                    return severity;
+                }
+                list.forEach(function(entry) {
+                    if (!entry) {
+                        return;
+                    }
+                    var order = SEVERITY_ORDER[entry.severity] != null ? SEVERITY_ORDER[entry.severity] : SEVERITY_ORDER.error;
+                    if (order >= rank) {
+                        rank = order;
+                        severity = entry.severity;
+                    }
+                });
+                return severity;
+            }
 
             function cloneObject(value) {
                 if (!value || typeof value !== 'object') {
@@ -225,6 +351,101 @@ def generate_widget_library() -> str:
                 return target;
             }
 
+            function extend(target) {
+                for (var i = 1; i < arguments.length; i += 1) {
+                    var source = arguments[i];
+                    if (!source) {
+                        continue;
+                    }
+                    Object.keys(source).forEach(function(key) {
+                        target[key] = source[key];
+                    });
+                }
+                return target;
+            }
+
+            function mergeHeaders(existing, overrides) {
+                var result = {};
+                if (existing) {
+                    if (Array.isArray(existing)) {
+                        existing.forEach(function(entry) {
+                            if (!entry || entry.length < 2) {
+                                return;
+                            }
+                            result[String(entry[0])] = String(entry[1]);
+                        });
+                    } else if (typeof Headers !== 'undefined' && existing instanceof Headers) {
+                        existing.forEach(function(value, key) {
+                            result[key] = value;
+                        });
+                    } else if (typeof existing === 'object') {
+                        Object.keys(existing).forEach(function(key) {
+                            result[key] = existing[key];
+                        });
+                    }
+                }
+                if (overrides && typeof overrides === 'object') {
+                    Object.keys(overrides).forEach(function(key) {
+                        result[key] = overrides[key];
+                    });
+                }
+                return result;
+            }
+
+            function requestJson(url, init) {
+                if (typeof fetch !== 'function') {
+                    return Promise.reject(new Error('Fetch API is not available'));
+                }
+                return fetch(url, init).then(function(response) {
+                    if (!response || !response.ok) {
+                        throw new Error('HTTP ' + (response && response.status));
+                    }
+                    var contentType = '';
+                    if (response && response.headers && typeof response.headers.get === 'function') {
+                        contentType = response.headers.get('content-type') || '';
+                    }
+                    if (contentType.indexOf('application/json') === -1) {
+                        return null;
+                    }
+                    return response.json();
+                });
+            }
+
+            var crud = global.N3Crud || (global.N3Crud = {});
+
+            crud.fetchResource = function(url, init) {
+                var headers = mergeHeaders(init && init.headers, { 'Accept': 'application/json' });
+                return requestJson(url, extend({}, init || {}, { headers: headers }));
+            };
+
+            crud.submitJson = function(url, payload, init) {
+                var headers = mergeHeaders(init && init.headers, { 'Accept': 'application/json', 'Content-Type': 'application/json' });
+                var body = init && typeof init.body !== 'undefined' ? init.body : JSON.stringify(payload || {});
+                var method = (init && init.method) || 'POST';
+                return requestJson(url, extend({}, init || {}, { method: method, headers: headers, body: body }));
+            };
+
+            crud.mergePartial = function(target, updates, options) {
+                var shouldCopy = !options || options.copy !== false;
+                var base = target && typeof target === 'object' ? (shouldCopy ? cloneObject(target) : target) : {};
+                if (!updates || typeof updates !== 'object') {
+                    return base;
+                }
+                deepMerge(base, updates);
+                return base;
+            };
+
+            crud.applyPartial = function(target, updates) {
+                return crud.mergePartial(target, updates, { copy: false });
+            };
+
+            function forEachNode(collection, callback) {
+                if (!collection || typeof collection.length === 'undefined' || typeof callback !== 'function') {
+                    return;
+                }
+                Array.prototype.forEach.call(collection, callback);
+            }
+
             widgets.applyLayout = function(element, layout) {
                 if (!element || !layout) {
                     return;
@@ -238,6 +459,22 @@ def generate_widget_library() -> str:
                 if (layout.emphasis) {
                     element.classList.add('n3-emphasis-' + String(layout.emphasis).toLowerCase());
                 }
+            };
+
+            widgets.routeToPath = function(route) {
+                if (!route || route === '/') {
+                    return 'index.html';
+                }
+                var cleaned = String(route).trim();
+                var segments = cleaned.split('/').filter(Boolean);
+                cleaned = segments.join('_');
+                if (!cleaned) {
+                    cleaned = 'index';
+                }
+                if (!/[.]html$/i.test(cleaned)) {
+                    cleaned += '.html';
+                }
+                return cleaned;
             };
 
             widgets.resolvePath = function(path, data) {
@@ -296,6 +533,255 @@ def generate_widget_library() -> str:
             if (!global.showToast) {
                 global.showToast = widgets.showToast;
             }
+
+            widgets.renderErrors = function(container, errors) {
+                if (!container) {
+                    return;
+                }
+                SEVERITY_LEVELS.forEach(function(level) {
+                    container.classList.remove('n3-widget-errors--severity-' + level);
+                });
+                container.innerHTML = '';
+                if (!Array.isArray(errors) || !errors.length) {
+                    container.classList.add('n3-widget-errors--hidden');
+                    return;
+                }
+                var normalized = [];
+                errors.forEach(function(entry) {
+                    var value = normalizeError(entry);
+                    if (value) {
+                        normalized.push(value);
+                    }
+                });
+                if (!normalized.length) {
+                    container.classList.add('n3-widget-errors--hidden');
+                    return;
+                }
+                container.classList.remove('n3-widget-errors--hidden');
+                var severity = highestSeverity(normalized);
+                if (severity) {
+                    container.classList.add('n3-widget-errors--severity-' + severity);
+                }
+                normalized.forEach(function(entry) {
+                    var wrapper = document.createElement('div');
+                    wrapper.className = 'n3-widget-error';
+
+                    var code = document.createElement('span');
+                    code.className = 'n3-widget-error__code';
+                    code.textContent = entry.code;
+                    wrapper.appendChild(code);
+
+                    var message = document.createElement('span');
+                    message.className = 'n3-widget-error__message';
+                    message.textContent = entry.message;
+                    wrapper.appendChild(message);
+
+                    if (entry.detail) {
+                        var detail = document.createElement('span');
+                        detail.className = 'n3-widget-error__detail';
+                        detail.textContent = entry.detail;
+                        wrapper.appendChild(detail);
+                    }
+
+                    container.appendChild(wrapper);
+                });
+            };
+
+            var ErrorSurface = (function() {
+                function escapeAttr(value) {
+                    return String(value).replace(/"/g, '\\"');
+                }
+
+                function normalizeList(errors) {
+                    if (!Array.isArray(errors)) {
+                        return [];
+                    }
+                    var items = [];
+                    errors.forEach(function(entry) {
+                        var value = normalizeError(entry);
+                        if (value) {
+                            items.push(value);
+                        }
+                    });
+                    return items;
+                }
+
+                function collectFieldNames(form) {
+                    var names = [];
+                    if (!form || typeof form.querySelectorAll !== 'function') {
+                        return names;
+                    }
+                    forEachNode(form.querySelectorAll('[data-n3-field]'), function(node) {
+                        var value = node.getAttribute('data-n3-field');
+                        if (value) {
+                            names.push(value);
+                        }
+                    });
+                    return names;
+                }
+
+                function extractField(scope, knownFields) {
+                    if (scope == null) {
+                        return null;
+                    }
+                    var text = String(scope).trim();
+                    if (!text) {
+                        return null;
+                    }
+                    var lowered = text.toLowerCase();
+                    var prefixes = ['field:', 'field.', 'fields:', 'fields.', 'payload:', 'payload.', 'form:', 'form.field:', 'form.field.', 'form.payload:', 'form.payload.'];
+                    var matched = false;
+                    for (var i = 0; i < prefixes.length; i++) {
+                        var prefix = prefixes[i];
+                        if (lowered.indexOf(prefix) === 0) {
+                            text = text.slice(prefix.length);
+                            lowered = text.toLowerCase();
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if (!matched && Array.isArray(knownFields)) {
+                        if (knownFields.indexOf(text) !== -1) {
+                            matched = true;
+                        }
+                    }
+                    if (!matched) {
+                        return null;
+                    }
+                    var parts = text.split(/[:./]/).filter(function(part) { return part; });
+                    if (!parts.length) {
+                        return null;
+                    }
+                    return parts[parts.length - 1];
+                }
+
+                function clearField(form, fieldName) {
+                    if (!form || !fieldName) {
+                        return;
+                    }
+                    var fieldSelector = '[data-n3-field="' + escapeAttr(fieldName) + '"]';
+                    forEachNode(form.querySelectorAll(fieldSelector + ' input,' + fieldSelector + ' textarea,' + fieldSelector + ' select'), function(control) {
+                        control.classList.remove('n3-input-error');
+                    });
+                    var errorNode = form.querySelector('[data-n3-field-error="' + escapeAttr(fieldName) + '"]');
+                    if (errorNode) {
+                        errorNode.textContent = '';
+                        errorNode.classList.remove('n3-field-error--visible');
+                    }
+                }
+
+                function setFieldError(form, fieldName, entry) {
+                    if (!form || !fieldName || !entry) {
+                        return;
+                    }
+                    var message = entry.message || 'Invalid value.';
+                    if (entry.detail) {
+                        message = message + ' — ' + entry.detail;
+                    }
+                    var errorNode = form.querySelector('[data-n3-field-error="' + escapeAttr(fieldName) + '"]');
+                    if (errorNode) {
+                        errorNode.textContent = message;
+                        errorNode.classList.add('n3-field-error--visible');
+                    }
+                    var fieldSelector = '[data-n3-field="' + escapeAttr(fieldName) + '"]';
+                    forEachNode(form.querySelectorAll(fieldSelector + ' input,' + fieldSelector + ' textarea,' + fieldSelector + ' select'), function(control) {
+                        control.classList.add('n3-input-error');
+                    });
+                }
+
+                function partition(errors, knownFields) {
+                    var normalized = normalizeList(errors);
+                    var result = { general: [], fields: {} };
+                    normalized.forEach(function(entry) {
+                        var fieldName = extractField(entry.scope, knownFields);
+                        if (fieldName) {
+                            if (!result.fields[fieldName]) {
+                                result.fields[fieldName] = [];
+                            }
+                            result.fields[fieldName].push(entry);
+                        } else {
+                            result.general.push(entry);
+                        }
+                    });
+                    return result;
+                }
+
+                function clearForm(form) {
+                    if (!form) {
+                        return;
+                    }
+                    var slot = form.querySelector('[data-n3-error-slot]');
+                    widgets.renderErrors(slot, []);
+                    var names = collectFieldNames(form);
+                    names.forEach(function(name) {
+                        clearField(form, name);
+                    });
+                }
+
+                function applyFormErrors(form, errors) {
+                    if (!form) {
+                        return;
+                    }
+                    var names = collectFieldNames(form);
+                    names.forEach(function(name) {
+                        clearField(form, name);
+                    });
+                    var split = partition(errors, names);
+                    var slot = form.querySelector('[data-n3-error-slot]');
+                    widgets.renderErrors(slot, split.general);
+                    Object.keys(split.fields).forEach(function(name) {
+                        var entries = split.fields[name];
+                        if (entries && entries.length) {
+                            setFieldError(form, name, entries[0]);
+                        }
+                    });
+                }
+
+                function clearAction(button) {
+                    if (!button) {
+                        return;
+                    }
+                    var slot = null;
+                    if (typeof button.closest === 'function') {
+                        var wrapper = button.closest('[data-n3-action-wrapper]');
+                        if (wrapper) {
+                            slot = wrapper.querySelector('[data-n3-error-slot]');
+                        }
+                    }
+                    widgets.renderErrors(slot, []);
+                }
+
+                function applyActionErrors(button, errors) {
+                    if (!button) {
+                        return;
+                    }
+                    var slot = null;
+                    if (typeof button.closest === 'function') {
+                        var wrapper = button.closest('[data-n3-action-wrapper]');
+                        if (wrapper) {
+                            slot = wrapper.querySelector('[data-n3-error-slot]');
+                        }
+                    }
+                    widgets.renderErrors(slot, normalizeList(errors));
+                }
+
+                function applyPageErrors(errors) {
+                    var slot = document.querySelector('[data-n3-page-errors]');
+                    widgets.renderErrors(slot, normalizeList(errors));
+                }
+
+                return {
+                    normalizeList: normalizeList,
+                    clearField: clearField,
+                    clearForm: clearForm,
+                    applyFormErrors: applyFormErrors,
+                    clearAction: clearAction,
+                    applyActionErrors: applyActionErrors,
+                    applyPageErrors: applyPageErrors,
+                };
+            })();
+
+            widgets.ErrorSurface = ErrorSurface;
 
             widgets.populateMetrics = function(container, metrics) {
                 if (!container) {
@@ -398,12 +884,20 @@ def generate_widget_library() -> str:
                 });
             };
 
-            widgets.renderChart = function(canvasId, config, layout, insightName) {
+            widgets.renderChart = function(canvasId, config, layout, insightName, errors) {
                 var canvas = document.getElementById(canvasId);
                 if (!canvas || typeof Chart === 'undefined') {
                     return;
                 }
                 widgets.applyLayout(canvas, layout);
+                var errorSlot = null;
+                if (typeof canvas.closest === 'function') {
+                    var wrapper = canvas.closest('section');
+                    if (wrapper) {
+                        errorSlot = wrapper.querySelector('[data-n3-error-slot]');
+                    }
+                }
+                widgets.renderErrors(errorSlot, errors);
                 var ctx = canvas.getContext('2d');
                 if (!ctx) {
                     return;
@@ -443,7 +937,7 @@ def generate_widget_library() -> str:
                 canvas.__n3_chart__ = new Chart(ctx, config);
             };
 
-            widgets.renderTable = function(tableId, data, layout, insightName) {
+            widgets.renderTable = function(tableId, data, layout, insightName, errors) {
                 var table = document.getElementById(tableId);
                 if (!table) {
                     return;
@@ -452,6 +946,15 @@ def generate_widget_library() -> str:
                 var columns = Array.isArray(data && data.columns) ? data.columns.slice() : [];
                 var rows = Array.isArray(data && data.rows) ? data.rows : [];
                 table.innerHTML = '';
+
+                var errorSlot = null;
+                if (typeof table.closest === 'function') {
+                    var wrapper = table.closest('section');
+                    if (wrapper) {
+                        errorSlot = wrapper.querySelector('[data-n3-error-slot]');
+                    }
+                }
+                widgets.renderErrors(errorSlot, errors || (data && data.errors));
 
                 if (insightName) {
                     table.setAttribute('data-n3-insight-ref', insightName);
@@ -633,10 +1136,16 @@ def generate_widget_library() -> str:
                 entry.render = function(payload) {
                     if (entry.type === 'chart') {
                         var config = widgets.chartResponseToConfig(payload, def.config || null);
-                        widgets.renderChart(entry.id, config, entry.layout, entry.insight);
+                        widgets.renderChart(entry.id, config, entry.layout, entry.insight, payload && payload.errors);
                     } else if (entry.type === 'table') {
                         var tableData = payload && payload.rows ? payload : (payload || def.data || {});
-                        widgets.renderTable(entry.id, tableData, entry.layout, entry.insight);
+                        widgets.renderTable(
+                            entry.id,
+                            tableData,
+                            entry.layout,
+                            entry.insight,
+                            payload && payload.errors
+                        );
                     }
                 };
                 registry[index] = entry;
@@ -692,6 +1201,277 @@ def generate_widget_library() -> str:
                 entry.render(snapshot);
             };
 
+            widgets.findDefinitionByIndex = function(index) {
+                var defs = widgets.__definitions__ || [];
+                for (var i = 0; i < defs.length; i++) {
+                    var def = defs[i];
+                    if (def && typeof def.componentIndex === 'number' && def.componentIndex === index) {
+                        return def;
+                    }
+                }
+                return null;
+            };
+
+            widgets.fetchComponentData = function(definition) {
+                if (!definition || typeof definition.endpoint !== 'string' || !definition.endpoint) {
+                    return;
+                }
+                var endpoint = definition.endpoint;
+                var index = typeof definition.componentIndex === 'number' ? definition.componentIndex : null;
+                crud.fetchResource(endpoint)
+                    .then(function(data) {
+                        if (index !== null && data !== null) {
+                            widgets.updateComponent(index, data, { endpoint: endpoint });
+                        }
+                    })
+                    .catch(function(err) {
+                        console.warn('Failed to fetch component payload', endpoint, err);
+                    });
+            };
+
+            widgets.refreshAllComponents = function() {
+                var defs = widgets.__definitions__ || [];
+                defs.forEach(function(def) {
+                    if (def && (def.type === 'chart' || def.type === 'table') && def.endpoint) {
+                        widgets.fetchComponentData(def);
+                    }
+                });
+            };
+
+            widgets.handleInteractionResponse = function(response, definition) {
+                var def = definition || {};
+                if (!response) {
+                    if (def.successMessage) {
+                        widgets.showToast(def.successMessage);
+                    }
+                    return;
+                }
+                var pageErrors = Array.isArray(response.pageErrors)
+                    ? response.pageErrors.slice()
+                    : (Array.isArray(response.page_errors) ? response.page_errors.slice() : null);
+                if (pageErrors !== null) {
+                    widgets.ErrorSurface.applyPageErrors(pageErrors);
+                }
+                var effects = [];
+                if (Array.isArray(response.results)) {
+                    effects = response.results.slice();
+                } else if (Array.isArray(response.effects)) {
+                    effects = response.effects.slice();
+                }
+                var shouldRefresh = false;
+                if (effects.length) {
+                    effects.forEach(function(effect) {
+                        if (!effect) {
+                            return;
+                        }
+                        var kind = String(effect.type || '').toLowerCase();
+                        if (kind === 'toast') {
+                            widgets.showToast(effect.message || def.successMessage || 'Done');
+                        } else if (kind === 'navigate') {
+                            var status = String(effect.status || 'ok').toLowerCase();
+                            if (status === 'ok') {
+                                var targetUrl = effect.url || null;
+                                if (!targetUrl && effect.page_route) {
+                                    targetUrl = widgets.routeToPath(effect.page_route);
+                                } else if (!targetUrl && effect.page_slug) {
+                                    targetUrl = widgets.routeToPath(effect.page_slug);
+                                }
+                                if (targetUrl) {
+                                    window.location.href = targetUrl;
+                                }
+                            }
+                        } else if (kind === 'update') {
+                            if (String(effect.status || 'ok').toLowerCase() === 'ok') {
+                                shouldRefresh = true;
+                                if (!effect.silent) {
+                                    widgets.showToast(effect.message || 'Update completed');
+                                }
+                            }
+                        } else if (kind === 'python_call' || kind === 'connector_call' || kind === 'chain_run') {
+                            widgets.showToast('Action completed');
+                        }
+                    });
+                } else if (def.successMessage) {
+                    widgets.showToast(def.successMessage);
+                }
+
+                if (response.refresh && Array.isArray(response.refresh.components)) {
+                    response.refresh.components.forEach(function(idx) {
+                        var target = widgets.findDefinitionByIndex(idx);
+                        if (target) {
+                            widgets.fetchComponentData(target);
+                        }
+                    });
+                } else if (shouldRefresh) {
+                    widgets.refreshAllComponents();
+                }
+            };
+
+            widgets.registerForm = function(definition) {
+                if (!definition || !definition.id) {
+                    return;
+                }
+                var form = document.getElementById(definition.id);
+                if (!form || form.__n3_registered__) {
+                    return;
+                }
+                form.__n3_registered__ = true;
+                form.__n3_definition__ = definition;
+
+                form.addEventListener('input', function(event) {
+                    var target = event && event.target;
+                    if (target && target.name) {
+                        widgets.ErrorSurface.clearField(form, target.name);
+                    }
+                });
+
+                form.addEventListener('submit', function(event) {
+                    event.preventDefault();
+                    var endpoint = definition.endpoint || form.getAttribute('data-n3-endpoint');
+                    if (!endpoint) {
+                        widgets.showToast('Form endpoint not configured');
+                        return;
+                    }
+                    var submitButton = form.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                        submitButton.classList.add('n3-button--pending');
+                    }
+                    form.classList.add('n3-form--submitting');
+                    widgets.ErrorSurface.clearForm(form);
+
+                    var formData = new FormData(form);
+                    var payload = {};
+                    formData.forEach(function(value, key) {
+                        if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                            if (!Array.isArray(payload[key])) {
+                                payload[key] = [payload[key]];
+                            }
+                            payload[key].push(value);
+                        } else {
+                            payload[key] = value;
+                        }
+                    });
+
+                    crud.submitJson(endpoint, payload)
+                        .then(function(data) {
+                            if (data === null) {
+                                widgets.ErrorSurface.applyFormErrors(form, []);
+                                widgets.ErrorSurface.applyPageErrors([]);
+                                if (definition.successMessage) {
+                                    widgets.showToast(definition.successMessage);
+                                }
+                                if (definition.resetOnSuccess !== false && typeof form.reset === 'function') {
+                                    form.reset();
+                                }
+                                return;
+                            }
+                            var errors = Array.isArray(data.errors) ? data.errors : [];
+                            var pageErrors = Array.isArray(data.pageErrors)
+                                ? data.pageErrors.slice()
+                                : (Array.isArray(data.page_errors) ? data.page_errors.slice() : []);
+                            widgets.ErrorSurface.applyFormErrors(form, errors);
+                            widgets.ErrorSurface.applyPageErrors(pageErrors);
+                            var status = data.status ? String(data.status).toLowerCase() : 'ok';
+                            if (status === 'error' || errors.length) {
+                                return;
+                            }
+                            widgets.handleInteractionResponse(data, definition);
+                            if (definition.resetOnSuccess !== false && typeof form.reset === 'function') {
+                                form.reset();
+                            }
+                        })
+                        .catch(function(err) {
+                            console.warn('Form submission failed', endpoint, err);
+                            widgets.ErrorSurface.applyFormErrors(form, [{ code: 'network_error', message: 'Unable to submit form right now.', severity: 'error' }]);
+                            widgets.showToast('Unable to submit form right now');
+                        })
+                        .finally(function() {
+                            form.classList.remove('n3-form--submitting');
+                            if (submitButton) {
+                                submitButton.disabled = false;
+                                submitButton.classList.remove('n3-button--pending');
+                            }
+                        });
+                });
+
+                if (Array.isArray(definition.errors) && definition.errors.length) {
+                    widgets.ErrorSurface.applyFormErrors(form, definition.errors);
+                }
+            };
+
+            widgets.registerAction = function(definition) {
+                if (!definition || !definition.id) {
+                    return;
+                }
+                var button = document.getElementById(definition.id);
+                if (!button || button.__n3_registered__) {
+                    return;
+                }
+                button.__n3_registered__ = true;
+                button.__n3_definition__ = definition;
+
+                button.addEventListener('click', function() {
+                    var endpoint = definition.endpoint || button.getAttribute('data-n3-endpoint');
+                    if (!endpoint) {
+                        widgets.showToast('Action endpoint not configured');
+                        return;
+                    }
+                    button.disabled = true;
+                    button.classList.add('n3-action--pending');
+                    widgets.ErrorSurface.clearAction(button);
+
+                    crud.submitJson(endpoint, {})
+                        .then(function(data) {
+                            if (data === null) {
+                                widgets.ErrorSurface.applyActionErrors(button, []);
+                                widgets.ErrorSurface.applyPageErrors([]);
+                                if (definition.successMessage) {
+                                    widgets.showToast(definition.successMessage);
+                                }
+                                return;
+                            }
+                            var errors = Array.isArray(data.errors) ? data.errors : [];
+                            var pageErrors = Array.isArray(data.pageErrors)
+                                ? data.pageErrors.slice()
+                                : (Array.isArray(data.page_errors) ? data.page_errors.slice() : []);
+                            widgets.ErrorSurface.applyActionErrors(button, errors);
+                            widgets.ErrorSurface.applyPageErrors(pageErrors);
+                            var status = data.status ? String(data.status).toLowerCase() : 'ok';
+                            if (status === 'error' || errors.length) {
+                                return;
+                            }
+                            widgets.handleInteractionResponse(data, definition);
+                        })
+                        .catch(function(err) {
+                            console.warn('Action execution failed', endpoint, err);
+                            widgets.ErrorSurface.applyActionErrors(button, [{ code: 'network_error', message: 'Unable to run action', severity: 'error' }]);
+                            widgets.showToast('Unable to run action');
+                        })
+                        .finally(function() {
+                            button.disabled = false;
+                            button.classList.remove('n3-action--pending');
+                        });
+                });
+
+                if (Array.isArray(definition.errors) && definition.errors.length) {
+                    widgets.ErrorSurface.applyActionErrors(button, definition.errors);
+                }
+            };
+
+            widgets.hydratePage = function(slug, payload) {
+                if (!payload || typeof payload !== 'object') {
+                    return;
+                }
+                widgets.__pageSlug = slug;
+                global.N3_PAGE_STATE = payload;
+                if (payload.vars && typeof payload.vars === 'object') {
+                    global.N3_VARS = payload.vars;
+                }
+                var pageErrors = Array.isArray(payload.errors) ? payload.errors : [];
+                widgets.ErrorSurface.applyPageErrors(pageErrors);
+            };
+
             widgets.applyRealtimeUpdate = function(event) {
                 if (!event || typeof event !== 'object') {
                     return;
@@ -716,8 +1496,15 @@ def generate_widget_library() -> str:
                 }
                 if (event.type === 'snapshot' || event.type === 'hydration') {
                     if (event.payload && typeof event.payload === 'object') {
-                        global.N3_PAGE_STATE = event.payload;
+                        widgets.hydratePage(event.slug || widgets.__pageSlug || null, event.payload);
                     }
+                    return;
+                }
+                if (event.payload && typeof event.payload === 'object') {
+                    var mergedState = crud && typeof crud.mergePartial === 'function'
+                        ? crud.mergePartial(global.N3_PAGE_STATE || {}, event.payload, { copy: true })
+                        : deepMerge(cloneObject(global.N3_PAGE_STATE || {}), event.payload);
+                    widgets.hydratePage(event.slug || widgets.__pageSlug || null, mergedState);
                 }
             };
 
@@ -725,6 +1512,7 @@ def generate_widget_library() -> str:
                 if (!Array.isArray(definitions)) {
                     return;
                 }
+                widgets.__definitions__ = definitions.slice();
                 definitions.forEach(function(def) {
                     if (!def || !def.id) {
                         return;
@@ -737,20 +1525,42 @@ def generate_widget_library() -> str:
                         if (def.insight && def.config && typeof def.config === 'object') {
                             def.config.insight = def.insight;
                         }
-                        widgets.renderChart(def.id, def.config || {}, def.layout || {}, def.insight || null);
+                        widgets.renderChart(
+                            def.id,
+                            def.config || {},
+                            def.layout || {},
+                            def.insight || null,
+                            def.errors || []
+                        );
                         if (hasIndex) {
                             widgets.rememberSnapshot(def.componentIndex, def.config || {});
+                        }
+                        if (def.endpoint) {
+                            widgets.fetchComponentData(def);
                         }
                     } else if (def.type === 'table') {
                         if (def.insight && def.data && typeof def.data === 'object') {
                             def.data.insight = def.insight;
                         }
-                        widgets.renderTable(def.id, def.data || {}, def.layout || {}, def.insight || null);
+                        widgets.renderTable(
+                            def.id,
+                            def.data || {},
+                            def.layout || {},
+                            def.insight || null,
+                            (def.data && def.data.errors) || def.errors || []
+                        );
                         if (hasIndex) {
                             widgets.rememberSnapshot(def.componentIndex, def.data || {});
                         }
+                        if (def.endpoint) {
+                            widgets.fetchComponentData(def);
+                        }
                     } else if (def.type === 'insight') {
                         widgets.renderInsight(def.id, def);
+                    } else if (def.type === 'form') {
+                        widgets.registerForm(def);
+                    } else if (def.type === 'action') {
+                        widgets.registerAction(def);
                     }
                 });
             };
@@ -870,13 +1680,7 @@ def generate_widget_library() -> str:
                 }
                 var separator = baseUrl.indexOf('?') === -1 ? '?' : '&';
                 var url = baseUrl + separator + '_ts=' + Date.now();
-                fetch(url, { headers: { 'Accept': 'application/json' } })
-                    .then(function(response) {
-                        if (!response.ok) {
-                            throw new Error('HTTP ' + response.status);
-                        }
-                        return response.json();
-                    })
+                crud.fetchResource(url)
                     .then(function(payload) {
                         realtime.applyEvent(slug, {
                             type: 'snapshot',
@@ -910,6 +1714,13 @@ def generate_widget_library() -> str:
                 }
                 if (event.type === 'snapshot' || event.type === 'hydration') {
                     stateStore[slug] = event.payload || {};
+                } else if (event.payload && typeof event.payload === 'object') {
+                    var currentState = stateStore[slug] || {};
+                    if (crud && typeof crud.mergePartial === 'function') {
+                        stateStore[slug] = crud.mergePartial(currentState, event.payload, { copy: true });
+                    } else {
+                        stateStore[slug] = deepMerge(cloneObject(currentState), event.payload);
+                    }
                 }
                 if (global.N3Widgets && typeof global.N3Widgets.applyRealtimeUpdate === 'function') {
                     try {
@@ -943,7 +1754,6 @@ def generate_widget_library() -> str:
                     return;
                 }
                 state.retries += 1;
-                // simple exponential backoff with an upper bound
                 var delay = Math.min(30000, Math.pow(2, state.retries) * 250);
                 state.reconnectTimer = setTimeout(function() {
                     openWebSocket(slug, state);
@@ -1030,7 +1840,7 @@ def generate_widget_library() -> str:
                     try {
                         state.websocket.close();
                     } catch (err) {
-                        // ignore close errors
+                        // ignore
                     }
                 }
                 state.websocket = null;

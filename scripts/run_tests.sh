@@ -1,7 +1,7 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Wrapper that ensures the virtualenv is ready and executes the full test suite.
 
-set -eu
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -21,16 +21,17 @@ fi
 # shellcheck disable=SC1090
 . "$VENV_DIR/bin/activate"
 
-printf '==> Installing project dependencies\n'
-pip install -e .
+PYTHON_BIN="${PYTHON_BIN:-python}"
 
-if [ -f requirements-dev.txt ]; then
-  pip install -r requirements-dev.txt
+printf '==> Ensuring pip is up to date\n'
+$PYTHON_BIN -m pip install --upgrade pip >/dev/null
+
+printf '==> Installing project dependencies\n'
+$PYTHON_BIN -m pip install -e ".[dev]"
+
+if [ "$#" -eq 0 ]; then
+  set -- --maxfail=1 --disable-warnings --cov=namel3ss --cov-report=term-missing --cov-report=xml
 fi
 
 printf '==> Running pytest %s\n' "$*"
-if [ "$#" -gt 0 ]; then
-  python -m pytest "$@"
-else
-  python -m pytest
-fi
+$PYTHON_BIN -m pytest "$@"

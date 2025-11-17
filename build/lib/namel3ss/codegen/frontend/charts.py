@@ -148,19 +148,8 @@ def build_chart_config(
             normalised.append(entry_copy)
 
     if not labels or not normalised:
-        labels = ["No data"]
-        palette_pairs = _build_dynamic_palette(1, chart_type, theme)
-        bg_default, border_default = palette_pairs[0] if palette_pairs else DEFAULT_CHART_COLORS.get(chart_type, DEFAULT_CHART_COLORS["default"])
-        normalised = [
-            {
-                "label": heading_label,
-                "data": [0],
-                "backgroundColor": chart_stmt.color or bg_default,
-                "borderColor": chart_stmt.color or border_default,
-                "borderWidth": 1,
-                "fill": False,
-            }
-        ]
+        labels = list(labels) if labels else []
+        normalised = []
 
     palette = theme_palette(theme)
 

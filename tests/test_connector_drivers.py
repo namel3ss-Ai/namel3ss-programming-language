@@ -21,6 +21,7 @@ STUB_SCHEMA_TYPES = [
     "PredictionResponse",
     "ExperimentResult",
     "TableResponse",
+    "RuntimeErrorPayload",
 ]
 
 
@@ -38,6 +39,9 @@ def _install_runtime_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
             return self._payload
 
     class AsyncClient:  # pragma: no cover - stub
+        def __init__(self, *args, **kwargs):
+            self._init_kwargs = dict(kwargs)
+
         async def __aenter__(self):
             return self
 
@@ -49,6 +53,11 @@ def _install_runtime_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
 
         async def post(self, *args, **kwargs):
             return _Response({})
+
+        async def request(self, method: str, *args, **kwargs):  # pragma: no cover - stub
+            method_lower = (method or "").lower()
+            handler = getattr(self, method_lower, self.get)
+            return await handler(*args, **kwargs)
 
     httpx_module.AsyncClient = AsyncClient
     monkeypatch.setitem(sys.modules, "httpx", httpx_module)
@@ -134,6 +143,7 @@ def _build_runtime_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         templates={},
         chains={},
         experiments={},
+        crud_resources={},
         pages=[],
         env_keys=[],
     )
@@ -263,6 +273,71 @@ async def test_default_grpc_driver_demo_mode_respects_env(
     assert result["result"][0]["service"] == "ExampleService"
     assert result["config"]["api_key"] == "***"
     assert result["metadata"]["endpoint"] == "demo.example.com:443"
+
+
+@pytest.mark.asyncio
+async def test_default_rest_driver_reports_missing_endpoint(
+    runtime_module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NAMEL3SS_ALLOW_STUBS", raising=False)
+    monkeypatch.delenv("API_BASE_URL", raising=False)
+    connector = {
+        "name": "rest_missing",
+        "options": {
+            "endpoint": "env:API_BASE_URL",
+            "params": {"api_key": "secret"},
+            "headers": {"Authorization": "Bearer top-secret"},
+        },
+    }
+
+    result = await runtime_module._default_rest_driver(connector, {})
+
+    assert result["status"] == "not_configured"
+    assert "missing env" in (result["error"] or "")
+    assert result["config"]["params"]["api_key"] == "***"
+    assert "missing_env" in result["metadata"]
+    assert "API_BASE_URL" in result["metadata"]["missing_env"]
+    assert result["inputs"]["headers"] == ["Authorization"]
+
+
+@pytest.mark.asyncio
+async def test_default_rest_driver_demo_mode(
+    runtime_module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NAMEL3SS_ALLOW_STUBS", "1")
+    connector = {
+        "name": "rest_demo",
+        "options": {"demo": True, "headers": {"Authorization": "Bearer hidden"}},
+    }
+
+    result = await runtime_module._default_rest_driver(connector, {})
+
+    assert result["status"] == "demo"
+    assert result["config"]["headers"]["Authorization"] == "***"
+    assert result["metadata"]["demo"] is True
+
+
+@pytest.mark.asyncio
+async def test_default_rest_driver_empty_response(
+    runtime_module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NAMEL3SS_ALLOW_STUBS", raising=False)
+    connector = {
+        "name": "rest_empty",
+        "options": {
+            "endpoint": "https://api.example.com/orders",
+            "method": "GET",
+            "params": {"tenant": "ctx:user.tenant"},
+        },
+    }
+
+    context = {"user": {"tenant": "acme"}}
+    result = await runtime_module._default_rest_driver(connector, context)
+
+    assert result["status"] == "empty"
+    assert result["rows"] is None
+    assert result["inputs"]["params"] == ["tenant"]
+    assert "status_code" not in result["metadata"]
 
 
 def test_extract_rows_from_connector_response(runtime_module: ModuleType) -> None:

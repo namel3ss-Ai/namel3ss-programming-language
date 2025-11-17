@@ -514,25 +514,39 @@
         if (!event || typeof event !== 'object') {
             return;
         }
-        if (event.type === 'component') {
-            var componentIndex = typeof event.component_index === 'number'
-                ? event.component_index
-                : parseInt(event.component_index, 10);
-            if (!isNaN(componentIndex)) {
-                widgets.updateComponent(componentIndex, event.payload || {}, event.meta || {});
+        var meta = event.meta || {};
+        var componentIndex = meta.component_index;
+        if (componentIndex === undefined || componentIndex === null) {
+            componentIndex = event.component_index;
+        }
+        if (componentIndex !== undefined && componentIndex !== null && typeof componentIndex !== 'number') {
+            var parsed = parseInt(componentIndex, 10);
+            componentIndex = isNaN(parsed) ? null : parsed;
+        }
+        if (event.type === 'update') {
+            if (typeof componentIndex === 'number') {
+                widgets.updateComponent(componentIndex, event.payload || {}, meta);
             }
             return;
         }
-        if (event.type === 'rollback') {
-            var rollbackIndex = typeof event.component_index === 'number'
-                ? event.component_index
-                : parseInt(event.component_index, 10);
-            if (!isNaN(rollbackIndex)) {
-                widgets.rollbackComponent(rollbackIndex);
+        if (event.type === 'mutation') {
+            var status = typeof meta.status === 'string' ? meta.status.toLowerCase() : '';
+            if (status === 'rollback' && typeof componentIndex === 'number') {
+                widgets.rollbackComponent(componentIndex);
+                return;
+            }
+            if (typeof componentIndex === 'number' && (status === 'pending' || status === 'confirmed' || status === 'applied')) {
+                widgets.updateComponent(componentIndex, event.payload || {}, meta);
             }
             return;
         }
-        if (event.type === 'snapshot' || event.type === 'hydration') {
+        if (event.type === 'error') {
+            if (global.console && typeof global.console.warn === 'function') {
+                global.console.warn('Realtime error event', event);
+            }
+            return;
+        }
+        if (event.type === 'snapshot') {
             if (event.payload && typeof event.payload === 'object') {
                 global.N3_PAGE_STATE = event.payload;
             }

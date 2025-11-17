@@ -14,6 +14,7 @@ __all__ = [
     "_render_models_router_module",
     "_render_experiments_router_module",
     "_render_pages_router_module",
+    "_render_crud_router_module",
     "_render_page_endpoint",
     "_render_component_endpoint",
     "_render_insight_endpoint",
@@ -26,18 +27,20 @@ def _render_routers_package() -> str:
 
 from __future__ import annotations
 
-from . import experiments, insights, models, pages
+from . import crud, experiments, insights, models, pages
 
 insights_router = insights.router
 models_router = models.router
 experiments_router = experiments.router
 pages_router = pages.router
+crud_router = crud.router
 
 GENERATED_ROUTERS = (
     insights_router,
     models_router,
     experiments_router,
     pages_router,
+    crud_router,
 )
 
 __all__ = [
@@ -45,6 +48,7 @@ __all__ = [
     "models_router",
     "experiments_router",
     "pages_router",
+    "crud_router",
     "GENERATED_ROUTERS",
 ]
 '''
@@ -60,9 +64,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..runtime import evaluate_insight
+from ..helpers import router_dependencies
 from ..schemas import InsightResponse
 
-router = APIRouter(tags=["insights"])
+router = APIRouter(tags=["insights"], dependencies=router_dependencies())
 
 
 @router.get("/api/insights/{slug}", response_model=InsightResponse)
@@ -88,14 +93,14 @@ from fastapi import APIRouter, HTTPException
 from ..runtime import (
     PredictionResponse,
     call_llm_connector,
-    call_python_model,
     explain_prediction,
     get_model_spec,
     predict,
     run_chain,
 )
+from ..helpers import router_dependencies
 
-router = APIRouter(tags=["models"])
+router = APIRouter(tags=["models"], dependencies=router_dependencies())
 
 
 @router.post("/api/models/{model_name}/predict", response_model=PredictionResponse)
@@ -126,11 +131,6 @@ async def run_llm_connector(connector: str, payload: Dict[str, Any]) -> Dict[str
     return call_llm_connector(connector, payload)
 
 
-@router.post("/api/python/{module}.{method}")
-async def call_python_endpoint(module: str, method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return call_python_model(f"{module}.{method}", payload)
-
-
 __all__ = ["router"]
 '''
     return textwrap.dedent(template).strip() + "\n"
@@ -147,8 +147,9 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from ..runtime import ExperimentResult, evaluate_experiment, run_experiment
+from ..helpers import router_dependencies
 
-router = APIRouter(tags=["experiments"])
+router = APIRouter(tags=["experiments"], dependencies=router_dependencies())
 
 
 @router.get("/api/experiments/{slug}", response_model=ExperimentResult)
@@ -179,7 +180,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 try:
     from fastapi import WebSocket, WebSocketDisconnect
@@ -189,9 +190,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...database import get_session
 from .. import runtime
+from ..helpers import router_dependencies
 from ..schemas import ChartResponse, TableResponse
 
-router = APIRouter()
+router = APIRouter(dependencies=router_dependencies())
 '''
     parts: List[str] = [textwrap.dedent(header).strip()]
 
@@ -332,6 +334,159 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
     return "\n\n".join(part for part in parts if part).strip() + "\n"
 
 
+def _render_crud_router_module(state: BackendState) -> str:
+    template = '''
+"""Generated FastAPI router for CRUD resources."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ...database import get_session
+from .. import runtime
+from ..helpers import router_dependencies
+from ..schemas import (
+    CrudCatalogResponse,
+    CrudDeleteResponse,
+    CrudItemResponse,
+    CrudListResponse,
+)
+
+router = APIRouter(prefix="/api/crud", tags=["crud"], dependencies=router_dependencies())
+
+
+def _crud_not_found(slug: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=f"CRUD resource '{slug}' is not registered.")
+
+
+def _crud_operation_forbidden(slug: str, operation: str) -> HTTPException:
+    return HTTPException(status_code=403, detail=f"Operation '{operation}' is not allowed for resource '{slug}'.")
+
+
+def _route(method: str, *args, **kwargs):
+    """Return a router decorator, falling back when FastAPI stand-ins lack HTTP verbs."""
+    decorator = getattr(router, method, None)
+    if callable(decorator):
+        return decorator(*args, **kwargs)
+    fallback = router.post if method != "get" and hasattr(router, "post") else router.get
+    return fallback(*args, **kwargs)
+
+
+@router.get("/", response_model=CrudCatalogResponse)
+async def list_crud_resources() -> CrudCatalogResponse:
+    resources = runtime.describe_crud_resources()
+    return CrudCatalogResponse(resources=resources)
+
+
+@router.get("/{slug}", response_model=CrudListResponse)
+async def list_crud_items(
+    slug: str,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    session: AsyncSession = Depends(get_session),
+) -> CrudListResponse:
+    try:
+        payload = await runtime.list_crud_resource(slug, session, limit=limit, offset=offset)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "list")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudListResponse(**payload)
+
+
+@router.get("/{slug}/{identifier}", response_model=CrudItemResponse)
+async def get_crud_item(
+    slug: str,
+    identifier: str,
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        payload = await runtime.retrieve_crud_resource(slug, identifier, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "retrieve")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    result = CrudItemResponse(**payload)
+    if result.status == "not_found":
+        raise HTTPException(404, detail=f"Record '{identifier}' was not found for resource '{slug}'.")
+    return result
+
+
+@router.post("/{slug}", response_model=CrudItemResponse, status_code=201)
+async def create_crud_item(
+    slug: str,
+    payload: Dict[str, Any],
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        result_payload = await runtime.create_crud_resource(slug, payload, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "create")
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    return CrudItemResponse(**result_payload)
+
+
+@_route("put", "/{slug}/{identifier}", response_model=CrudItemResponse)
+@_route("patch", "/{slug}/{identifier}", response_model=CrudItemResponse)
+async def update_crud_item(
+    slug: str,
+    identifier: str,
+    payload: Dict[str, Any],
+    session: AsyncSession = Depends(get_session),
+) -> CrudItemResponse:
+    try:
+        result_payload = await runtime.update_crud_resource(slug, identifier, payload, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "update")
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    result = CrudItemResponse(**result_payload)
+    if result.status == "not_found":
+        raise HTTPException(404, detail=f"Record '{identifier}' was not found for resource '{slug}'.")
+    return result
+
+
+@_route("delete", "/{slug}/{identifier}", response_model=CrudDeleteResponse)
+async def delete_crud_item(
+    slug: str,
+    identifier: str,
+    session: AsyncSession = Depends(get_session),
+) -> CrudDeleteResponse:
+    try:
+        result_payload = await runtime.delete_crud_resource(slug, identifier, session)
+    except KeyError:
+        raise _crud_not_found(slug)
+    except PermissionError as exc:
+        raise _crud_operation_forbidden(slug, str(exc) or "delete")
+    except RuntimeError as exc:
+        raise HTTPException(500, detail=str(exc))
+    result = CrudDeleteResponse(**result_payload)
+    if result.status == "not_found":
+        raise HTTPException(404, detail=f"Record '{identifier}' was not found for resource '{slug}'.")
+    return result
+
+
+__all__ = ["router"]
+'''
+    return textwrap.dedent(template).strip() + "\n"
+
+
 def _render_page_endpoint(page: PageSpec) -> List[str]:
     func_name = f"page_{page.slug}_{page.index}"
     path = page.api_path or "/api/pages"
@@ -376,9 +531,15 @@ def _render_component_endpoint(
             f"        if {insight_name!r}:",
             "            try:",
             f"                insights = runtime.evaluate_insights_for_dataset({insight_name!r}, rows, context)",
-            "            except Exception:",
+            "            except Exception as exc:",
             f"                runtime.logger.exception('Failed to evaluate insight %s', {insight_name!r})",
+            f"                runtime._record_runtime_error(context, code='insight_evaluation_failed', message=\"Insight '{insight_name}' failed during evaluation.\", scope={insight_name!r}, source='insight', detail=str(exc))",
             "                insights = {}",
+            "    component_errors: List[Dict[str, Any]] = []",
+            f"    if {source_name!r}:",
+            f"        component_errors.extend(runtime._collect_runtime_errors(context, {source_name!r}))",
+            f"    if {insight_name!r}:",
+            f"        component_errors.extend(runtime._collect_runtime_errors(context, {insight_name!r}))",
             "    response = TableResponse(",
             f"        title={payload.get('title')!r},",
             f"        source={{'type': {source_type!r}, 'name': {source_name!r}}},",
@@ -389,6 +550,7 @@ def _render_component_endpoint(
             f"        insight={insight_name!r},",
             "        rows=rows,",
             "        insights=insights,",
+            "        errors=component_errors,",
             "    )",
             f"    is_reactive = {page.reactive!r} or (dataset.get('reactive') if dataset else False)",
             "    if runtime.REALTIME_ENABLED and is_reactive:",
@@ -422,9 +584,15 @@ def _render_component_endpoint(
             f"        if {insight_name!r}:",
             "            try:",
             f"                insight_results = runtime.evaluate_insights_for_dataset({insight_name!r}, rows, context)",
-            "            except Exception:",
+            "            except Exception as exc:",
             f"                runtime.logger.exception('Failed to evaluate insight %s', {insight_name!r})",
+            f"                runtime._record_runtime_error(context, code='insight_evaluation_failed', message=\"Insight '{insight_name}' failed during evaluation.\", scope={insight_name!r}, source='insight', detail=str(exc))",
             "                insight_results = {}",
+            "    component_errors: List[Dict[str, Any]] = []",
+            f"    if {source_name!r}:",
+            f"        component_errors.extend(runtime._collect_runtime_errors(context, {source_name!r}))",
+            f"    if {insight_name!r}:",
+            f"        component_errors.extend(runtime._collect_runtime_errors(context, {insight_name!r}))",
             "    response = ChartResponse(",
             f"        heading={payload.get('heading')!r},",
             f"        title={payload.get('title')!r},",
@@ -440,11 +608,35 @@ def _render_component_endpoint(
             f"        encodings={payload.get('encodings') or {}!r},",
             f"        insight={insight_name!r},",
             "        insights=insight_results,",
+            "        errors=component_errors,",
             "    )",
             f"    is_reactive = {page.reactive!r} or (dataset.get('reactive') if dataset else False)",
             "    if runtime.REALTIME_ENABLED and is_reactive:",
             f"        await runtime.broadcast_component_update({page.slug!r}, 'chart', {index}, response, meta={meta_expr})",
             "    return response",
+        ]
+    if component.type == "form":
+        return [
+            f"@router.post({base_path!r} + '/forms/{index}', response_model=Dict[str, Any], tags=['pages'])",
+            f"async def {slug}_form_{index}(payload: Dict[str, Any], session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
+            "    try:",
+            f"        return await runtime.submit_form({page.slug!r}, {index}, payload, session=session)",
+            "    except KeyError:",
+            "        raise HTTPException(status_code=404, detail='Form not found')",
+            "    except (IndexError, ValueError) as exc:",
+            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
+        ]
+    if component.type == "action":
+        return [
+            f"@router.post({base_path!r} + '/actions/{index}', response_model=Dict[str, Any], tags=['pages'])",
+            f"async def {slug}_action_{index}(payload: Optional[Dict[str, Any]] = None, session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:",
+            "    try:",
+            f"        data = payload or {{}}",
+            f"        return await runtime.trigger_action({page.slug!r}, {index}, data, session=session)",
+            "    except KeyError:",
+            "        raise HTTPException(status_code=404, detail='Action not found')",
+            "    except (IndexError, ValueError) as exc:",
+            "        raise HTTPException(status_code=400, detail=str(exc)) from exc",
         ]
     return []
 

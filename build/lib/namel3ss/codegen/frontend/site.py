@@ -19,7 +19,44 @@ from .slugs import slugify_identifier, slugify_page_name, slugify_route
 from .theme import infer_theme_mode
 
 
-def generate_site(app: App, output_dir: str, *, enable_realtime: bool = False) -> None:
+def generate_site(
+    app: App,
+    output_dir: str,
+    *,
+    enable_realtime: bool = False,
+    target: str = "static",
+) -> None:
+    """Generate a frontend project in ``output_dir`` for the provided ``app``.
+
+    Parameters
+    ----------
+    app:
+        Parsed application AST.
+    output_dir:
+        Destination directory for generated assets.
+    enable_realtime:
+        When ``True`` the generated frontend will attach realtime hooks where
+        supported.
+    target:
+        Frontend flavour to emit. ``"static"`` preserves the legacy
+        HTML/CSS output. ``"react-vite"`` produces a Vite + React + TypeScript
+        project scaffold.
+    """
+
+    if target == "static":
+        generate_static_site(app, output_dir, enable_realtime=enable_realtime)
+        return
+
+    if target == "react-vite":
+        from .react_vite import generate_react_vite_site
+
+        generate_react_vite_site(app, output_dir, enable_realtime=enable_realtime)
+        return
+
+    raise ValueError(f"Unsupported frontend target '{target}'")
+
+
+def generate_static_site(app: App, output_dir: str, *, enable_realtime: bool = False) -> None:
     """Write a static representation of the app to ``output_dir``."""
 
     out = Path(output_dir)
@@ -95,6 +132,9 @@ def _generate_page_html(
     theme_mode = infer_theme_mode(app, page)
 
     body_lines.append(f"<h2>{html.escape(page.name)}</h2>")
+    body_lines.append(
+        '<div class="n3-page-errors n3-widget-errors n3-widget-errors--hidden" data-n3-page-errors></div>'
+    )
 
     preview_provider = PreviewDataResolver(app)
 
@@ -185,9 +225,12 @@ def _generate_page_html(
                     .then(function(data) {
                         var vars = (data && data.vars) ? data.vars : {};
                         window.N3_VARS = vars;
+                        if (window.N3Widgets && typeof window.N3Widgets.hydratePage === 'function') {
+                            window.N3Widgets.hydratePage("$slug", data || {});
+                        }
                         document.querySelectorAll('[data-n3-text-template]').forEach(function(el) {
                             var tpl = el.getAttribute('data-n3-text-template') || '';
-                            el.textContent = tpl.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function(match, name) {
+                            el.textContent = tpl.replace(/[{]([a-zA-Z_][a-zA-Z0-9_]*)[}]/g, function(match, name) {
                                 return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : '';
                             });
                         });

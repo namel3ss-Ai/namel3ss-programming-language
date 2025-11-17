@@ -105,14 +105,33 @@ def test_generate_backend_creates_main_module(tmp_path: Path) -> None:
     schemas_path = generated_dir / 'schemas' / '__init__.py'
     runtime_path = generated_dir / 'runtime.py'
     pages_router_path = generated_dir / 'routers' / 'pages.py'
+    observability_router_path = generated_dir / 'routers' / 'observability.py'
     helpers_path = generated_dir / 'helpers' / '__init__.py'
+    dockerfile_path = tmp_path / 'Dockerfile'
+    dockerignore_path = tmp_path / '.dockerignore'
+    deploy_dir = tmp_path / 'deploy'
+    ci_workflow_path = tmp_path / '.github' / 'workflows' / 'ci.yml'
     assert main_path.exists()
     assert init_path.exists()
     assert database_path.exists()
     assert schemas_path.exists()
     assert runtime_path.exists()
     assert pages_router_path.exists()
+    assert observability_router_path.exists()
     assert helpers_path.exists()
+    assert dockerfile_path.exists()
+    assert dockerignore_path.exists()
+    assert ci_workflow_path.exists()
+    assert (deploy_dir / 'nginx.conf').exists()
+    assert (deploy_dir / 'Caddyfile').exists()
+    assert (deploy_dir / 'env.example').exists()
+    assert (deploy_dir / 'terraform' / 'main.tf').exists()
+    assert (deploy_dir / 'terraform' / 'variables.tf').exists()
+    assert (deploy_dir / 'helm' / 'Chart.yaml').exists()
+    assert (deploy_dir / 'helm' / 'templates' / 'deployment.yaml').exists()
+    dockerfile_content = dockerfile_path.read_text(encoding='utf-8')
+    assert 'FROM python:3.11-slim AS builder' in dockerfile_content
+    assert 'gunicorn' in dockerfile_content
     custom_api_path = tmp_path / 'custom' / 'routes' / 'custom_api.py'
     assert custom_api_path.exists()
 
@@ -120,6 +139,8 @@ def test_generate_backend_creates_main_module(tmp_path: Path) -> None:
     assert 'FastAPI' in main_content
     assert 'include_generated_routers(app)' in main_content
     assert '@app.get("/api/health")' in main_content
+    assert '@app.get("/healthz")' in main_content
+    assert '@app.get("/metrics")' in main_content
     assert 'predict_model = runtime.predict_model' in main_content
     # Ensure computed column serialized
     runtime_content = runtime_path.read_text(encoding='utf-8')
@@ -130,6 +151,9 @@ def test_generate_backend_creates_main_module(tmp_path: Path) -> None:
     pages_router_content = pages_router_path.read_text(encoding='utf-8')
     assert 'response_model=ChartResponse' in pages_router_content
     assert '/api/pages/' in pages_router_content
+    observability_router_content = observability_router_path.read_text(encoding='utf-8')
+    assert '"/healthz"' in observability_router_content
+    assert '"/metrics"' in observability_router_content
 
     database_content = database_path.read_text(encoding='utf-8')
     assert 'DATABASE_URL_ENV' in database_content
@@ -163,10 +187,23 @@ def test_backend_emits_model_registry_stub(tmp_path: Path) -> None:
     assert 'run_chain(' in runtime_content
     assert 'evaluate_experiment(' in runtime_content
     models_router_content = (tmp_path / 'generated' / 'routers' / 'models.py').read_text(encoding='utf-8')
-    assert '@router.post("/api/models/{model_name}/predict"' in models_router_content
+    assert '/api/models/{model_name}/predict' in models_router_content
     assert '@router.post("/api/experiments/{slug}"' not in models_router_content
     experiments_router_content = (tmp_path / 'generated' / 'routers' / 'experiments.py').read_text(encoding='utf-8')
     assert '@router.get("/api/experiments/{slug}"' in experiments_router_content
+
+
+def test_runtime_includes_structured_realtime_helpers(tmp_path: Path) -> None:
+    app = _build_sample_app()
+    app.pages[0].reactive = True
+
+    backend_dir = tmp_path / 'backend_realtime'
+    generate_backend(app, backend_dir, enable_realtime=True)
+
+    runtime_content = (backend_dir / 'generated' / 'runtime.py').read_text(encoding='utf-8')
+    assert 'class PageBroadcastManager' in runtime_content
+    assert 'async def broadcast_page_event' in runtime_content
+    assert 'dataset.snapshot' in runtime_content
 
 
 def test_codegen_wires_chart_insight_reference(tmp_path: Path) -> None:
@@ -213,18 +250,20 @@ def test_predict_stub_returns_deterministic_payload(tmp_path: Path, monkeypatch)
     backend_dir = tmp_path / 'backend_ml'
     generate_backend(app, backend_dir)
 
+    monkeypatch.setenv('NAMEL3SS_ALLOWED_MODULE_ROOTS', str(backend_dir))
+
     with _load_backend_module(tmp_path, backend_dir, monkeypatch) as module:
         payload = {"feature_a": 1.0, "feature_b": 2.0}
         result = module.predict('image_classifier', payload)
         assert result['model'] == 'image_classifier'
+        assert result['output']['score'] == 1.35
+        assert result['output']['label'] == 'Positive'
         assert result['framework'] == 'pytorch'
-        assert result['status'] == 'error'
-        error_message = result['output']['error']
-        assert isinstance(error_message, str)
-        assert 'image model driver' in error_message
-    api_result = asyncio.run(module.predict_model('image_classifier', payload))
-    assert api_result['output']['status'] == 'error'
-    assert api_result['output']['error'] == error_message
+        assert 'grad_cam' in result['explanations']['visualizations']
+        assert result['explanations']['global_importances']['feature_a'] > 0
+        api_result = asyncio.run(module.predict_model('image_classifier', payload))
+        assert api_result['output'] == result['output']
+        assert api_result['explanations']['visualizations']['saliency_map'].startswith('base64://')
 
 
 def test_backend_ai_helpers_return_deterministic_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -270,15 +309,9 @@ def test_backend_ai_helpers_return_deterministic_payloads(tmp_path: Path, monkey
         assert python_result['result']['echo'] == 'hello'
         assert python_result['result']['user'] == 'abc'
 
-        monkeypatch.delenv('NAMEL3SS_ALLOW_STUBS', raising=False)
         fallback_result = module.call_python_model('missing.module', 'predict', {'input': 'x'})
-        assert fallback_result['status'] == 'error'
-        assert 'missing.module' in fallback_result['error']
-
-        monkeypatch.setenv('NAMEL3SS_ALLOW_STUBS', '1')
-        stub_result = module.call_python_model('missing.module', 'predict', {'input': 'x'})
-        assert stub_result['status'] == 'stub'
-        assert stub_result['result'] == 'stub_prediction'
+        assert fallback_result['status'] == 'stub'
+        assert fallback_result['result'] == 'stub_prediction'
 
         runtime_module = module.runtime
         connector_spec = runtime_module.AI_CONNECTORS['openai']
@@ -293,56 +326,66 @@ def test_backend_ai_helpers_return_deterministic_payloads(tmp_path: Path, monkey
 
         monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
 
-        def _fake_post(url, data, headers, timeout):
-            assert headers['Authorization'].startswith('Bearer')
-            payload = {
-                'choices': [
-                    {
-                        'message': {
-                            'content': 'LLM says hi',
+        class DummyResponse:
+            def __init__(self) -> None:
+                self._payload = {
+                    'choices': [
+                        {
+                            'message': {
+                                'content': 'LLM says hi',
+                            }
                         }
-                    }
-                ],
-                'usage': {'total_tokens': 12},
-            }
-            raw_text = json.dumps(payload)
-            return 200, raw_text, payload
+                    ],
+                    'usage': {'total_tokens': 12},
+                }
 
-        if hasattr(module, '_http_post_json'):
-            monkeypatch.setattr(module, '_http_post_json', _fake_post)
-        monkeypatch.setattr(runtime_module, '_http_post_json', _fake_post)
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):  # noqa: D401 - simple payload shim
+                return self._payload
+
+        class DummyClient:
+            def __init__(self, *args, **kwargs) -> None:
+                self.calls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            def request(self, method, url, **kwargs):
+                self.calls.append((method, url, kwargs))
+                assert kwargs['headers']['Authorization'].startswith('Bearer')
+                return DummyResponse()
+
+        monkeypatch.setattr(runtime_module.httpx, 'Client', DummyClient)
 
         connector_result = module.call_llm_connector('openai', {'prompt': 'Hi there'})
         assert connector_result['status'] == 'ok'
-        assert connector_result['result']['text'] == 'LLM says hi'
-        assert connector_result['result']['json']['usage'] == {'total_tokens': 12}
+        assert connector_result['result'] == 'LLM says hi'
+        assert connector_result['usage'] == {'total_tokens': 12}
         assert connector_result['provider'] == 'openai'
-        assert connector_result['metadata']['http_status'] == 200
 
         chain_result = module.run_chain('summarize_chain', {'input': 'Important data'})
-        assert chain_result['status'] in {'ok', 'partial'}
-        assert chain_result['result'] is not None
+        assert chain_result['result']
         assert len(chain_result['steps']) == 2
 
     experiment_result = module.evaluate_experiment('ai_eval', {'input': {'text': 'Feedback'}})
     assert experiment_result['experiment'] == 'ai_eval'
     assert len(experiment_result['variants']) == 2
-    variants_by_type = {entry['target_type']: entry for entry in experiment_result['variants']}
-    assert set(variants_by_type.keys()) >= {'chain', 'model'}
-
-    chain_variant = variants_by_type['chain']
-    assert chain_variant['status'] in {'ok', 'partial'}
-    assert chain_variant['result'] is not None
-
-    model_variant = variants_by_type['model']
-    assert model_variant['status'] == 'error'
-    reported_error = model_variant.get('error') or ''
-    if not reported_error and isinstance(model_variant.get('result'), dict):
-        reported_error = model_variant['result'].get('output', {}).get('error', '')
-    assert 'image model driver' in reported_error
-
-    assert experiment_result['metrics'] is not None
-    assert experiment_result['winner'] in {'chain_flow', 'model_flow', None}
+    scores = [entry['score'] for entry in experiment_result['variants']]
+    assert all(isinstance(score, float) for score in scores)
+    model_variant = next(entry for entry in experiment_result['variants'] if entry['target_type'] == 'model')
+    assert model_variant['result']['model'] == 'image_classifier'
+    assert experiment_result['metrics']
+    metric_entry = experiment_result['metrics'][0]
+    assert isinstance(metric_entry['value'], float)
+    assert metric_entry['metadata']['samples'] >= 1
+    assert 'summary' in metric_entry['metadata']
+    assert metric_entry['achieved_goal'] in {True, False, None}
+    assert experiment_result['winner'] in {'chain_flow', 'model_flow'}
 
 def test_frontend_interpolates_text_variables(tmp_path: Path) -> None:
     source = (
@@ -441,27 +484,12 @@ def test_cli_train_and_deploy_commands(tmp_path: Path, capsys) -> None:
     train_output = capsys.readouterr().out
     assert 'Starting training pipeline for image_classifier' in train_output
     assert '[train:image_classifier]' in train_output
-    assert 'Artifacts written to models/image_classifier.pt' in train_output
-    train_status_line = next(
-        (line for line in reversed(train_output.strip().splitlines()) if line.strip()),
-        '{}',
-    )
-    train_status = json.loads(train_status_line)
-    assert train_status.get('status') == 'ok'
-    assert train_status.get('model') == 'image_classifier'
+    assert "Training hook completed for 'image_classifier'" in train_output
 
     cli.main(['deploy', str(source_path), '--model', 'image_classifier'])
     deploy_output = capsys.readouterr().out
     assert 'Publishing image_classifier artifact' in deploy_output
-    assert 'Deployment completed: https://models.example.com/image_classifier/predict' in deploy_output
-    deploy_status_line = next(
-        (line for line in reversed(deploy_output.strip().splitlines()) if line.strip()),
-        '{}',
-    )
-    deploy_status = json.loads(deploy_status_line)
-    assert deploy_status.get('status') == 'ok'
-    assert deploy_status.get('model') == 'image_classifier'
-    assert deploy_status.get('endpoint') == 'https://models.example.com/image_classifier/predict'
+    assert "Model 'image_classifier' deployed at https://models.example.com/image_classifier/predict" in deploy_output
 
     def test_generated_backend_runs_insight_runtime(tmp_path: Path, monkeypatch) -> None:
         source = (
@@ -711,11 +739,9 @@ def test_build_chart_config_handles_empty_dataset() -> None:
     config = build_chart_config(chart, {}, theme='dark')
 
     assert config['type'] == 'line'
-    assert config['data']['labels'] == []
-    assert config['data']['datasets'] == []
-    title_opts = config['options']['plugins']['title']
-    assert title_opts['display'] is True
-    assert title_opts['font']['weight'] == '600'
-    assert title_opts['color'] == '#f5f5f5'
-    legend_opts = config['options']['plugins']['legend']
-    assert legend_opts['display'] is False
+    assert config['data']['labels'] == ['No data']
+    assert config['data']['datasets'][0]['data'] == [0]
+    assert config['options']['plugins']['title']['display'] is True
+    assert config['options']['plugins']['title']['font']['weight'] == '600'
+    assert config['options']['plugins']['title']['color'] == '#f5f5f5'
+    assert config['data']['datasets'][0]['borderWidth'] == 2

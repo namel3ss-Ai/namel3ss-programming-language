@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from namel3ss.codegen.backend.core import BackendState, _render_runtime_module
+from namel3ss.codegen.backend.state import PageComponent, PageSpec
 
 
 STUB_SCHEMA_TYPES = [
@@ -16,7 +17,37 @@ STUB_SCHEMA_TYPES = [
     "PredictionResponse",
     "ExperimentResult",
     "TableResponse",
+    "RuntimeErrorPayload",
 ]
+
+
+def _sample_dataset_definition() -> dict:
+    return {
+        "name": "sales",
+        "source_type": "inline",
+        "source": "inline",
+        "connector": None,
+        "operations": [
+            {
+                "type": "computed_column",
+                "name": "gross",
+                "expression": "row.get('revenue', 0) + row.get('tax', 0)",
+            },
+            {"type": "filter", "condition": "row.get('region') == 'EU'"},
+            {"type": "group_by", "columns": ["month"]},
+            {"type": "aggregate", "function": "sum", "expression": "gross as total_gross"},
+        ],
+        "transforms": [
+            {"type": "select", "options": {"columns": ["month", "total_gross"]}},
+        ],
+        "quality_checks": [
+            {"name": "positive", "condition": "row.get('total_gross', 0) > 0", "severity": "warning"},
+            {"name": "minimum_rows", "metric": "row_count", "threshold": 1},
+        ],
+        "features": ["gross"],
+        "targets": ["revenue"],
+        "sample_rows": [],
+    }
 
 
 def _install_runtime_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,7 +125,7 @@ def _install_runtime_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_module)
 
 
-def _build_runtime_module(monkeypatch: pytest.MonkeyPatch):
+def _build_runtime_module(monkeypatch: pytest.MonkeyPatch, state: BackendState | None = None):
     _install_runtime_stubs(monkeypatch)
 
     generated_pkg = types.ModuleType("generated")
@@ -107,46 +138,23 @@ def _build_runtime_module(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setitem(sys.modules, "generated.schemas", schemas_module)
     generated_pkg.schemas = schemas_module
 
-    dataset_definition = {
-        "name": "sales",
-        "source_type": "inline",
-        "source": "inline",
-        "connector": None,
-        "operations": [
-            {
-                "type": "computed_column",
-                "name": "gross",
-                "expression": "row.get('revenue', 0) + row.get('tax', 0)",
-            },
-            {"type": "filter", "condition": "row.get('region') == 'EU'"},
-            {"type": "group_by", "columns": ["month"]},
-            {"type": "aggregate", "function": "sum", "expression": "gross as total_gross"},
-        ],
-        "transforms": [
-            {"type": "select", "options": {"columns": ["month", "total_gross"]}},
-        ],
-        "quality_checks": [
-            {"name": "positive", "condition": "row.get('total_gross', 0) > 0", "severity": "warning"},
-            {"name": "minimum_rows", "metric": "row_count", "threshold": 1},
-        ],
-        "features": ["gross"],
-        "targets": ["revenue"],
-        "sample_rows": [],
-    }
+    if state is None:
+        dataset_definition = _sample_dataset_definition()
 
-    state = BackendState(
-        app={"name": "Test", "database": None, "theme": {}, "variables": []},
-        datasets={"sales": dataset_definition},
-        connectors={},
-        ai_connectors={},
-        insights={},
-        models={},
-        templates={},
-        chains={},
-        experiments={},
-        pages=[],
-        env_keys=[],
-    )
+        state = BackendState(
+            app={"name": "Test", "database": None, "theme": {}, "variables": []},
+            datasets={"sales": dataset_definition},
+            connectors={},
+            ai_connectors={},
+            insights={},
+            models={},
+            templates={},
+            chains={},
+            experiments={},
+            crud_resources={},
+            pages=[],
+            env_keys=[],
+        )
 
     source = _render_runtime_module(state, embed_insights=False, enable_realtime=False)
     module_name = "generated.runtime_test"
@@ -203,6 +211,22 @@ def test_execute_dataset_pipeline_with_quality_checks(runtime_module) -> None:
     assert context.get("targets", {}).get("sales") == ["revenue"]
 
 
+def test_dataset_expression_failure_surfaces_structured_error(runtime_module) -> None:
+    dataset = runtime_module.DATASETS["sales"]
+    dataset["operations"][0]["expression"] = "int('bad')"
+    rows = [
+        {"month": "Jan", "region": "EU", "revenue": 120.0, "tax": 10.0},
+    ]
+    context: dict = {}
+
+    asyncio.run(runtime_module._execute_dataset_pipeline(dataset, rows, context))
+
+    errors = runtime_module._collect_runtime_errors(context, scope="sales", consume=False)
+    assert errors, "Expected structured errors for failing dataset expression"
+    assert errors[0]["code"] == "dataset_expression_failed"
+    assert errors[0]["scope"] == "sales"
+
+
 def test_execute_update_builds_parameterised_sql(runtime_module) -> None:
     session = StubSession(rowcount=3)
     context = {
@@ -225,3 +249,73 @@ def test_execute_update_builds_parameterised_sql(runtime_module) -> None:
     params = session.parameters[-1]
     assert getattr(statement, "text", str(statement)) == "UPDATE orders SET status = :set_0 WHERE id = :where_0"
     assert params == {"set_0": "APPROVED", "where_0": 42}
+
+
+def _build_state_with_form() -> BackendState:
+    form_component = PageComponent(
+        type="form",
+        payload={
+            "title": "Signup",
+            "fields": [{"name": "email", "field_type": "text"}],
+            "layout": {},
+            "operations": [],
+            "styles": {},
+        },
+    )
+    form_page = PageSpec(
+        name="Signup",
+        route="/signup",
+        slug="signup",
+        index=0,
+        api_path="/api/pages/signup",
+        reactive=False,
+        refresh_policy=None,
+        components=[form_component],
+        layout={},
+    )
+    return BackendState(
+        app={"name": "Test", "database": None, "theme": {}, "variables": []},
+        datasets={"sales": _sample_dataset_definition()},
+        connectors={},
+        ai_connectors={},
+        insights={},
+        models={},
+        templates={},
+        chains={},
+        experiments={},
+        crud_resources={},
+        pages=[form_page],
+        env_keys=[],
+    )
+
+
+def test_submit_form_missing_required_field_returns_field_scoped_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = _build_state_with_form()
+    runtime_module = _build_runtime_module(monkeypatch, state)
+
+    response = asyncio.run(runtime_module.submit_form("signup", 0, {}, session=None))
+
+    assert response["status"] == "error"
+    errors = response.get("errors") or []
+    assert errors, "Expected field-level validation errors"
+    assert errors[0]["scope"] == "field:email"
+    assert errors[0]["message"] == "This field is required."
+    page_errors = response.get("pageErrors") or response.get("page_errors") or []
+    assert isinstance(page_errors, list)
+
+
+def test_page_errors_normalise_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = _build_state_with_form()
+    runtime_module = _build_runtime_module(monkeypatch, state)
+
+    def fake_collect(context, scope=None, *, consume=True):
+        if scope is not None:
+            return []
+        return [{"code": "general", "message": "General failure", "scope": None, "severity": "error"}]
+
+    monkeypatch.setattr(runtime_module, "_collect_runtime_errors", fake_collect)
+
+    payload = asyncio.run(runtime_module.page_signup_0())
+
+    assert payload["errors"], "Expected page errors to be present"
+    assert payload["errors"][0]["scope"] == "page:signup"

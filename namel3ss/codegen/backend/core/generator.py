@@ -9,6 +9,7 @@ from namel3ss.ast import App
 from ..state import build_backend_state
 from .app_module import _render_app_module
 from .database import _render_database_module
+from .deploy import emit_deployment_artifacts
 from .packages import (
     _render_custom_api_stub,
     _render_custom_readme,
@@ -16,9 +17,11 @@ from .packages import (
     _render_helpers_package,
 )
 from .routers import (
+    _render_crud_router_module,
     _render_experiments_router_module,
     _render_insights_router_module,
     _render_models_router_module,
+    _render_observability_router_module,
     _render_pages_router_module,
     _render_routers_package,
 )
@@ -91,6 +94,12 @@ def generate_backend(
     (routers_dir / "pages.py").write_text(
         _render_pages_router_module(state), encoding="utf-8"
     )
+    (routers_dir / "crud.py").write_text(
+        _render_crud_router_module(state), encoding="utf-8"
+    )
+    (routers_dir / "observability.py").write_text(
+        _render_observability_router_module(), encoding="utf-8"
+    )
 
     (out_path / "main.py").write_text(
         _render_app_module(), encoding="utf-8"
@@ -106,3 +115,5 @@ def generate_backend(
     custom_api_path = custom_routes_dir / "custom_api.py"
     if not custom_api_path.exists():
         custom_api_path.write_text(_render_custom_api_stub(), encoding="utf-8")
+
+    emit_deployment_artifacts(out_path, state)

@@ -32,6 +32,10 @@ namel3ss build <file> [options]
 - `--build-backend` - Also generate FastAPI backend scaffold
 - `--backend-only` - Only generate backend, skip static site
 - `--backend-out <dir>` - Output directory for backend scaffold (default: `backend_build`)
+- `--target <static|react-vite>` - Choose the frontend generator (default: `static`)
+- `--realtime` - Include websocket streaming scaffolding in the generated backend
+- `--embed-insights` - Inline insight payloads into dataset responses
+- `--env KEY=VALUE` - Set environment variables during generation (repeatable)
 
 **Examples:**
 
@@ -71,6 +75,11 @@ namel3ss run <file> [options]
 - `--host <host>` - Host to bind server to (default: `127.0.0.1`)
 - `--port <port>` - Port to bind server to (default: `8000`)
 - `--no-reload` - Disable hot reload
+- `--dev` - Force dev-server mode even when targeting a chain name
+- `--json` - Emit structured JSON when executing an AI chain
+- `--realtime` - Enable websocket streaming helpers in the generated backend
+- `--embed-insights` - Inline insight payloads into dataset responses
+- `--env KEY=VALUE` - Set environment variables before launching the server (repeatable)
 
 **What it does:**
 1. Parses your `.n3` file
@@ -112,6 +121,54 @@ namel3ss run app.n3 --no-reload
 Namel3ss dev server running at http://127.0.0.1:8000
 Press CTRL+C to stop
 ```
+
+### `namel3ss eval`
+
+Evaluate experiment variants defined in your `.n3` program.
+
+**Usage:**
+```bash
+namel3ss eval <experiment> [-f <file>] [--format <json|text>]
+```
+
+**Options:**
+- `-f, --file <path>` - Path to the `.n3` file (defaults to the first `.n3` in the working directory)
+- `--format <json|text>` - Output format (default: `json`)
+
+When the experiment or runtime hooks fail, the command returns a structured error payload with `status="error"`.
+
+### `namel3ss train`
+
+Invoke user-provided training hooks registered on models.
+
+**Usage:**
+```bash
+namel3ss train <file> --model <name>
+```
+
+If a model lacks a `trainer` hook, the command exits with a JSON error payload describing the missing configuration.
+
+### `namel3ss deploy`
+
+Trigger user-provided deployment hooks for models.
+
+**Usage:**
+```bash
+namel3ss deploy <file> --model <name>
+```
+
+Similar to `train`, this command surfaces clear JSON errors when deploy hooks are missing or raise exceptions.
+
+### `namel3ss doctor`
+
+Inspect optional dependencies and extras required for connectors, caches, and other integrations.
+
+**Usage:**
+```bash
+namel3ss doctor
+```
+
+The command prints a human-readable summary highlighting missing packages and suggesting extras to install.
 
 ## Backward Compatibility
 
@@ -198,6 +255,29 @@ namel3ss build myapp.n3 --print-ast > ast.json
 ```bash
 namel3ss run app.n3 --backend-out ./dev_backend
 ```
+
+## Environment Variables
+
+Configure the generated backend by exporting one or more of the following variables before running `namel3ss run` or deploying the scaffolded FastAPI project:
+
+| Variable | Description |
+| --- | --- |
+| `NAMEL3SS_API_KEY` | Require an API key via the `X-API-Key` header or bearer token. |
+| `NAMEL3SS_AUTH_MODE` | `disabled`, `optional`, or `required` JWT enforcement. |
+| `NAMEL3SS_JWT_SECRET` | Shared secret for HS256/384/512 token validation. |
+| `NAMEL3SS_JWT_ALGORITHMS` | Comma-separated list of allowed HMAC algorithms. |
+| `NAMEL3SS_JWT_AUDIENCE` / `NAMEL3SS_JWT_ISSUER` | Restrict valid `aud` / `iss` claims. |
+| `NAMEL3SS_JWT_LEEWAY` | Leeway (seconds) for `exp` / `nbf` claim validation. |
+| `NAMEL3SS_ENABLE_TENANT_RESOLUTION` | Resolve tenants from headers or JWT claims when truthy. |
+| `NAMEL3SS_TENANT_HEADER` | Header name checked for tenant IDs (default `X-Tenant-Id`). |
+| `NAMEL3SS_TENANT_CLAIM` | Claim names that may contain the tenant identifier. |
+| `NAMEL3SS_REQUIRE_TENANT` | Reject requests that do not resolve a tenant. |
+| `NAMEL3SS_ALLOW_ANONYMOUS` | Permit anonymous access even when JWTs are otherwise required. |
+| `NAMEL3SS_ALLOW_STUBS` | Enable deterministic stubs for connectors and AI helpers. |
+| `NAMEL3SS_RUNTIME_CACHE` | Select the runtime cache backend (`memory`, `redis`). |
+| `NAMEL3SS_REDIS_URL` | Redis connection string when Redis caching is enabled. |
+| `NAMEL3SS_RUNTIME_ASYNC` | Set to `1` to allow async dataset execution. |
+| `NAMEL3SS_RUNTIME_CACHE_TTL` | Default TTL in seconds for dataset cache entries. |
 
 This allows you to:
 - Inspect the generated backend code

@@ -804,6 +804,20 @@ def _extract_score_from_variant(variant: Dict[str, Any]) -> Optional[float]:
             number = _to_float(output.get("score"))
             if number is not None:
                 return number
+        metadata = raw_output.get("metadata")
+        if isinstance(metadata, dict):
+            for meta_key in ("score", "value", "quality", "metric", "elapsed_ms"):
+                number = _to_float(metadata.get(meta_key))
+                if number is not None:
+                    return number
+        result_section = raw_output.get("result")
+        if isinstance(result_section, dict):
+            metadata = result_section.get("metadata")
+            if isinstance(metadata, dict):
+                for meta_key in ("score", "value", "quality", "metric", "elapsed_ms"):
+                    number = _to_float(metadata.get(meta_key))
+                    if number is not None:
+                        return number
     return None
 
 

@@ -84,6 +84,7 @@ from ...ast import (
 	VariableAssignment,
 	WindowFrame,
 	WindowOp,
+	CrudResource,
 )
 
 
@@ -93,10 +94,13 @@ class PageComponent:
 
 	type: str
 	payload: Dict[str, Any] = field(default_factory=dict)
+	index: Optional[int] = None
 
 
 def _component_to_serializable(component: PageComponent) -> Dict[str, Any]:
 	data = {"type": component.type}
+	if component.index is not None:
+		data["__component_index"] = component.index
 	data.update(component.payload)
 	return data
 
@@ -129,6 +133,7 @@ class BackendState:
 	templates: Dict[str, Dict[str, Any]]
 	chains: Dict[str, Dict[str, Any]]
 	experiments: Dict[str, Dict[str, Any]]
+	crud_resources: Dict[str, Dict[str, Any]]
 	pages: List[PageSpec]
 	env_keys: List[str]
 
@@ -175,6 +180,10 @@ def build_backend_state(app: App) -> BackendState:
 	for experiment in app.experiments:
 		experiments[experiment.name] = _encode_experiment(experiment, env_keys)
 
+	crud_resources: Dict[str, Dict[str, Any]] = {}
+	for resource in app.crud_resources:
+		crud_resources[resource.name] = _encode_crud_resource(resource, env_keys)
+
 	pages: List[PageSpec] = []
 	for index, page in enumerate(app.pages):
 		pages.append(_encode_page(index, page, env_keys))
@@ -198,6 +207,7 @@ def build_backend_state(app: App) -> BackendState:
 		templates=templates,
 		chains=chains,
 		experiments=experiments,
+		crud_resources=crud_resources,
 		pages=pages,
 		env_keys=sorted_env_keys,
 	)
@@ -244,6 +254,7 @@ def _encode_dataset_op(operation: DatasetOp, env_keys: Set[str]) -> Dict[str, An
 		return {
 			"type": "filter",
 			"condition": _expression_to_source(operation.condition),
+			"condition_expr": _expression_to_runtime(operation.condition),
 		}
 	if isinstance(operation, GroupByOp):
 		return {"type": "group_by", "columns": list(operation.columns)}
@@ -260,6 +271,7 @@ def _encode_dataset_op(operation: DatasetOp, env_keys: Set[str]) -> Dict[str, An
 			"type": "computed_column",
 			"name": operation.name,
 			"expression": _expression_to_source(operation.expression),
+			"expression_expr": _expression_to_runtime(operation.expression),
 		}
 	if isinstance(operation, WindowOp):
 		return {
@@ -278,6 +290,7 @@ def _encode_dataset_op(operation: DatasetOp, env_keys: Set[str]) -> Dict[str, An
 			"target_name": operation.target_name,
 			"join_type": operation.join_type,
 			"condition": _expression_to_source(operation.condition),
+			"condition_expr": _expression_to_runtime(operation.condition),
 		}
 	return {"type": type(operation).__name__}
 
@@ -297,6 +310,7 @@ def _encode_dataset_transform(step: DatasetTransformStep, env_keys: Set[str]) ->
 		"inputs": list(step.inputs or []),
 		"output": step.output,
 		"expression": _expression_to_source(step.expression),
+		"expression_expr": _expression_to_runtime(step.expression),
 		"options": _encode_value(step.options, env_keys),
 	}
 
@@ -320,6 +334,7 @@ def _encode_dataset_feature(feature: DatasetFeature, env_keys: Set[str]) -> Dict
 		"source": feature.source,
 		"dtype": feature.dtype,
 		"expression": _expression_to_source(feature.expression),
+		"expression_expr": _expression_to_runtime(feature.expression),
 		"description": feature.description,
 		"options": _encode_value(feature.options, env_keys),
 	}
@@ -330,6 +345,7 @@ def _encode_dataset_target(target: DatasetTarget, env_keys: Set[str]) -> Dict[st
 		"name": target.name,
 		"kind": target.kind,
 		"expression": _expression_to_source(target.expression),
+		"expression_expr": _expression_to_runtime(target.expression),
 		"positive_class": target.positive_class,
 		"horizon": target.horizon,
 		"options": _encode_value(target.options, env_keys),
@@ -340,6 +356,7 @@ def _encode_dataset_quality_check(check: DatasetQualityCheck, env_keys: Set[str]
 	return {
 		"name": check.name,
 		"condition": _expression_to_source(check.condition),
+		"condition_expr": _expression_to_runtime(check.condition),
 		"metric": check.metric,
 		"threshold": check.threshold,
 		"severity": check.severity,
@@ -522,6 +539,7 @@ def _encode_page(index: int, page: Page, env_keys: Set[str]) -> PageSpec:
 	for statement in page.statements:
 		component = _encode_statement(statement, env_keys)
 		if component is not None:
+			component.index = len(components)
 			components.append(component)
 	layout = dict(page.layout) if page.layout else {}
 	refresh_policy = None
@@ -573,7 +591,10 @@ def _encode_insight(insight: Insight, env_keys: Set[str]) -> Dict[str, Any]:
 	metrics = [_encode_insight_metric(metric, env_keys) for metric in insight.metrics]
 	thresholds = [_encode_insight_threshold(threshold, env_keys) for threshold in insight.thresholds]
 	narratives = [_encode_insight_narrative(narrative, env_keys) for narrative in insight.narratives]
-	expose = {key: _expression_to_source(value) for key, value in insight.expose_as.items()}
+	expose_sources = {key: _expression_to_source(value) for key, value in insight.expose_as.items()}
+	expose_exprs = {key: _expression_to_runtime(value) for key, value in insight.expose_as.items()}
+	parameter_sources = {key: _expression_to_source(value) for key, value in insight.parameters.items()}
+	parameter_exprs = {key: _expression_to_runtime(value) for key, value in insight.parameters.items()}
 	return {
 		"name": insight.name,
 		"source_dataset": insight.source_dataset,
@@ -581,9 +602,11 @@ def _encode_insight(insight: Insight, env_keys: Set[str]) -> Dict[str, Any]:
 		"metrics": metrics,
 		"thresholds": thresholds,
 		"narratives": narratives,
-		"expose_as": expose,
+		"expose_as": expose_sources,
+		"expose_expr": expose_exprs,
 		"datasets": [_encode_insight_dataset_ref(ref, env_keys) for ref in insight.datasets],
-		"parameters": {key: _expression_to_source(value) for key, value in insight.parameters.items()},
+		"parameters": parameter_sources,
+		"parameters_expr": parameter_exprs,
 		"audiences": [_encode_insight_audience(audience, env_keys) for audience in insight.audiences],
 		"channels": [_encode_insight_channel(channel, env_keys) for channel in insight.channels],
 		"tags": list(insight.tags or []),
@@ -597,12 +620,14 @@ def _encode_insight_step(step: InsightLogicStep, env_keys: Set[str]) -> Dict[str
 			"type": "assign",
 			"name": step.name,
 			"expression": _expression_to_source(step.expression),
+			"expression_expr": _expression_to_runtime(step.expression),
 		}
 	if isinstance(step, InsightSelect):
 		return {
 			"type": "select",
 			"dataset": step.dataset,
 			"condition": _expression_to_source(step.condition),
+			"condition_expr": _expression_to_runtime(step.condition),
 			"limit": step.limit,
 			"order_by": list(step.order_by or []),
 		}
@@ -621,11 +646,14 @@ def _encode_insight_metric(metric: InsightMetric, env_keys: Set[str]) -> Dict[st
 	return {
 		"name": metric.name,
 		"value": _expression_to_source(metric.value),
+		"value_expr": _expression_to_runtime(metric.value),
 		"label": metric.label,
 		"format": metric.format,
 		"unit": metric.unit,
 		"baseline": _expression_to_source(metric.baseline),
+		"baseline_expr": _expression_to_runtime(metric.baseline),
 		"target": _expression_to_source(metric.target),
+		"target_expr": _expression_to_runtime(metric.target),
 		"window": metric.window,
 		"extras": _encode_value(metric.extras, env_keys),
 	}
@@ -637,6 +665,7 @@ def _encode_insight_threshold(threshold: InsightThreshold, env_keys: Set[str]) -
 		"metric": threshold.metric,
 		"operator": threshold.operator,
 		"value": _expression_to_source(threshold.value),
+		"value_expr": _expression_to_runtime(threshold.value),
 		"level": threshold.level,
 		"message": threshold.message,
 		"window": threshold.window,
@@ -908,6 +937,45 @@ def _encode_experiment(experiment: Experiment, env_keys: Set[str]) -> Dict[str, 
 		"variants": variants_payload,
 		"metrics": metrics_payload,
 		"metadata": metadata_value,
+	}
+
+
+def _encode_crud_resource(resource: CrudResource, env_keys: Set[str]) -> Dict[str, Any]:
+	select_fields = list(dict.fromkeys(resource.select_fields or []))
+	mutable_fields = list(dict.fromkeys(resource.mutable_fields or []))
+	primary_key = resource.primary_key or "id"
+	if not mutable_fields:
+		mutable_fields = [field for field in select_fields if field and field != primary_key]
+	allowed: List[str] = []
+	seen: Set[str] = set()
+	for operation in resource.allowed_operations:
+		candidate = str(operation or "").lower()
+		if candidate in {"list", "retrieve", "create", "update", "delete"} and candidate not in seen:
+			seen.add(candidate)
+			allowed.append(candidate)
+	if str(resource.source_type or "table").lower() != "table":
+		allowed = [op for op in allowed if op in {"list", "retrieve"}]
+	read_only = resource.read_only or not any(op in {"create", "update", "delete"} for op in allowed)
+	default_limit = int(resource.default_limit or 100)
+	max_limit = int(resource.max_limit or max(default_limit, 100))
+	if default_limit <= 0:
+		default_limit = 100
+	if max_limit < default_limit:
+		max_limit = default_limit
+	label = resource.label or resource.name.replace("-", " ").title()
+	return {
+		"slug": resource.name,
+		"label": label,
+		"source_type": str(resource.source_type or "table").lower(),
+		"source_name": resource.source_name,
+		"primary_key": primary_key,
+		"select_fields": select_fields,
+		"mutable_fields": mutable_fields,
+		"allowed_operations": allowed,
+		"tenant_column": resource.tenant_column,
+		"default_limit": default_limit,
+		"max_limit": max_limit,
+		"read_only": read_only,
 	}
 
 

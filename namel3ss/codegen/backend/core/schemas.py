@@ -18,6 +18,15 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class RuntimeErrorPayload(BaseModel):
+    code: str
+    message: str
+    scope: Optional[str] = None
+    source: Optional[str] = None
+    detail: Optional[str] = None
+    severity: str = Field(default="error")
+
+
 class TableResponse(BaseModel):
     title: str
     source: Dict[str, str]
@@ -28,6 +37,7 @@ class TableResponse(BaseModel):
     insight: Optional[str] = None
     rows: List[Dict[str, Any]] = Field(default_factory=list)
     insights: Dict[str, Any] = Field(default_factory=dict)
+    errors: List[RuntimeErrorPayload] = Field(default_factory=list)
 
 
 class ChartSeries(BaseModel):
@@ -50,6 +60,7 @@ class ChartResponse(BaseModel):
     encodings: Dict[str, Any] = Field(default_factory=dict)
     insight: Optional[str] = None
     insights: Dict[str, Any] = Field(default_factory=dict)
+    errors: List[RuntimeErrorPayload] = Field(default_factory=list)
 
 
 class InsightResponse(BaseModel):
@@ -62,6 +73,7 @@ class ActionResponse(BaseModel):
     action: str
     trigger: str
     operations: List[str] = Field(default_factory=list)
+    errors: List[RuntimeErrorPayload] = Field(default_factory=list)
 
 
 class FormResponse(BaseModel):
@@ -69,6 +81,7 @@ class FormResponse(BaseModel):
     fields: List[str] = Field(default_factory=list)
     payload: Dict[str, Any] = Field(default_factory=dict)
     operations: List[str] = Field(default_factory=list)
+    errors: List[RuntimeErrorPayload] = Field(default_factory=list)
 
 
 class PredictionResponse(BaseModel):
@@ -102,6 +115,44 @@ class ExperimentResult(BaseModel):
     variant: Optional[ExperimentVariant] = None
     metrics: List[ExperimentMetric] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CrudResourceMeta(BaseModel):
+    slug: str
+    label: Optional[str] = None
+    source_type: str
+    primary_key: str
+    tenant_column: Optional[str] = None
+    operations: List[str] = Field(default_factory=list)
+    default_limit: int = 0
+    max_limit: int = 0
+    read_only: bool = False
+
+
+class CrudCatalogResponse(BaseModel):
+    resources: List[CrudResourceMeta] = Field(default_factory=list)
+
+
+class CrudBaseResponse(BaseModel):
+    resource: str
+    label: Optional[str] = None
+    status: str = Field(default="ok")
+    errors: List[RuntimeErrorPayload] = Field(default_factory=list)
+
+
+class CrudListResponse(CrudBaseResponse):
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    limit: int = 0
+    offset: int = 0
+    total: Optional[int] = None
+
+
+class CrudItemResponse(CrudBaseResponse):
+    item: Optional[Dict[str, Any]] = None
+
+
+class CrudDeleteResponse(CrudBaseResponse):
+    deleted: bool = False
 
 '''
     return textwrap.dedent(template).strip()

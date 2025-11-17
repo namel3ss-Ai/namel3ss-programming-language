@@ -6,6 +6,167 @@ CONTEXT_SECTION = dedent(
     '''
 
 
+def _record_runtime_error(
+    context: Dict[str, Any],
+    *,
+    code: str,
+    message: str,
+    scope: Optional[str] = None,
+    source: str = "runtime",
+    detail: Optional[str] = None,
+    severity: str = "error",
+) -> Dict[str, Any]:
+    severity_value = severity if severity in {"debug", "info", "warning", "error"} else "error"
+    error_entry = {
+        "code": code,
+        "message": message,
+        "scope": scope,
+        "source": source,
+        "detail": detail,
+        "severity": severity_value,
+    }
+    context.setdefault("errors", []).append(error_entry)
+    return error_entry
+
+
+def _observability_setting_from(config: Any, channel: str) -> Optional[bool]:
+    if not isinstance(config, dict):
+        return None
+    if "enabled" in config:
+        enabled_flag = bool(config["enabled"])
+        if not enabled_flag:
+            return False
+        default_flag: Optional[bool] = True
+    else:
+        default_flag = None
+    if channel in config:
+        return bool(config[channel])
+    return default_flag
+
+
+def _observability_enabled(context: Optional[Dict[str, Any]], channel: str) -> bool:
+    result: Optional[bool] = None
+    runtime_config = RUNTIME_SETTINGS.get("observability") if "observability" in RUNTIME_SETTINGS else None
+    if isinstance(runtime_config, dict):
+        flag = _observability_setting_from(runtime_config, channel)
+        if flag is not None:
+            result = flag
+    if isinstance(context, dict):
+        context_config = context.get("observability")
+        if isinstance(context_config, dict):
+            flag = _observability_setting_from(context_config, channel)
+            if flag is not None:
+                result = flag
+    if result is None:
+        return True
+    return result
+
+
+def _record_runtime_metric(
+    context: Optional[Dict[str, Any]],
+    *,
+    name: str,
+    value: Any,
+    unit: str = "count",
+    tags: Optional[Dict[str, Any]] = None,
+    scope: Optional[str] = None,
+    timestamp: Optional[float] = None,
+) -> Dict[str, Any]:
+    if not isinstance(context, dict):
+        return {}
+    if not _observability_enabled(context, "metrics"):
+        return {}
+    try:
+        numeric_value: Any
+        if isinstance(value, (int, float)):
+            numeric_value = float(value)
+        else:
+            numeric_value = value
+    except Exception:
+        numeric_value = value
+    entry = {
+        "name": str(name),
+        "value": numeric_value,
+        "unit": str(unit) if unit is not None else "count",
+        "tags": {str(key): val for key, val in (tags or {}).items()},
+        "scope": scope,
+        "timestamp": float(timestamp if timestamp is not None else time.time()),
+    }
+    telemetry = context.setdefault("telemetry", {})
+    metrics = telemetry.setdefault("metrics", [])
+    metrics.append(entry)
+    return entry
+
+
+def _record_runtime_event(
+    context: Optional[Dict[str, Any]],
+    *,
+    event: str,
+    level: str = "info",
+    message: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+    timestamp: Optional[float] = None,
+    log: bool = True,
+) -> Dict[str, Any]:
+    entry = {
+        "event": str(event),
+        "level": str(level or "info").lower(),
+        "message": str(message or event),
+        "timestamp": float(timestamp if timestamp is not None else time.time()),
+        "data": dict(data or {}),
+    }
+    if isinstance(context, dict) and _observability_enabled(context, "events"):
+        telemetry = context.setdefault("telemetry", {})
+        events = telemetry.setdefault("events", [])
+        events.append(entry)
+    if log and _observability_enabled(context, "events"):
+        level_name = entry["level"].upper()
+        numeric_level = getattr(logging, level_name, logging.INFO)
+        try:
+            logger.log(
+                numeric_level,
+                entry["message"],
+                extra={
+                    "namel3ss_event": entry["event"],
+                    "namel3ss_data": entry["data"],
+                },
+            )
+        except Exception:
+            logger.log(numeric_level, entry["message"])
+    return entry
+
+
+def _collect_runtime_errors(
+    context: Dict[str, Any],
+    scope: Optional[str] = None,
+    *,
+    consume: bool = True,
+) -> List[Dict[str, Any]]:
+    if not isinstance(context, dict):
+        return []
+    errors = [entry for entry in context.get("errors", []) if isinstance(entry, dict)]
+    if not errors:
+        return []
+    if scope is None:
+        selected = list(errors)
+        if consume:
+            context.pop("errors", None)
+        return selected
+    selected: List[Dict[str, Any]] = []
+    remaining: List[Dict[str, Any]] = []
+    for entry in errors:
+        if entry.get("scope") == scope:
+            selected.append(entry)
+        else:
+            remaining.append(entry)
+    if consume:
+        if remaining:
+            context["errors"] = remaining
+        else:
+            context.pop("errors", None)
+    return selected
+
+
 def build_context(page_slug: Optional[str]) -> Dict[str, Any]:
     base = CONTEXT.build(page_slug)
     context: Dict[str, Any] = dict(base)
@@ -118,7 +279,7 @@ def _render_template_value(value: Any, context: Dict[str, Any]) -> Any:
 
 def register_connector_driver(
     connector_type: str,
-    handler: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[List[Dict[str, Any]]]],
+    handler: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Any]],
 ) -> None:
     if not connector_type or handler is None:
         return

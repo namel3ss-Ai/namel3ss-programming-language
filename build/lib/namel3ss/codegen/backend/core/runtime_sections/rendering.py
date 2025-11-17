@@ -75,6 +75,7 @@ async def _render_statement(
 
     payload = copy.deepcopy(statement)
     payload_type = payload.pop("type", None)
+    component_index = payload.pop("__component_index", None)
     if payload_type == "text":
         rendered_text = _render_template_value(payload.get("text"), context)
         styles = copy.deepcopy(payload.get("styles", {}))
@@ -87,6 +88,24 @@ async def _render_statement(
             resolved["filter"] = _render_template_value(resolved.get("filter"), context)
         if "sort" in resolved:
             resolved["sort"] = _render_template_value(resolved.get("sort"), context)
+        dataset_ref: Optional[str] = None
+        source_value = resolved.get("source")
+        if isinstance(source_value, str):
+            dataset_ref = source_value
+        elif isinstance(source_value, dict):
+            dataset_name = source_value.get("name")
+            if isinstance(dataset_name, str):
+                dataset_ref = dataset_name
+        component_errors: List[Dict[str, Any]] = []
+        if dataset_ref:
+            component_errors.extend(_collect_runtime_errors(context, dataset_ref))
+        insight_ref = resolved.get("insight")
+        if isinstance(insight_ref, str):
+            component_errors.extend(_collect_runtime_errors(context, insight_ref))
+        if component_errors:
+            resolved["errors"] = component_errors
+        if component_index is not None:
+            resolved["component_index"] = component_index
         return [{"type": "table", **resolved}]
     if payload_type == "chart":
         resolved = _resolve_placeholders(payload, context)
@@ -94,6 +113,24 @@ async def _render_statement(
             resolved["heading"] = _render_template_value(resolved.get("heading"), context)
         if "title" in resolved:
             resolved["title"] = _render_template_value(resolved.get("title"), context)
+        dataset_ref: Optional[str] = None
+        source_value = resolved.get("source")
+        if isinstance(source_value, str):
+            dataset_ref = source_value
+        elif isinstance(source_value, dict):
+            dataset_name = source_value.get("name")
+            if isinstance(dataset_name, str):
+                dataset_ref = dataset_name
+        component_errors: List[Dict[str, Any]] = []
+        if dataset_ref:
+            component_errors.extend(_collect_runtime_errors(context, dataset_ref))
+        insight_ref = resolved.get("insight")
+        if isinstance(insight_ref, str):
+            component_errors.extend(_collect_runtime_errors(context, insight_ref))
+        if component_errors:
+            resolved["errors"] = component_errors
+        if component_index is not None:
+            resolved["component_index"] = component_index
         return [{"type": "chart", **resolved}]
     if payload_type == "form":
         resolved = _resolve_placeholders(payload, context)
@@ -101,6 +138,8 @@ async def _render_statement(
 
 
             resolved["title"] = _render_template_value(resolved.get("title"), context)
+        if component_index is not None:
+            resolved["component_index"] = component_index
         return [{"type": "form", **resolved}]
     if payload_type == "action":
         resolved = _resolve_placeholders(payload, context)
@@ -114,11 +153,15 @@ async def _render_statement(
             outcome = await _execute_action_operation(operation, context, scope)
             if outcome:
                 results.append(outcome)
+        if component_index is not None:
+            resolved["component_index"] = component_index
         if results:
             return results
         return [{"type": "action", **resolved}]
     if payload_type == "predict":
         resolved = _resolve_placeholders(payload, context)
+        if component_index is not None:
+            resolved["component_index"] = component_index
         return [{"type": "predict", **resolved}]
     if payload_type:
         resolved = _resolve_placeholders(payload, context)
@@ -229,8 +272,16 @@ async def _resolve_loop_iterable(
         if session is not None:
             try:
                 return await fetch_dataset_rows(source_name, session, context)
-            except Exception:  # pragma: no cover - runtime fetch failure
+            except Exception as exc:  # pragma: no cover - runtime fetch failure
                 logger.exception("Failed to fetch dataset rows for %s", source_name)
+                _record_runtime_error(
+                    context,
+                    code="dataset_fetch_failed",
+                    message=f"Failed to fetch dataset '{source_name}'.",
+                    scope=source_name,
+                    source="dataset",
+                    detail=str(exc),
+                )
         dataset_spec = DATASETS.get(source_name)
         if dataset_spec:
             return list(dataset_spec.get("sample_rows", []))
@@ -325,8 +376,16 @@ async def _evaluate_runtime_expression(
                 return left in right if right is not None else False
             if op == "not in":
                 return left not in right if right is not None else True
-        except Exception:  # pragma: no cover - operator failure
+        except Exception as exc:  # pragma: no cover - operator failure
             logger.exception("Failed to evaluate binary operation '%s'", op)
+            _record_runtime_error(
+                context,
+                code="runtime_expression_failed",
+                message=f"Binary operation '{op}' failed during evaluation.",
+                scope=context.get("page") if isinstance(context, dict) else None,
+                source="page",
+                detail=str(exc),
+            )
             return None
         return None
     if etype == "unary":
@@ -339,8 +398,16 @@ async def _evaluate_runtime_expression(
                 return -operand
             if op == "+":
                 return +operand
-        except Exception:  # pragma: no cover - unary failure
+        except Exception as exc:  # pragma: no cover - unary failure
             logger.exception("Failed to evaluate unary operation '%s'", op)
+            _record_runtime_error(
+                context,
+                code="runtime_expression_failed",
+                message=f"Unary operation '{op}' failed during evaluation.",
+                scope=context.get("page") if isinstance(context, dict) else None,
+                source="page",
+                detail=str(exc),
+            )
             return None
         return None
     if etype == "call":
@@ -358,8 +425,16 @@ async def _evaluate_runtime_expression(
             if inspect.isawaitable(result):
                 return await result
             return result
-        except Exception:  # pragma: no cover - call failure
+        except Exception as exc:  # pragma: no cover - call failure
             logger.exception("Failed to execute call expression")
+            _record_runtime_error(
+                context,
+                code="runtime_expression_failed",
+                message="Runtime call expression failed during execution.",
+                scope=context.get("page") if isinstance(context, dict) else None,
+                source="page",
+                detail=str(exc),
+            )
             return None
     return None
 
@@ -387,6 +462,152 @@ def _resolve_path_segment(value: Any, segment: str) -> Any:
     if hasattr(value, segment):
         return getattr(value, segment)
     return None
+
+
+async def prepare_page_components(
+    page_meta: Dict[str, Any],
+    components: List[Dict[str, Any]],
+    context: Dict[str, Any],
+    session: Optional[AsyncSession],
+) -> List[Dict[str, Any]]:
+    hydrated: List[Dict[str, Any]] = []
+    counters: Dict[str, int] = {}
+    base_path = page_meta.get('api_path') or '/api/pages'
+    for order, component in enumerate(components or []):
+        if not isinstance(component, dict):
+            continue
+        clone = copy.deepcopy(component)
+        ctype = str(clone.get('type') or 'component')
+        counters[ctype] = counters.get(ctype, 0) + 1
+        clone.setdefault('id', f"{ctype}-{counters[ctype]}")
+        clone['order'] = order
+        component_index = clone.get('component_index')
+        if ctype == 'table':
+            await _hydrate_table_component(clone, context, session)
+            if component_index is not None:
+                clone.setdefault('endpoint', f"{base_path}/tables/{component_index}")
+        elif ctype == 'chart':
+            await _hydrate_chart_component(clone, context, session)
+            if component_index is not None:
+                clone.setdefault('endpoint', f"{base_path}/charts/{component_index}")
+        elif ctype == 'form' and component_index is not None:
+            clone.setdefault('submit_url', f"{base_path}/forms/{component_index}")
+        elif ctype == 'action' and component_index is not None:
+            clone.setdefault('action_url', f"{base_path}/actions/{component_index}")
+        hydrated.append(clone)
+    return hydrated
+
+
+async def _hydrate_table_component(
+    component: Dict[str, Any],
+    context: Dict[str, Any],
+    session: Optional[AsyncSession],
+) -> None:
+    dataset_name = _component_dataset_name(component)
+    rows: List[Dict[str, Any]] = []
+    if dataset_name:
+        try:
+            rows = await fetch_dataset_rows(dataset_name, session, context)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed to fetch rows for dataset '%s'", dataset_name)
+            _record_runtime_error(
+                context,
+                code="dataset_fetch_failed",
+                message=f"Failed to fetch dataset '{dataset_name}'.",
+                scope=dataset_name,
+                source="dataset",
+                detail=str(exc),
+            )
+    if not rows and dataset_name:
+        dataset_spec = DATASETS.get(dataset_name) or {}
+        sample_rows = dataset_spec.get('sample_rows') if isinstance(dataset_spec, dict) else None
+        if isinstance(sample_rows, list):
+            rows = _clone_rows(sample_rows)
+    if rows:
+        rows = _clone_rows(rows)
+    else:
+        rows = []
+    limited_rows = rows[:50]
+    component['rows'] = limited_rows
+    columns = component.get('columns')
+    if not columns:
+        columns = list(limited_rows[0].keys()) if limited_rows else []
+    component['columns'] = columns
+
+
+async def _hydrate_chart_component(
+    component: Dict[str, Any],
+    context: Dict[str, Any],
+    session: Optional[AsyncSession],
+) -> None:
+    dataset_name = _component_dataset_name(component)
+    rows: List[Dict[str, Any]] = []
+    if dataset_name:
+        try:
+            rows = await fetch_dataset_rows(dataset_name, session, context)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Failed to fetch chart rows for dataset '%s'", dataset_name)
+            _record_runtime_error(
+                context,
+                code="dataset_fetch_failed",
+                message=f"Failed to fetch dataset '{dataset_name}' for chart.",
+                scope=dataset_name,
+                source="dataset",
+                detail=str(exc),
+            )
+    if not rows and dataset_name:
+        dataset_spec = DATASETS.get(dataset_name) or {}
+        sample_rows = dataset_spec.get('sample_rows') if isinstance(dataset_spec, dict) else None
+        if isinstance(sample_rows, list):
+            rows = _clone_rows(sample_rows)
+    if rows:
+        rows = _clone_rows(rows)
+    else:
+        rows = []
+    x_key = component.get('x')
+    y_key = component.get('y')
+    labels: List[Any] = []
+    values: List[float] = []
+    limited_rows = rows[:50]
+    for idx, row in enumerate(limited_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        label_value = row.get(x_key) if x_key else None
+        if label_value is None:
+            label_value = row.get('label') or row.get('name') or idx
+        labels.append(label_value)
+        raw_value = row.get(y_key) if y_key else row.get('value')
+        values.append(_coerce_number(raw_value))
+    if not labels and limited_rows:
+        labels = list(range(1, len(limited_rows) + 1))
+    if not values:
+        values = [0 for _ in labels] or [0]
+    component['labels'] = labels
+    component['series'] = [{
+        'label': component.get('title') or component.get('heading') or 'Series',
+        'data': values,
+    }]
+    component['rows'] = limited_rows
+
+
+def _component_dataset_name(component: Dict[str, Any]) -> Optional[str]:
+    source = component.get('source')
+    if isinstance(source, str):
+        return source
+    if isinstance(source, dict):
+        name = source.get('name')
+        if isinstance(name, str):
+            return name
+    return None
+
+
+def _coerce_number(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
     '''
 ).strip()

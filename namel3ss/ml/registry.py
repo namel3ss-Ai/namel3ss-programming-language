@@ -66,12 +66,14 @@ def get_default_model_registry() -> Dict[str, Dict[str, Any]]:
 
 
 def _coerce_mapping(payload: Any) -> Dict[str, Any]:
+    """Return a shallow dict copy when ``payload`` is a mapping."""
     if isinstance(payload, Mapping):
         return dict(payload)
     return {}
 
 
 def _merge_registry_entry(base: MutableMapping[str, Any], update_entry: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return ``base`` merged with ``update_entry`` while preserving nested metadata/metrics."""
     merged: Dict[str, Any] = copy.deepcopy(dict(base))
     for key, value in update_entry.items():
         if key == "metadata" and isinstance(value, Mapping):
@@ -91,6 +93,7 @@ def _merge_registries(
     base: Mapping[str, Dict[str, Any]],
     overrides: Optional[Mapping[str, Dict[str, Any]]],
 ) -> Dict[str, Dict[str, Any]]:
+    """Merge two registry mappings, taking nested metadata/metrics into account."""
     if not overrides:
         return {key: copy.deepcopy(value) for key, value in base.items()}
 
@@ -109,6 +112,7 @@ def _merge_registries(
 
 
 def _resolve_registry_path(source: str) -> Optional[Path]:
+    """Resolve ``source`` to an existing path, consulting ``NAMEL3SS_MODEL_ROOT`` when needed."""
     path = Path(source)
     if path.exists():
         return path
@@ -122,6 +126,7 @@ def _resolve_registry_path(source: str) -> Optional[Path]:
 
 
 def _parse_registry_payload(raw: str) -> Dict[str, Dict[str, Any]]:
+    """Parse JSON/YAML registry overrides, returning an empty mapping on failure."""
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
@@ -140,6 +145,7 @@ def _parse_registry_payload(raw: str) -> Dict[str, Dict[str, Any]]:
 
 
 def _load_registry_override(source: str) -> Dict[str, Dict[str, Any]]:
+    """Load overrides from a file path or inline JSON/YAML string."""
     path = _resolve_registry_path(source)
     if path is not None:
         try:

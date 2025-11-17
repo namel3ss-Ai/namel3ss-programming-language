@@ -77,12 +77,14 @@ from ...ast import (
 	BreakStatement,
 	ContinueStatement,
 	ToastOperation,
+	GoToPageOperation,
 	Template,
 	UnaryOp,
 	UpdateOperation,
 	VariableAssignment,
 	WindowFrame,
 	WindowOp,
+	CrudResource,
 )
 
 
@@ -92,10 +94,13 @@ class PageComponent:
 
 	type: str
 	payload: Dict[str, Any] = field(default_factory=dict)
+	index: Optional[int] = None
 
 
 def _component_to_serializable(component: PageComponent) -> Dict[str, Any]:
 	data = {"type": component.type}
+	if component.index is not None:
+		data["__component_index"] = component.index
 	data.update(component.payload)
 	return data
 
@@ -128,6 +133,7 @@ class BackendState:
 	templates: Dict[str, Dict[str, Any]]
 	chains: Dict[str, Dict[str, Any]]
 	experiments: Dict[str, Dict[str, Any]]
+	crud_resources: Dict[str, Dict[str, Any]]
 	pages: List[PageSpec]
 	env_keys: List[str]
 
@@ -174,6 +180,10 @@ def build_backend_state(app: App) -> BackendState:
 	for experiment in app.experiments:
 		experiments[experiment.name] = _encode_experiment(experiment, env_keys)
 
+	crud_resources: Dict[str, Dict[str, Any]] = {}
+	for resource in app.crud_resources:
+		crud_resources[resource.name] = _encode_crud_resource(resource, env_keys)
+
 	pages: List[PageSpec] = []
 	for index, page in enumerate(app.pages):
 		pages.append(_encode_page(index, page, env_keys))
@@ -197,6 +207,7 @@ def build_backend_state(app: App) -> BackendState:
 		templates=templates,
 		chains=chains,
 		experiments=experiments,
+		crud_resources=crud_resources,
 		pages=pages,
 		env_keys=sorted_env_keys,
 	)
@@ -521,6 +532,7 @@ def _encode_page(index: int, page: Page, env_keys: Set[str]) -> PageSpec:
 	for statement in page.statements:
 		component = _encode_statement(statement, env_keys)
 		if component is not None:
+			component.index = len(components)
 			components.append(component)
 	layout = dict(page.layout) if page.layout else {}
 	refresh_policy = None
@@ -910,6 +922,45 @@ def _encode_experiment(experiment: Experiment, env_keys: Set[str]) -> Dict[str, 
 	}
 
 
+def _encode_crud_resource(resource: CrudResource, env_keys: Set[str]) -> Dict[str, Any]:
+	select_fields = list(dict.fromkeys(resource.select_fields or []))
+	mutable_fields = list(dict.fromkeys(resource.mutable_fields or []))
+	primary_key = resource.primary_key or "id"
+	if not mutable_fields:
+		mutable_fields = [field for field in select_fields if field and field != primary_key]
+	allowed: List[str] = []
+	seen: Set[str] = set()
+	for operation in resource.allowed_operations:
+		candidate = str(operation or "").lower()
+		if candidate in {"list", "retrieve", "create", "update", "delete"} and candidate not in seen:
+			seen.add(candidate)
+			allowed.append(candidate)
+	if str(resource.source_type or "table").lower() != "table":
+		allowed = [op for op in allowed if op in {"list", "retrieve"}]
+	read_only = resource.read_only or not any(op in {"create", "update", "delete"} for op in allowed)
+	default_limit = int(resource.default_limit or 100)
+	max_limit = int(resource.max_limit or max(default_limit, 100))
+	if default_limit <= 0:
+		default_limit = 100
+	if max_limit < default_limit:
+		max_limit = default_limit
+	label = resource.label or resource.name.replace("-", " ").title()
+	return {
+		"slug": resource.name,
+		"label": label,
+		"source_type": str(resource.source_type or "table").lower(),
+		"source_name": resource.source_name,
+		"primary_key": primary_key,
+		"select_fields": select_fields,
+		"mutable_fields": mutable_fields,
+		"allowed_operations": allowed,
+		"tenant_column": resource.tenant_column,
+		"default_limit": default_limit,
+		"max_limit": max_limit,
+		"read_only": read_only,
+	}
+
+
 def _encode_variable(variable: VariableAssignment, env_keys: Set[str]) -> Dict[str, Any]:
 	return {
 		"name": variable.name,
@@ -929,6 +980,11 @@ def _encode_action_operation(operation: ActionOperationType, env_keys: Set[str])
 		}
 	if isinstance(operation, ToastOperation):
 		return {"type": "toast", "message": operation.message}
+	if isinstance(operation, GoToPageOperation):
+		return {
+			"type": "navigate",
+			"page_name": operation.page_name,
+		}
 	if isinstance(operation, CallPythonOperation):
 		return {
 			"type": "python_call",

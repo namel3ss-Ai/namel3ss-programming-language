@@ -7,18 +7,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "namel3ss"
-version = "0.1.0"
+version = "0.4.0"
 description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
 readme = "README.md"
 authors = [
     { name = "Namel3ss Developers" }
 ]
-license = "MIT"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["codegen", "fastapi", "llm", "dashboard", "language"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Code Generators",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -30,41 +33,71 @@ dependencies = [
     "httpx>=0.28,<0.29",
     "pydantic>=2.7,<3.0",
     "uvicorn>=0.30,<0.31",
+    "sqlalchemy>=2.0,<3.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/namel3ss/namel3ss"
+Homepage = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Repository = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Documentation = "https://github.com/SsebowaDisan/namel3ss-programming-language#readme"
+Issues = "https://github.com/SsebowaDisan/namel3ss-programming-language/issues"
 
 [project.optional-dependencies]
 cli = [
-    "click>=8",
+    "python-dotenv>=1.0",
 ]
-
 sql = [
-    "sqlalchemy>=2.0",
-    "asyncpg>=0.29",
+    "asyncpg>=0.29,<0.30",
+    "psycopg[binary]>=3.2,<4.0",
 ]
-
 redis = [
-    "redis>=5.0",
-    "aioredis>=2.0",
+    "redis>=5.0,<6.0",
 ]
-
 mongo = [
-    "motor>=3.0",
-    "pymongo>=4.0",
+    "motor>=3.0,<4.0",
+    "pymongo>=4.0,<5.0",
 ]
-
+realtime = [
+    "websockets>=12.0,<13.0",
+    "redis>=5.0,<6.0",
+]
+"ai-connectors" = [
+    "openai>=1.0,<2.0",
+    "anthropic>=0.40,<1.0",
+    "tiktoken>=0.7,<1.0",
+]
+observability = [
+    "opentelemetry-api>=1.25,<2.0",
+    "opentelemetry-sdk>=1.25,<2.0",
+    "opentelemetry-instrumentation-fastapi>=0.46b0,<1.0",
+]
+dev = [
+    "black>=24.0,<25.0",
+    "coverage>=7.6,<8.0",
+    "mypy>=1.10,<2.0",
+    "pytest>=8.0,<9.0",
+    "pytest-cov>=4.1,<5.0",
+    "ruff>=0.5,<1.0",
+    "tomli>=2.0,<3.0",
+]
 all = [
-    "sqlalchemy>=2.0",
-    "asyncpg>=0.29",
-    "redis>=5.0",
-    "aioredis>=2.0",
-    "motor>=3.0",
-    "pymongo>=4.0",
+    "python-dotenv>=1.0",
+    "asyncpg>=0.29,<0.30",
+    "psycopg[binary]>=3.2,<4.0",
+    "redis>=5.0,<6.0",
+    "motor>=3.0,<4.0",
+    "pymongo>=4.0,<5.0",
+    "websockets>=12.0,<13.0",
+    "openai>=1.0,<2.0",
+    "anthropic>=0.40,<1.0",
+    "tiktoken>=0.7,<1.0",
+    "opentelemetry-api>=1.25,<2.0",
+    "opentelemetry-sdk>=1.25,<2.0",
+    "opentelemetry-instrumentation-fastapi>=0.46b0,<1.0",
 ]
 
-default = []
+[project.scripts]
+namel3ss = "namel3ss.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}

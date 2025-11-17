@@ -108,7 +108,11 @@ class ControlFlowParserMixin(DatasetParserMixin):
         loop_var = match.group(1)
         source_kind = match.group(2)
         source_name = match.group(3)
-        body = self._parse_control_body(base_indent, line, line_no)
+        self._loop_depth += 1
+        try:
+            body = self._parse_control_body(base_indent, line, line_no)
+        finally:
+            self._loop_depth = max(0, self._loop_depth - 1)
         return ForLoop(loop_var=loop_var, source_kind=source_kind, source_name=source_name, body=body)
 
     def _parse_while_loop(self, line: str, line_no: int, base_indent: int) -> WhileLoop:
@@ -124,10 +128,16 @@ class ControlFlowParserMixin(DatasetParserMixin):
             raise
         except Exception as exc:
             raise self._error(f"Failed to parse while condition: {exc}", line_no, line)
-        body = self._parse_control_body(base_indent, line, line_no)
+        self._loop_depth += 1
+        try:
+            body = self._parse_control_body(base_indent, line, line_no)
+        finally:
+            self._loop_depth = max(0, self._loop_depth - 1)
         return WhileLoop(condition=condition, body=body)
 
     def _parse_loop_control(self, kind: str, line_no: int, line: str) -> PageStatement:
+        if self._loop_depth <= 0:
+            raise self._error(f"'{kind}' is only permitted inside a loop", line_no, line)
         if kind == 'break':
             return BreakStatement()
         if kind == 'continue':

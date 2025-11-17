@@ -4,6 +4,10 @@ from textwrap import dedent
 
 LLM_SECTION = dedent(
     '''
+import json
+import os
+import time
+from typing import Any, Dict, List, Optional
 
 
 def _stringify_prompt_value(name: str, value: Any) -> str:
@@ -12,13 +16,17 @@ def _stringify_prompt_value(name: str, value: Any) -> str:
             return json.dumps(value, separators=(",", ":"))
         except Exception:
             return str(value)
-    return str(value or "").strip()
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
-def _format_stub_prompt(name: str, prompt_text: str) -> str:
-    if prompt_text:
-        return f"[{name}] {prompt_text}"
-    return "This is a stub LLM response."
+def _format_error_message(name: str, prompt_text: Optional[str], reason: str) -> str:
+    """Compose a concise diagnostic string for logging failures."""
+
+    title = f"llm:{name}" if name else "llm:unknown"
+    cause = reason.strip() or "unspecified error"
+    return f"{title} failed: {cause}"
 
 
 def _default_llm_endpoint(provider: str, config: Dict[str, Any]) -> Optional[str]:
@@ -46,16 +54,17 @@ def _build_llm_request(
     prompt_text: str,
     config: Dict[str, Any],
     args: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     if not prompt_text:
-        return None
-    provider_key = provider.lower()
+        raise ValueError("Prompt text is required for LLM requests")
+
+    provider_key = provider.lower().strip()
     method = str(config.get("method") or "post").upper()
-    timeout_value = config.get("timeout", 15.0)
+    timeout_value = config.get("timeout", 30.0)
     try:
         timeout = max(float(timeout_value), 1.0)
     except Exception:
-        timeout = 15.0
+        timeout = 30.0
 
     headers = _ensure_dict(config.get("headers"))
     params = _ensure_dict(config.get("params"))
@@ -91,7 +100,7 @@ def _build_llm_request(
 
     endpoint = _default_llm_endpoint(provider_key, config)
     if not endpoint:
-        return None
+        raise ValueError(f"Endpoint is not configured for provider '{provider}'")
 
     api_key = config.get("api_key")
     if not api_key:
@@ -102,7 +111,7 @@ def _build_llm_request(
     if provider_key == "openai":
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            return None
+            raise ValueError("OpenAI API key is missing")
         bearer = str(api_key)
         if not bearer.lower().startswith("bearer "):
             bearer = f"Bearer {bearer}"
@@ -111,7 +120,7 @@ def _build_llm_request(
     elif provider_key == "anthropic":
         api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            return None
+            raise ValueError("Anthropic API key is missing")
         headers.setdefault("x-api-key", str(api_key))
         headers.setdefault("content-type", "application/json")
         headers.setdefault("anthropic-version", str(config.get("api_version") or "2023-06-01"))
@@ -122,51 +131,88 @@ def _build_llm_request(
         else:
             headers.setdefault(header_name, str(api_key))
 
+    normalized_headers: Dict[str, str] = {
+        str(key): str(value)
+        for key, value in headers.items()
+    }
+    normalized_params: Dict[str, Any] = {
+        str(key): value
+        for key, value in params.items()
+    }
+
+    normalized_headers.setdefault("Content-Type", "application/json")
+
     return {
         "method": method,
         "url": str(endpoint),
-        "headers": headers,
-        "params": params,
-        "json": body,
+        "headers": normalized_headers,
+        "params": normalized_params,
+        "body": body,
         "timeout": timeout,
         "provider": provider,
     }
 
 
-def _execute_llm_request(request_spec: Dict[str, Any]) -> Dict[str, Any]:
-    method = str(request_spec.get("method") or "POST").upper()
-    url = str(request_spec.get("url"))
-    headers = _ensure_dict(request_spec.get("headers"))
-    params = _ensure_dict(request_spec.get("params"))
-    json_payload = request_spec.get("json")
-    timeout = float(request_spec.get("timeout") or 15.0)
+def _is_truthy_env(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-    with httpx.Client(timeout=timeout) as client:
-        request_kwargs: Dict[str, Any] = {}
-        if headers:
-            request_kwargs["headers"] = headers
-        if params:
-            request_kwargs["params"] = params
-        if method == "GET":
-            if isinstance(json_payload, dict):
-                combined = dict(params)
-                combined.update(json_payload)
-                request_kwargs["params"] = combined
-            elif json_payload is not None:
-                param_payload = dict(params)
-                param_payload["prompt"] = str(json_payload)
-                request_kwargs["params"] = param_payload
-        elif isinstance(json_payload, dict):
-            request_kwargs["json"] = json_payload
-        response = client.request(method, url, **request_kwargs)
-        response.raise_for_status()
-        try:
-            body = response.json()
-        except Exception:
-            body = {"text": response.text}
 
-    usage = body.get("usage") if isinstance(body, dict) else None
-    return {"body": body, "usage": usage}
+def _redact_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    sensitive_keys = {
+        "api_key",
+        "authorization",
+        "token",
+        "secret",
+        "password",
+        "x-api-key",
+        "api-key",
+    }
+
+    def _sanitize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(key): ("***" if str(key).strip().lower() in sensitive_keys else _sanitize(val))
+                for key, val in value.items()
+            }
+        if isinstance(value, list):
+            return [_sanitize(item) for item in value]
+        return value
+
+    return _sanitize(dict(config)) if isinstance(config, dict) else {}
+
+
+def _http_post_json(
+    url: str,
+    data: Dict[str, Any],
+    headers: Dict[str, str],
+    timeout: float,
+) -> tuple[int, str, Optional[Any]]:
+    import json as _json
+    import urllib.request
+
+    payload_bytes = _json.dumps(data).encode("utf-8")
+    request_headers = {
+        str(key): str(value)
+        for key, value in headers.items()
+    }
+    request_headers.setdefault("Content-Type", "application/json")
+
+    request = urllib.request.Request(url, data=payload_bytes, headers=request_headers, method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        status_code = getattr(response, "status", None)
+        if status_code is None:
+            status_code = response.getcode()
+        raw_bytes = response.read()
+
+    text = raw_bytes.decode("utf-8", "replace")
+    try:
+        parsed = _json.loads(text)
+    except Exception:
+        parsed = None
+    return int(status_code or 0), text, parsed
 
 
 def _extract_llm_text(
@@ -190,7 +236,7 @@ def _extract_llm_text(
                     if isinstance(message, dict):
                         content = message.get("content")
                         if isinstance(content, list):
-                            segments = []
+                            segments: List[str] = []
                             for entry in content:
                                 if isinstance(entry, dict) and "text" in entry:
                                     segments.append(str(entry["text"]))
@@ -221,16 +267,17 @@ def _extract_llm_text(
     return json.dumps(payload)
 
 
-def _truncate_text(value: str, limit: int) -> str:
-    if limit <= 0 or len(value) <= limit:
-        return value
-    return value[: max(limit - 3, 0)].rstrip() + "..."
-
-
 def call_llm_connector(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """Execute an LLM connector and return structured response details."""
+
+    import traceback
+    import urllib.error
+    import urllib.parse
+
+    start_time = time.time()
     spec = AI_CONNECTORS.get(name, {})
     args = dict(payload or {})
     context_stub = {
@@ -243,98 +290,248 @@ def call_llm_connector(
     if not isinstance(config_resolved, dict):
         config_resolved = config_raw if isinstance(config_raw, dict) else {}
 
-    provider = str(config_resolved.get("provider") or spec.get("type") or "stub-provider")
-    model_name = str(config_resolved.get("model") or "stub-model")
+    provider = str(config_resolved.get("provider") or spec.get("type") or name or "").strip()
+    model_name = str(config_resolved.get("model") or "").strip()
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
 
-    prompt_value = args.get("prompt") or args.get("input") or ""
-    prompt_text = _stringify_prompt_value(name, prompt_value)
-    stub_response = _format_stub_prompt(name, prompt_text)
+    prompt_value = args.get("prompt") or args.get("input")
+    prompt_text = _stringify_prompt_value(name, prompt_value) if prompt_value is not None else ""
+    redacted_config = _redact_config(config_resolved)
+
+    def _elapsed_ms() -> float:
+        return float(round((time.time() - start_time) * 1000.0, 3))
+
+    def _stub_response(reason: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        logger.warning(_format_error_message(name, prompt_text, reason))
+        response: Dict[str, Any] = {
+            "status": "stub",
+            "provider": provider or "unknown",
+            "model": model_name,
+            "inputs": args,
+            "result": {"text": "[stub: llm call failed]"},
+            "config": redacted_config,
+            "error": reason,
+        }
+        if metadata:
+            response["metadata"] = metadata
+        return response
+
+    def _error_response(reason: str, metadata: Optional[Dict[str, Any]] = None, tb_text: str = "") -> Dict[str, Any]:
+        logger.error(_format_error_message(name, prompt_text, reason))
+        response: Dict[str, Any] = {
+            "status": "error",
+            "provider": provider or "unknown",
+            "model": model_name,
+            "inputs": args,
+            "error": reason,
+        }
+        if metadata:
+            response["metadata"] = metadata
+        if tb_text:
+            response["traceback"] = tb_text
+        return response
+
+    if not provider or not model_name:
+        reason = "LLM provider or model is not configured"
+        meta = {"elapsed_ms": _elapsed_ms()}
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta)
 
     try:
         request_spec = _build_llm_request(provider, model_name, prompt_text, config_resolved, args)
-        if not request_spec:
-            raise ValueError("LLM request is not configured")
-        http_response = _execute_llm_request(request_spec)
-        body = http_response.get("body")
-        raw_text = _extract_llm_text(provider, body, config_resolved)
-        try:
-            limit = int(config_resolved.get("max_response_chars", 4000))
-            limit = max(limit, 0)
-        except Exception:
-            limit = 4000
-        final_text = _truncate_text(str(raw_text).strip() or "No response.", limit)
+        method = str(request_spec.get("method") or "POST").upper()
+        if method != "POST":
+            raise ValueError(f"Unsupported HTTP method '{method}' for LLM connector")
+
+        url = str(request_spec.get("url"))
+        params = request_spec.get("params") or {}
+        if params:
+            query = urllib.parse.urlencode(params, doseq=True)
+            url = f"{url}&{query}" if "?" in url else f"{url}?{query}"
+
+        timeout = float(request_spec.get("timeout") or 30.0)
+        status_code, raw_text, parsed_json = _http_post_json(
+            url,
+            request_spec.get("body") or {},
+            request_spec.get("headers") or {},
+            timeout,
+        )
+
+        result_payload: Dict[str, Any] = {}
+        if parsed_json is not None:
+            result_payload["json"] = parsed_json
+            extracted = _extract_llm_text(provider, parsed_json, config_resolved)
+            if extracted:
+                result_payload["text"] = str(extracted)
+        if raw_text:
+            if "text" not in result_payload:
+                result_payload["text"] = raw_text
+            result_payload.setdefault("raw", raw_text)
+
+        metadata = {
+            "http_status": status_code,
+            "elapsed_ms": _elapsed_ms(),
+        }
+
         return {
-            "result": final_text,
-            "provider": provider,
-            "model": model_name,
-            "inputs": args,
-            "config": config_resolved,
             "status": "ok",
-            "raw_response": body,
-            "usage": http_response.get("usage"),
-        }
-    except Exception:
-        logger.exception("LLM connector '%s' failed", name)
-        return {
-            "result": stub_response,
             "provider": provider,
             "model": model_name,
             "inputs": args,
-            "config": config_resolved,
-            "status": "stub",
-            "error": "llm_error",
+            "result": result_payload,
+            "metadata": metadata,
         }
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", "replace") if exc.fp else ""
+        reason = f"HTTP {exc.code}: {exc.reason or 'request failed'}"
+        meta = {
+            "http_status": exc.code,
+            "elapsed_ms": _elapsed_ms(),
+            "response": error_body[:1024] if error_body else None,
+        }
+        if meta.get("response") is None:
+            meta.pop("response", None)
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta)
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {exc}"
+        meta = {"elapsed_ms": _elapsed_ms()}
+        tb_text = ""
+        try:
+            tb_text = traceback.format_exc(limit=5).strip()
+        except Exception:  # pragma: no cover
+            tb_text = ""
+        if tb_text and len(tb_text) > 3000:
+            tb_text = tb_text[:3000]
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
 
 
 def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    spec = AI_CHAINS.get(name)
+    """Execute a configured AI chain and return detailed step results."""
+
+    start_time = time.time()
     args = dict(payload or {})
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
+    spec = AI_CHAINS.get(name)
+
     if not spec:
-        return {
-            "result": "stub_chain_output",
+        response: Dict[str, Any] = {
+            "status": "not_found",
+            "result": None,
             "steps": [],
             "inputs": args,
-            "status": "stub",
+            "metadata": {"elapsed_ms": float(round((time.time() - start_time) * 1000.0, 3))},
         }
+        if not allow_stubs:
+            response["error"] = f"Chain '{name}' is not defined"
+        return response
+
     input_key = spec.get("input_key", "input")
-    working: Any = args.get(input_key)
-    if working is None:
-        working = args
-    history: List[Dict[str, Any]] = []
-    for step in spec.get("steps", []):
-        history.append(copy.deepcopy(step))
-        kind = step.get("kind")
-        target = step.get("target")
+    working: Any = args.get(input_key, args)
+    steps_history: List[Dict[str, Any]] = []
+    result_value: Any = None
+    status: str = "partial"
+
+    for index, step in enumerate(spec.get("steps", []), start=1):
+        kind = (step.get("kind") or "").lower()
+        target = step.get("target") or ""
         options = step.get("options") or {}
+        stop_on_error = bool(step.get("stop_on_error", True))
+
+        entry: Dict[str, Any] = {
+            "step": index,
+            "kind": kind,
+            "name": target,
+            "inputs": None,
+            "output": None,
+            "status": "partial",
+        }
+        steps_history.append(entry)
+
         if kind == "template":
             template = AI_TEMPLATES.get(target) or {}
             prompt = template.get("prompt", "")
-            context = {"input": working, "vars": args, "payload": args}
-            working = _render_template_value(prompt, context)
+            context = {
+                "input": working,
+                "vars": args,
+                "payload": args,
+            }
+            entry["inputs"] = context
+            try:
+                rendered = _render_template_value(prompt, context)
+                entry["output"] = rendered
+                entry["status"] = "ok"
+                working = rendered
+                result_value = rendered
+                status = "ok"
+            except Exception as exc:  # pragma: no cover
+                entry["output"] = {"error": str(exc)}
+                entry["status"] = "error"
+                status = "error"
+                if stop_on_error:
+                    break
         elif kind == "connector":
             connector_payload = dict(args)
-            if isinstance(working, (dict, list)):
-                connector_payload.setdefault("prompt", str(working))
-            else:
-                connector_payload.setdefault("prompt", working)
+            connector_payload.setdefault("prompt", working)
+            entry["inputs"] = connector_payload
             response = call_llm_connector(target, connector_payload)
-            working = response.get("result", working)
+            entry["output"] = response
+            entry["status"] = response.get("status", "partial")
+            step_status = response.get("status")
+            if step_status == "ok":
+                working = response.get("result")
+                result_value = working
+                status = "ok"
+            elif step_status == "error":
+                status = "error"
+                result_value = response
+                if stop_on_error:
+                    break
+            elif step_status == "stub" and status != "error":
+                result_value = result_value or response
         elif kind == "python":
             module_name = options.get("module") or target or ""
             method_name = options.get("method") or "predict"
-            response = call_python_model(module_name, method_name, args)
-            working = response.get("result", working)
+            python_args = args
+            provided_args = options.get("arguments")
+            if isinstance(provided_args, dict):
+                merged_args = dict(args)
+                merged_args.update(provided_args)
+                python_args = merged_args
+            entry["inputs"] = python_args
+            response = call_python_model(module_name, method_name, python_args)
+            entry["output"] = response
+            entry["status"] = response.get("status", "partial")
+            step_status = response.get("status")
+            if step_status == "ok":
+                working = response.get("result")
+                result_value = working
+                status = "ok"
+            elif step_status == "error":
+                status = "error"
+                result_value = response
+                if stop_on_error:
+                    break
+            elif step_status == "stub" and status != "error":
+                result_value = result_value or response
         else:
-            working = f"{kind}:{target}:{working}" if working is not None else f"{kind}:{target}"
-    result_value = working if working is not None else "stub_chain_output"
-    return {
-        "result": result_value,
-        "steps": history,
-        "inputs": args,
-        "status": "ok" if history else "stub",
-    }
+            entry["output"] = {"error": f"Unsupported step kind '{kind}'"}
+            entry["status"] = "error"
+            status = "error"
+            if stop_on_error:
+                break
 
-    '''
+    elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+    if status != "error" and result_value is None:
+        status = "partial"
+
+    return {
+        "status": status if steps_history else "partial",
+        "result": result_value,
+        "steps": steps_history,
+        "inputs": args,
+        "metadata": {"elapsed_ms": elapsed_ms},
+    }
+'''
 ).strip()
 
 __all__ = ['LLM_SECTION']
+

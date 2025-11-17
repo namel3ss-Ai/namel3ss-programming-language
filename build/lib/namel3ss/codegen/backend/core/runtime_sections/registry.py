@@ -73,11 +73,38 @@ def _resolve_model_artifact_path(model_spec: Dict[str, Any]) -> Optional[str]:
 
 
 def _load_python_callable(import_path: str) -> Optional[Callable[..., Any]]:
-    module_path, _, attr = import_path.rpartition(":")
+    if not import_path:
+        return None
+
+    path = import_path.strip()
+    module_path: str
+    attr: str
+
+    if ":" in path:
+        module_path, attr = path.split(":", 1)
+    else:
+        module_path, _, attr = path.rpartition(".")
+
+    module_path = module_path.strip()
+    attr = attr.strip()
     if not module_path or not attr:
         return None
-    module = importlib.import_module(module_path)
-    return getattr(module, attr, None)
+
+    try:
+        module = importlib.import_module(module_path)
+    except Exception as exc:  # pragma: no cover - import failure guard
+        logger.exception("Failed to import module '%s' for callable '%s'", module_path, import_path)
+        raise ImportError(f"Could not import module '{module_path}'") from exc
+
+    try:
+        candidate = getattr(module, attr)
+    except AttributeError as exc:
+        raise AttributeError(f"Module '{module_path}' has no attribute '{attr}'") from exc
+
+    if not callable(candidate):
+        raise TypeError(f"Resolved object '{module_path}.{attr}' is not callable")
+
+    return candidate
 
 
 def _import_python_module(module: str) -> Optional[Any]:
@@ -112,36 +139,102 @@ def _import_python_module(module: str) -> Optional[Any]:
         return None
 
 
+def _is_truthy_env(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _trim_traceback(limit: int = 5, max_chars: int = 3000) -> str:
+    import traceback
+
+    try:
+        formatted = traceback.format_exc(limit=limit)
+    except Exception:  # pragma: no cover - safety guard
+        return ""
+    if not formatted:
+        return ""
+    text = formatted.strip()
+    if len(text) > max_chars:
+        return text[:max_chars]
+    return text
+
+
+def _short_error(exc: BaseException) -> str:
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__
+
+
 def call_python_model(
     module: str,
     method: str,
     arguments: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """Invoke a Python callable and return structured status details.
+
+    Args:
+        module: Fully qualified module path or file path that can be imported.
+        method: Attribute name to resolve on the imported module; defaults to ``predict`` when empty.
+        arguments: Keyword arguments passed to the callable when invoked.
+
+    Returns:
+        A dictionary containing ``status`` alongside contextual fields:
+
+        * ``status = 'ok'`` includes the callable result.
+        * ``status = 'error'`` reports structured failure details and a trimmed traceback when stubs are disabled.
+        * ``status = 'stub'`` mirrors legacy stub behaviour when ``NAMEL3SS_ALLOW_STUBS`` is truthy.
+    """
+
     args = dict(arguments or {})
-    module_obj = _import_python_module(module)
     attr_name = method or "predict"
-    if module_obj is not None:
-        callable_obj = getattr(module_obj, attr_name, None)
-        if callable(callable_obj):
-            try:
-                result = callable_obj(**args)
-                payload = result if isinstance(result, dict) else {"value": result}
-                return {
-                    "result": payload,
-                    "inputs": args,
-                    "module": module,
-                    "method": attr_name,
-                    "status": "ok",
-                }
-            except Exception:  # pragma: no cover - user callable failure
-                logger.exception("Python callable %s.%s raised an error", module, attr_name)
-    return {
-        "result": "stub_prediction",
-        "inputs": args,
-        "module": module,
-        "method": attr_name,
-        "status": "stub",
-    }
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
+
+    try:
+        module_obj = _import_python_module(module)
+        if module_obj is None:
+            raise ImportError(f"Module '{module}' could not be imported")
+
+        callable_obj = getattr(module_obj, attr_name)
+        if not callable(callable_obj):
+            raise TypeError(f"Attribute '{attr_name}' on module '{module}' is not callable")
+
+        result = callable_obj(**args)
+        return {
+            "status": "ok",
+            "result": result,
+            "inputs": args,
+            "module": module,
+            "method": attr_name,
+        }
+    except Exception as exc:  # pragma: no cover - user callable failure
+        logger.exception("Python callable %s.%s raised an error", module, attr_name)
+        error_message = _short_error(exc)
+        if allow_stubs:
+            return {
+                "status": "stub",
+                "result": "stub_prediction",
+                "inputs": args,
+                "module": module,
+                "method": attr_name,
+                "error": error_message,
+            }
+
+        response = {
+            "status": "error",
+            "inputs": args,
+            "module": module,
+            "method": attr_name,
+            "error": error_message,
+        }
+
+        traceback_text = _trim_traceback()
+        if traceback_text:
+            response["traceback"] = traceback_text
+
+        return response
 
 
 def _ensure_dict(value: Any) -> Dict[str, Any]:

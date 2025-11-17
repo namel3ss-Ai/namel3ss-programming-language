@@ -11,10 +11,12 @@ from .insights import InsightParserMixin
 from .experiments import ExperimentParserMixin
 from .models import ModelParserMixin
 from .pages import PageParserMixin
+from .crud import CrudParserMixin
 
 
 class ProgramParserMixin(
     PageParserMixin,
+    CrudParserMixin,
     ModelParserMixin,
     InsightParserMixin,
     ExperimentParserMixin,
@@ -78,6 +80,11 @@ class ProgramParserMixin(
                     raise self._error("Experiment must appear after app declaration", line_no, line)
                 experiment = self._parse_experiment(line, line_no, indent)
                 self.app.experiments.append(experiment)
+            elif stripped.startswith('enable crud'):
+                if self.app is None:
+                    raise self._error("CRUD declaration must appear after app declaration", line_no, line)
+                crud_resource = self._parse_crud_resource(line, line_no, indent)
+                self.app.crud_resources.append(crud_resource)
             elif stripped.startswith('page '):
                 if self.app is None:
                     raise self._error("Page must appear after app declaration", line_no, line)
@@ -94,7 +101,7 @@ class ProgramParserMixin(
                 self.app.variables.append(assignment)
             else:
                 raise self._error(
-                    "Expected 'app', 'theme', 'dataset', 'connector', 'insight', 'model', 'experiment', or 'page'",
+                    "Expected 'app', 'theme', 'dataset', 'connector', 'insight', 'model', 'experiment', 'enable crud', or 'page'",
                     line_no,
                     line,
                 )

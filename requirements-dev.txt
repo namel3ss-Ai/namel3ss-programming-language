@@ -1,6 +1,1 @@
--r requirements.txt
-
-black>=24.0
-coverage>=7.6
-mypy>=1.10
-pytest>=8.0
+-e .[dev]
