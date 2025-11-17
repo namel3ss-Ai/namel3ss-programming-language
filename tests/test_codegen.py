@@ -193,7 +193,12 @@ def test_generate_backend_creates_main_module(tmp_path: Path) -> None:
     assert '/api/pages/' in pages_router_content
     frames_router_content = frames_router_path.read_text(encoding='utf-8')
     assert 'response_model=FrameResponse' in frames_router_content
+    assert 'response_model=FrameSchemaPayload' in frames_router_content
+    assert 'FrameErrorResponse' in frames_router_content
     assert '"/api/frames"' in frames_router_content
+    assert '"/{name}/schema"' in frames_router_content
+    assert '"/{name}.csv"' in frames_router_content
+    assert '"/{name}.parquet"' in frames_router_content
     observability_router_content = observability_router_path.read_text(encoding='utf-8')
     assert '"/healthz"' in observability_router_content
     assert '"/metrics"' in observability_router_content
@@ -210,7 +215,9 @@ def test_generate_backend_creates_main_module(tmp_path: Path) -> None:
     assert 'class PredictionResponse' in schemas_content
     assert 'class ExperimentResult' in schemas_content
     assert 'class FrameColumnSchema' in schemas_content
+    assert 'class FrameSchemaPayload' in schemas_content
     assert 'class FrameResponse' in schemas_content
+    assert 'class FrameErrorResponse' in schemas_content
 
 
 def test_backend_emits_model_registry_stub(tmp_path: Path) -> None:
