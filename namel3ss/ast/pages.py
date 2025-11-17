@@ -126,6 +126,12 @@ class RunChainOperation(ActionOperation):
 
 
 @dataclass
+class RunPromptOperation(ActionOperation):
+    prompt_name: str
+    arguments: Dict[str, Expression] = field(default_factory=dict)
+
+
+@dataclass
 class ShowForm(Statement):
     title: str
     fields: List[FormField] = field(default_factory=list)
@@ -207,6 +213,7 @@ ActionOperationType = Union[
     CallPythonOperation,
     AskConnectorOperation,
     RunChainOperation,
+    RunPromptOperation,
 ]
 PageStatement = Union[
     ShowText,
@@ -248,6 +255,7 @@ __all__ = [
     "CallPythonOperation",
     "AskConnectorOperation",
     "RunChainOperation",
+    "RunPromptOperation",
     "ActionOperation",
     "ActionOperationType",
     "PageStatement",

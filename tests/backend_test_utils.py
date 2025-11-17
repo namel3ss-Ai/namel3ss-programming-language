@@ -6,7 +6,7 @@ import importlib
 import sys
 from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
-from typing import Iterator
+from typing import Dict, Iterator
 
 
 def install_backend_stubs(monkeypatch) -> None:
@@ -86,6 +86,12 @@ def install_backend_stubs(monkeypatch) -> None:
             self.method = method
             self.client = SimpleNamespace(host="testclient")
 
+    class FakeResponse:  # pragma: no cover - minimal Response stand-in
+        def __init__(self, content=None, status_code: int = 200) -> None:
+            self.content = content
+            self.status_code = status_code
+            self.headers: Dict[str, str] = {}
+
     class FakeWebSocket:  # pragma: no cover - WebSocket stand-in
         async def accept(self) -> None:
             return None
@@ -102,12 +108,14 @@ def install_backend_stubs(monkeypatch) -> None:
             raise NotImplementedError
 
     fake_fastapi.Request = FakeRequest
+    fake_fastapi.Response = FakeResponse
     fake_fastapi.WebSocket = FakeWebSocket
     fake_fastapi.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
     fake_fastapi.FastAPI = FakeFastAPI
     fake_fastapi.APIRouter = FakeAPIRouter
     fake_fastapi.HTTPException = type("HTTPException", (Exception,), {})
     fake_fastapi.Depends = lambda dependency=None: dependency
+    fake_fastapi.Query = lambda default=None, *args, **kwargs: default
 
     fake_fastapi_responses = ModuleType("fastapi.responses")
 

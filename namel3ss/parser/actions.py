@@ -10,6 +10,7 @@ from namel3ss.ast import (
     CallPythonOperation,
     GoToPageOperation,
     RunChainOperation,
+    RunPromptOperation,
     ToastOperation,
     UpdateOperation,
 )
@@ -101,6 +102,8 @@ class ActionParserMixin(DatasetParserMixin):
             return self._parse_ask_connector_operation(line or stripped, indent)
         if stripped.startswith('run chain') or stripped.startswith('execute chain'):
             return self._parse_run_chain_operation(line or stripped, indent)
+        if stripped.startswith('run prompt') or stripped.startswith('execute prompt'):
+            return self._parse_run_prompt_operation(line or stripped, indent)
         return ToastOperation(message=stripped)
 
     def _parse_call_python_operation(self, line: str, base_indent: int) -> CallPythonOperation:
@@ -148,6 +151,21 @@ class ActionParserMixin(DatasetParserMixin):
         if stripped.endswith(':'):
             inputs = self._parse_argument_block(base_indent)
         return RunChainOperation(chain_name=name, inputs=inputs)
+
+    def _parse_run_prompt_operation(self, line: str, base_indent: int) -> RunPromptOperation:
+        stripped = line.strip()
+        match = re.match(r'(?:run|execute)\s+prompt\s+([\w\.\-]+)(?:\s+with)?\s*:?', stripped)
+        if not match:
+            raise self._error(
+                'Expected: run prompt NAME [with:]',
+                self.pos,
+                line,
+            )
+        name = match.group(1)
+        arguments = {}
+        if stripped.endswith(':'):
+            arguments = self._parse_argument_block(base_indent)
+        return RunPromptOperation(prompt_name=name, arguments=arguments)
 
     def _parse_argument_block(self, parent_indent: int) -> Dict[str, Any]:
         arguments: Dict[str, Any] = {}

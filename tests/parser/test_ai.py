@@ -1,53 +1,47 @@
-"""Parsing tests for AI-specific constructs in Namel3ss."""
+"""Parser tests for AI models and prompt declarations."""
 
-from namel3ss.ast import Chain, Connector, ContextValue, Template
+from namel3ss.ast import AIModel, Prompt
 from namel3ss.parser import Parser
 
 
-def test_parse_connectors_templates_and_chains() -> None:
+def test_parse_ai_model_and_prompt_blocks() -> None:
     source = (
-        'app "AI".\n'
-        '\n'
-        'connector "openai" type llm:\n'
-        '  provider = "openai"\n'
-        '  model = "gpt-4"\n'
-        '  api_key = env.OPENAI_KEY\n'
-        '\n'
-        'define template "summary":\n'
-        '  prompt = "Summarize: {input}"\n'
-        '  tone = "friendly"\n'
-        '\n'
-        'define chain "summarize_chain":\n'
-        '  input -> template summary -> connector openai\n'
-        '  output = "text"\n'
+        'app "AI Demo".\n'
+        "\n"
+        'model "chat_model" using openai:\n'
+        '  name: "gpt-4o-mini"\n'
+        "  temperature: 0.2\n"
+        "\n"
+        'prompt "SummarizeTicket":\n'
+        "  input:\n"
+        "    ticket: text\n"
+        "  output:\n"
+        "    summary: text\n"
+        "  metadata:\n"
+        '    tags: ["support"]\n'
+        '  using model "chat_model":\n'
+        '    "Summarize: {{ticket}}"\n'
+        "\n"
+        'page "Home" at "/":\n'
+        '  show text "ready"\n'
     )
 
     app = Parser(source).parse()
 
-    assert len(app.connectors) == 1
-    connector = app.connectors[0]
-    assert isinstance(connector, Connector)
-    assert connector.connector_type == "llm"
-    assert connector.config["provider"] == "openai"
-    assert connector.config["model"] == "gpt-4"
-    api_key = connector.config["api_key"]
-    assert isinstance(api_key, ContextValue)
-    assert api_key.scope == "env"
-    assert api_key.path == ["OPENAI_KEY"]
+    assert len(app.ai_models) == 1
+    model = app.ai_models[0]
+    assert isinstance(model, AIModel)
+    assert model.name == "chat_model"
+    assert model.provider == "openai"
+    assert model.model_name == "gpt-4o-mini"
+    assert model.config["temperature"] == 0.2
 
-    assert len(app.templates) == 1
-    template = app.templates[0]
-    assert isinstance(template, Template)
-    assert template.prompt == "Summarize: {input}"
-    assert template.metadata["tone"] == "friendly"
-
-    assert len(app.chains) == 1
-    chain = app.chains[0]
-    assert isinstance(chain, Chain)
-    assert chain.input_key == "input"
-    assert len(chain.steps) == 2
-    assert chain.steps[0].kind == "template"
-    assert chain.steps[0].target == "summary"
-    assert chain.steps[1].kind == "connector"
-    assert chain.steps[1].target == "openai"
-    assert chain.metadata["output"] == "text"
+    assert len(app.prompts) == 1
+    prompt = app.prompts[0]
+    assert isinstance(prompt, Prompt)
+    assert prompt.name == "SummarizeTicket"
+    assert prompt.model == "chat_model"
+    assert prompt.input_fields[0].name == "ticket"
+    assert prompt.output_fields[0].field_type == "text"
+    assert prompt.metadata["tags"] == ["support"]
+    assert "Summarize" in prompt.template

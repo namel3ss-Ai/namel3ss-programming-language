@@ -23,6 +23,8 @@ def render_registries_block(
         _assign_literal("FRAMES", "Dict[str, Dict[str, Any]]", state.frames),
         _assign_literal("CONNECTORS", "Dict[str, Dict[str, Any]]", state.connectors),
         _assign_literal("AI_CONNECTORS", "Dict[str, Dict[str, Any]]", state.ai_connectors),
+        _assign_literal("AI_MODELS", "Dict[str, Dict[str, Any]]", state.ai_models),
+        _assign_literal("AI_PROMPTS", "Dict[str, Dict[str, Any]]", state.prompts),
         _assign_literal("AI_TEMPLATES", "Dict[str, Dict[str, Any]]", state.templates),
         _assign_literal("AI_CHAINS", "Dict[str, Dict[str, Any]]", state.chains),
         _assign_literal("AI_EXPERIMENTS", "Dict[str, Dict[str, Any]]", state.experiments),

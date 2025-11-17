@@ -138,6 +138,8 @@ def _build_runtime_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         datasets={},
         connectors={},
         ai_connectors={},
+        ai_models={},
+        prompts={},
         insights={},
         models={},
         templates={},

@@ -203,6 +203,7 @@ def call_llm_connector(name: str, payload: Optional[Dict[str, Any]] = None) -> D
 
 
 run_chain = runtime.run_chain
+run_prompt = runtime.run_prompt
 evaluate_experiment = runtime.evaluate_experiment
 run_experiment = runtime.run_experiment
 DATASETS = runtime.DATASETS
@@ -219,6 +220,7 @@ __all__ = [
     "call_python_model",
     "call_llm_connector",
     "run_chain",
+    "run_prompt",
     "evaluate_experiment",
     "run_experiment",
     "DATASETS",

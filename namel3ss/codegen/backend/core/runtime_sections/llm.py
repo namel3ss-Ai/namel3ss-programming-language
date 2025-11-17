@@ -4,10 +4,11 @@ from textwrap import dedent
 
 LLM_SECTION = dedent(
     '''
+import copy
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _stringify_prompt_value(name: str, value: Any) -> str:
@@ -308,6 +309,171 @@ def _extract_llm_text(
     return json.dumps(payload)
 
 
+def _normalize_prompt_inputs(prompt_spec: Dict[str, Any], payload: Any) -> Dict[str, Any]:
+    schema = prompt_spec.get("input") or []
+    if isinstance(payload, dict):
+        return dict(payload)
+    if not schema:
+        return {}
+    first_field = schema[0]
+    return {first_field.get("name", "value"): payload}
+
+
+def _coerce_prompt_field_value(field: Dict[str, Any], value: Any) -> Tuple[Any, Optional[str]]:
+    name = field.get("name") or "value"
+    field_type = str(field.get("type") or "text").lower()
+    if value is None:
+        return None, None
+    try:
+        if field_type in {"text", "string"}:
+            return str(value), None
+        if field_type in {"int", "integer"}:
+            return int(value), None
+        if field_type in {"float", "number"}:
+            return float(value), None
+        if field_type in {"boolean", "bool"}:
+            if isinstance(value, bool):
+                return value, None
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered in {"true", "1", "yes", "on"}:
+                    return True, None
+                if lowered in {"false", "0", "no", "off"}:
+                    return False, None
+            return bool(value), None
+        if field_type in {"json", "object"}:
+            if isinstance(value, (dict, list)):
+                return value, None
+            if isinstance(value, str):
+                return json.loads(value), None
+        if field_type in {"list", "array"}:
+            if isinstance(value, list):
+                return value, None
+            return [value], None
+        if field_type == "enum":
+            allowed = [str(item) for item in field.get("enum", []) if item is not None]
+            text_value = str(value)
+            if allowed and text_value not in allowed:
+                return text_value, f"Value '{text_value}' is not permitted for '{name}'"
+            return text_value, None
+        return value, None
+    except Exception as exc:
+        return value, f"Unable to coerce field '{name}': {exc}"
+
+
+def _validate_prompt_inputs(
+    prompt_spec: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Tuple[Dict[str, Any], List[str]]:
+    schema = prompt_spec.get("input") or []
+    provided = dict(payload or {})
+    values: Dict[str, Any] = {}
+    errors: List[str] = []
+    for field in schema:
+        name = field.get("name")
+        if not name:
+            continue
+        if name in provided:
+            raw_value = provided.pop(name)
+        else:
+            raw_value = field.get("default")
+        if raw_value is None:
+            if field.get("required", True):
+                errors.append(f"Missing required prompt field '{name}'")
+            continue
+        coerced, err = _coerce_prompt_field_value(field, raw_value)
+        if err:
+            errors.append(err)
+            continue
+        values[name] = coerced
+    if provided:
+        extras = ", ".join(sorted(provided.keys()))
+        errors.append(f"Unsupported prompt inputs: {extras}")
+    return values, errors
+
+
+def _merge_prompt_request_config(
+    model_spec: Dict[str, Any],
+    prompt_spec: Dict[str, Any],
+) -> Dict[str, Any]:
+    base_config = _ensure_dict(model_spec.get("config"))
+    merged = copy.deepcopy(base_config)
+    prompt_params = prompt_spec.get("parameters") or {}
+    if not isinstance(prompt_params, dict):
+        prompt_params = {}
+    payload = merged.setdefault("payload", {})
+    payload_keys = {
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "stop",
+        "response_format",
+        "seed",
+    }
+    for key in payload_keys:
+        if key in prompt_params and prompt_params[key] is not None:
+            payload.setdefault(key, prompt_params[key])
+    for key in ("headers", "params"):
+        value = prompt_params.get(key)
+        if isinstance(value, dict):
+            merged.setdefault(key, {}).update(value)
+    for key in ("timeout", "mode", "user_role", "system", "deployment", "endpoint", "api_version"):
+        if key in prompt_params and prompt_params[key] is not None and key not in merged:
+            merged[key] = prompt_params[key]
+    return merged
+
+
+def _project_prompt_output(
+    prompt_spec: Dict[str, Any],
+    result_payload: Dict[str, Any],
+) -> Tuple[Dict[str, Any], List[str]]:
+    schema = prompt_spec.get("output") or []
+    if not schema:
+        return {}, []
+    errors: List[str] = []
+    text_value = result_payload.get("text") or ""
+    structured: Optional[Dict[str, Any]] = None
+    if isinstance(result_payload.get("json"), dict):
+        structured = result_payload["json"]
+        field_names = [field.get("name") for field in schema if field.get("name")]
+        if not all(name in structured for name in field_names):
+            structured = None
+    elif isinstance(text_value, str):
+        stripped = text_value.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                structured = json.loads(stripped)
+            except Exception:
+                structured = None
+    values: Dict[str, Any] = {}
+    if structured is None:
+        if len(schema) == 1:
+            field = schema[0]
+            coerced, err = _coerce_prompt_field_value(field, text_value)
+            if err:
+                errors.append(err)
+            else:
+                values[field.get("name") or "value"] = coerced
+            return values, errors
+        errors.append("Prompt output is not valid JSON")
+        return {}, errors
+    for field in schema:
+        name = field.get("name")
+        if not name:
+            continue
+        if name not in structured:
+            errors.append(f"Prompt output is missing '{name}'")
+            continue
+        coerced, err = _coerce_prompt_field_value(field, structured.get(name))
+        if err:
+            errors.append(err)
+            continue
+        values[name] = coerced
+    return values, errors
+
+
 def call_llm_connector(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
@@ -445,6 +611,159 @@ def call_llm_connector(
         return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
 
 
+def run_prompt(
+    name: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    start_time = time.time()
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
+    prompt_spec = AI_PROMPTS.get(name)
+    model_name = str(prompt_spec.get("model") or "") if prompt_spec else ""
+    prompt_text = ""
+    normalized_inputs: Dict[str, Any] = dict(payload or {}) if isinstance(payload, dict) else {}
+
+    def _elapsed_ms() -> float:
+        return float(round((time.time() - start_time) * 1000.0, 3))
+
+    def _stub_response(reason: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        logger.warning(_format_error_message(name, None, reason))
+        response: Dict[str, Any] = {
+            "status": "stub",
+            "prompt": name,
+            "model": model_name,
+            "inputs": normalized_inputs,
+            "output": {},
+            "result": {"text": "[stub: prompt call failed]"},
+            "metadata": metadata or {},
+            "error": reason,
+        }
+        return response
+
+    def _error_response(reason: str, metadata: Optional[Dict[str, Any]] = None, tb_text: str = "") -> Dict[str, Any]:
+        logger.error(_format_error_message(name, prompt_text, reason))
+        response: Dict[str, Any] = {
+            "status": "error",
+            "prompt": name,
+            "model": model_name,
+            "inputs": normalized_inputs,
+            "metadata": metadata or {},
+            "error": reason,
+        }
+        if tb_text:
+            response["traceback"] = tb_text
+        return response
+
+    if not prompt_spec:
+        metadata = {"elapsed_ms": _elapsed_ms()}
+        return _stub_response(f"Prompt '{name}' is not defined", metadata) if allow_stubs else _error_response(f"Prompt '{name}' is not defined", metadata)
+
+    normalized_inputs = _normalize_prompt_inputs(prompt_spec, payload or {})
+    validated_inputs, validation_errors = _validate_prompt_inputs(prompt_spec, normalized_inputs)
+    if validation_errors:
+        metadata = {"elapsed_ms": _elapsed_ms()}
+        reason = "; ".join(validation_errors)
+        return _stub_response(reason, metadata) if allow_stubs else _error_response(reason, metadata)
+
+    model_spec = AI_MODELS.get(model_name)
+    if not model_spec:
+        metadata = {"elapsed_ms": _elapsed_ms()}
+        reason = f"Prompt model '{model_name}' is not defined"
+        return _stub_response(reason, metadata) if allow_stubs else _error_response(reason, metadata)
+
+    provider = str(model_spec.get("provider") or model_name or "unknown")
+    model_id = model_spec.get("model")
+    if not model_id:
+        metadata = {"elapsed_ms": _elapsed_ms()}
+        reason = f"Model id is not configured for prompt '{name}'"
+        return _stub_response(reason, metadata) if allow_stubs else _error_response(reason, metadata)
+
+    try:
+        prompt_text = _render_template_value(
+            prompt_spec.get("template"),
+            {
+                "input": validated_inputs,
+                "vars": validated_inputs,
+                "payload": validated_inputs,
+            },
+        )
+    except Exception as exc:
+        metadata = {"elapsed_ms": _elapsed_ms()}
+        reason = f"Prompt template error: {exc}"
+        return _stub_response(reason, metadata) if allow_stubs else _error_response(reason, metadata)
+
+    try:
+        request_config = _merge_prompt_request_config(model_spec, prompt_spec)
+        request_spec = _build_llm_request(provider, model_id, prompt_text, request_config, validated_inputs)
+        method = str(request_spec.get("method") or "POST").upper()
+        if method != "POST":
+            raise ValueError(f"Unsupported HTTP method '{method}' for prompt '{name}'")
+
+        url = str(request_spec.get("url"))
+        params = request_spec.get("params") or {}
+        if params:
+            query = urllib.parse.urlencode(params, doseq=True)
+            url = f"{url}&{query}" if "?" in url else f"{url}?{query}"
+
+        timeout = float(request_spec.get("timeout") or 30.0)
+        status_code, raw_text, parsed_json = _http_post_json(
+            url,
+            request_spec.get("body") or {},
+            request_spec.get("headers") or {},
+            timeout,
+        )
+
+        result_payload: Dict[str, Any] = {}
+        if parsed_json is not None:
+            result_payload["json"] = parsed_json
+            extracted = _extract_llm_text(provider, parsed_json, request_config)
+            if extracted:
+                result_payload["text"] = str(extracted)
+        if raw_text:
+            if "text" not in result_payload:
+                result_payload["text"] = raw_text
+            result_payload.setdefault("raw", raw_text)
+
+        metadata = {
+            "http_status": status_code,
+            "elapsed_ms": _elapsed_ms(),
+        }
+        structured_output, projection_errors = _project_prompt_output(prompt_spec, result_payload)
+        response: Dict[str, Any] = {
+            "status": "ok",
+            "prompt": name,
+            "model": model_name,
+            "inputs": validated_inputs,
+            "output": structured_output,
+            "result": result_payload,
+            "metadata": metadata,
+        }
+        if projection_errors:
+            response["warnings"] = projection_errors
+        return response
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", "replace") if exc.fp else ""
+        reason = f"HTTP {exc.code}: {exc.reason or 'request failed'}"
+        meta = {
+            "http_status": exc.code,
+            "elapsed_ms": _elapsed_ms(),
+            "response": error_body[:1024] if error_body else None,
+        }
+        if meta.get("response") is None:
+            meta.pop("response", None)
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta)
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {exc}"
+        meta = {"elapsed_ms": _elapsed_ms()}
+        tb_text = ""
+        try:
+            tb_text = traceback.format_exc(limit=5).strip()
+        except Exception:
+            tb_text = ""
+        if tb_text and len(tb_text) > 3000:
+            tb_text = tb_text[:3000]
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
+
+
 def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Execute a configured AI chain and return detailed step results."""
 
@@ -528,6 +847,24 @@ def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, 
                     break
             elif step_status == "stub" and status != "error":
                 result_value = result_value or response
+        elif kind == "prompt":
+            prompt_payload = working if isinstance(working, dict) else working
+            response = run_prompt(target, prompt_payload)
+            entry["inputs"] = response.get("inputs")
+            entry["output"] = response
+            entry["status"] = response.get("status", "partial")
+            step_status = response.get("status")
+            if step_status == "ok":
+                working = response.get("output")
+                result_value = working
+                status = "ok"
+            elif step_status == "error":
+                status = "error"
+                result_value = response
+                if stop_on_error:
+                    break
+            elif step_status == "stub" and status != "error":
+                result_value = result_value or response
         elif kind == "python":
             module_name = options.get("module") or target or ""
             method_name = options.get("method") or "predict"
@@ -575,4 +912,3 @@ def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, 
 ).strip()
 
 __all__ = ['LLM_SECTION']
-

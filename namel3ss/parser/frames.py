@@ -11,6 +11,7 @@ from namel3ss.ast import (
     FrameConstraint,
     FrameIndex,
     FrameRelationship,
+    FrameSourceDef,
 )
 
 from .datasets import DatasetParserMixin
@@ -121,6 +122,19 @@ class FrameParserMixin(DatasetParserMixin):
                 key, value = self._parse_connector_option(option_text, self.pos + 1, nxt)
                 self._assign_frame_option(frame, key, value)
                 self._advance()
+            elif lowered.startswith('key:'):
+                self._advance()
+                key_text = stripped_line[len('key:'):].strip()
+                frame.key = self._parse_frame_key_list(key_text)
+            elif lowered.startswith('splits:'):
+                block_indent = indent
+                self._advance()
+                frame.splits = self._parse_frame_splits(block_indent)
+            elif lowered.startswith('source:'):
+                block_indent = indent
+                self._advance()
+                source_config = self._parse_frame_source_config(block_indent)
+                frame.source_config = source_config
             else:
                 raise self._error("Expected frame property, column, index, relationship, or constraint", self.pos + 1, nxt)
         return frame
@@ -166,6 +180,8 @@ class FrameParserMixin(DatasetParserMixin):
         tags = self._ensure_string_list(config.pop('tags', []))
         metadata = self._coerce_options_dict(config.pop('metadata', {}))
         validations = self._parse_column_validations(config.pop('validations', config.pop('validators', [])))
+        role_raw = config.pop('role', None)
+        role = self._stringify_value(role_raw) if role_raw is not None else None
 
         if config:
             metadata.update(self._coerce_options_dict(config))
@@ -178,6 +194,7 @@ class FrameParserMixin(DatasetParserMixin):
             default=default,
             expression=expression,
             source=source,
+            role=role,
             tags=tags,
             metadata=metadata,
             validations=validations,
@@ -364,6 +381,53 @@ class FrameParserMixin(DatasetParserMixin):
                 target[part] = existing
             target = existing
         target[parts[-1]] = value
+
+    def _parse_frame_key_list(self, raw: str) -> List[str]:
+        if not raw:
+            return []
+        parts = [segment.strip() for segment in raw.split(',') if segment.strip()]
+        return [self._strip_quotes(part) for part in parts]
+
+    def _parse_frame_splits(self, base_indent: int) -> Dict[str, float]:
+        data = self._parse_kv_block(base_indent)
+        splits: Dict[str, float] = {}
+        for key, value in data.items():
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                raise self._error(f"Split '{key}' must be numeric", self.pos, str(value))
+            splits[str(key)] = numeric
+        return splits
+
+    def _parse_frame_source_config(self, base_indent: int) -> Optional[FrameSourceDef]:
+        raw = self._parse_kv_block(base_indent)
+        if not raw:
+            return None
+        kind = str(raw.pop('kind', raw.pop('type', 'file')) or 'file').lower()
+        if kind not in {'file', 'sql'}:
+            raise self._error("Frame source kind must be 'file' or 'sql'", self.pos)
+        connection_raw = raw.pop('connection', raw.pop('conn', None))
+        table_raw = raw.pop('table', raw.pop('dataset', None))
+        path_raw = raw.pop('path', raw.pop('file', None))
+        format_raw = raw.pop('format', raw.pop('fmt', None))
+        if raw:
+            # Merge remaining entries under metadata-like structure to avoid silent typos.
+            extra_keys = ', '.join(raw.keys())
+            raise self._error(f"Unknown keys in frame source block: {extra_keys}", self.pos)
+        connection = self._stringify_value(connection_raw) if connection_raw is not None else None
+        table = self._stringify_value(table_raw) if table_raw is not None else None
+        path = self._stringify_value(path_raw) if path_raw is not None else None
+        fmt = self._stringify_value(format_raw) if format_raw is not None else None
+        if kind == 'sql':
+            if not connection or not table:
+                raise self._error("SQL frame sources require 'connection' and 'table'", self.pos)
+            return FrameSourceDef(kind='sql', connection=connection, table=table)
+        if not path:
+            raise self._error("File frame sources require 'path'", self.pos)
+        fmt_value = (fmt or 'csv').lower()
+        if fmt_value not in {'csv', 'parquet'}:
+            raise self._error("File frame sources support 'csv' or 'parquet'", self.pos)
+        return FrameSourceDef(kind='file', path=path, format=fmt_value)
 
 
 __all__ = ["FrameParserMixin"]

@@ -554,6 +554,40 @@ page "Chatbot" at "/chat":
       run chain summarize_chain with:
         text = form.message
       show toast "AI response generated"
+
+### First-class models & prompts
+
+For reusable AI providers with strict contracts, declare `model` and `prompt`
+blocks directly in `.n3`:
+
+```text
+model "chat_model" using openai:
+  name: "gpt-4o-mini"
+  api_key = env.OPENAI_API_KEY
+  temperature: 0.2
+
+prompt "SummarizeTicket":
+  input:
+    ticket: text
+  output:
+    summary: text
+    urgency: one_of("low", "medium", "high")
+  metadata:
+    top_p: 0.9
+  using model "chat_model":
+    """
+    You are on support. Summarize the ticket and classify urgency.
+    Ticket:
+    {{ticket}}
+    """
+```
+
+Prompt input/output schemas reuse the dataset-style syntax (`text`, `number`,
+`one_of(...)`, defaults, etc.). Static validation ensures `run prompt` blocks
+supply every required field, and the runtime enforces the schema when the model
+executes. The resulting `run_prompt()` output is a structured object matching
+the declared schema, so follow-on actions or Python hooks can consume typed
+values without building custom parsers.
 ```
 
 Generated backends now ship with `AI_CONNECTORS`, `AI_TEMPLATES`, `AI_CHAINS`,

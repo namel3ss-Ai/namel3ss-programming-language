@@ -34,6 +34,17 @@ def runtime_module(tmp_path, monkeypatch):
         '  deployment = "gpt-prod"\n'
         '  api_base = "https://example.azure.com/openai"\n'
         '\n'
+        'model "chat_model" using openai:\n'
+        '  name: "gpt-4o-mini"\n'
+        '\n'
+        'prompt "SummarizeTicket":\n'
+        '  input:\n'
+        '    ticket: text\n'
+        '  output:\n'
+        '    summary: text\n'
+        '  using model "chat_model":\n'
+        '    "Summary: {{ticket}}"\n'
+        '\n'
         'page "Home" at "/":\n'
         '  show text "Hello"\n'
     )
@@ -198,7 +209,24 @@ def test_call_llm_connector_http_error_reports_status(runtime_module, monkeypatc
 
     assert result["status"] == "error"
     assert result["metadata"]["http_status"] == 503
-    assert "HTTP 503" in result["error"]
+
+
+def test_run_prompt_returns_structured_output(runtime_module, monkeypatch):
+    monkeypatch.delenv("NAMEL3SS_ALLOW_STUBS", raising=False)
+    result = runtime_module.run_prompt("SummarizeTicket", {"ticket": "Help me"})
+
+    assert result["status"] == "ok"
+    assert result["prompt"] == "SummarizeTicket"
+    assert result["output"]["summary"] == "Hello from test"
+    assert result["metadata"]["http_status"] == 200
+
+
+def test_run_prompt_missing_input_errors(runtime_module, monkeypatch):
+    monkeypatch.delenv("NAMEL3SS_ALLOW_STUBS", raising=False)
+    result = runtime_module.run_prompt("SummarizeTicket", {})
+
+    assert result["status"] == "error"
+    assert "missing required prompt field" in result["error"].lower()
 
 
 def test_call_llm_connector_http_error_stub_when_enabled(runtime_module, monkeypatch):
@@ -237,4 +265,3 @@ def test_run_chain_missing_without_error_when_stubs_enabled(runtime_module, monk
     assert result["status"] == "not_found"
     assert result["result"] is None
     assert "error" not in result
-

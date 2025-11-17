@@ -17,7 +17,7 @@ from .ast.base import (  # noqa: E402
     Theme,
     UnaryOp,
 )
-from .ast.ai import Connector, Template, Chain, ChainStep  # noqa: E402
+from .ast.ai import AIModel, Chain, ChainStep, Connector, Prompt, PromptField, Template  # noqa: E402
 from .ast.experiments import Experiment, ExperimentMetric, ExperimentVariant  # noqa: E402
 from .ast.crud import CrudResource  # noqa: E402
 from .ast.datasets import (  # noqa: E402
@@ -86,6 +86,7 @@ from .ast.pages import (  # noqa: E402
     PageStatement,
     PredictStatement,
     RunChainOperation,
+    RunPromptOperation,
     ShowChart,
     ShowForm,
     ShowTable,
@@ -156,6 +157,7 @@ __all__ = [
     "CallPythonOperation",
     "AskConnectorOperation",
     "RunChainOperation",
+    "RunPromptOperation",
     "InsightLogicStep",
     "InsightAssignment",
     "InsightSelect",
@@ -175,7 +177,10 @@ __all__ = [
     "GoToPageOperation",
     "ActionOperationType",
     "Connector",
+    "AIModel",
     "Template",
+    "PromptField",
+    "Prompt",
     "Chain",
     "ChainStep",
     "Experiment",

@@ -30,12 +30,14 @@ from ...ast import (
 	DatasetTarget,
 	DatasetTransformStep,
 	Frame,
+	FrameExpression,
 	FrameAccessPolicy,
 	FrameColumn,
 	FrameColumnConstraint,
 	FrameConstraint,
 	FrameIndex,
 	FrameRelationship,
+	FrameSourceDef,
 	Experiment,
 	ExperimentMetric,
 	ExperimentVariant,
@@ -76,10 +78,14 @@ from ...ast import (
 	PageStatement,
 	PredictStatement,
 	RunChainOperation,
+	RunPromptOperation,
 	ShowChart,
 	ShowForm,
 	ShowTable,
 	ShowText,
+	Prompt,
+	PromptField,
+	AIModel,
 	WhileLoop,
 	BreakStatement,
 	ContinueStatement,
@@ -93,6 +99,7 @@ from ...ast import (
 	WindowOp,
 	CrudResource,
 )
+from ...frames import FrameExpressionAnalyzer, FrameTypeError
 
 
 @dataclass
@@ -136,6 +143,8 @@ class BackendState:
 	frames: Dict[str, Dict[str, Any]]
 	connectors: Dict[str, Dict[str, Any]]
 	ai_connectors: Dict[str, Dict[str, Any]]
+	ai_models: Dict[str, Dict[str, Any]]
+	prompts: Dict[str, Dict[str, Any]]
 	insights: Dict[str, Dict[str, Any]]
 	models: Dict[str, Dict[str, Any]]
 	templates: Dict[str, Dict[str, Any]]
@@ -148,82 +157,103 @@ class BackendState:
 
 _TEMPLATE_PATTERN = re.compile(r"\{([^{}]+)\}")
 
+_FRAME_ANALYZER: Optional[FrameExpressionAnalyzer] = None
+
 
 def build_backend_state(app: App) -> BackendState:
 	"""Build the serialisable backend state for the provided :class:`App`."""
 
 	env_keys: Set[str] = set()
+	global _FRAME_ANALYZER
+	_FRAME_ANALYZER = FrameExpressionAnalyzer(app.frames) if app.frames else None
+	try:
+		datasets: Dict[str, Dict[str, Any]] = {}
+		connectors: Dict[str, Dict[str, Any]] = {}
+		for dataset in app.datasets:
+			encoded = _encode_dataset(dataset, env_keys)
+			datasets[dataset.name] = encoded
+			if encoded.get("connector"):
+				connectors[dataset.name] = encoded["connector"]
 
-	datasets: Dict[str, Dict[str, Any]] = {}
-	connectors: Dict[str, Dict[str, Any]] = {}
-	for dataset in app.datasets:
-		encoded = _encode_dataset(dataset, env_keys)
-		datasets[dataset.name] = encoded
-		if encoded.get("connector"):
-			connectors[dataset.name] = encoded["connector"]
+		frames: Dict[str, Dict[str, Any]] = {}
+		for frame in app.frames:
+			frames[frame.name] = _encode_frame(frame, env_keys)
 
-	frames: Dict[str, Dict[str, Any]] = {}
-	for frame in app.frames:
-		frames[frame.name] = _encode_frame(frame, env_keys)
+		ai_connectors: Dict[str, Dict[str, Any]] = {}
+		for connector in app.connectors:
+			aiconfig = _encode_ai_connector(connector, env_keys)
+			aiconfig.pop("name", None)
+			ai_connectors[connector.name] = aiconfig
 
-	ai_connectors: Dict[str, Dict[str, Any]] = {}
-	for connector in app.connectors:
-		aiconfig = _encode_ai_connector(connector, env_keys)
-		aiconfig.pop("name", None)
-		ai_connectors[connector.name] = aiconfig
+		ai_models: Dict[str, Dict[str, Any]] = {}
+		for model in app.ai_models:
+			ai_models[model.name] = _encode_ai_model(model, env_keys)
 
-	insights: Dict[str, Dict[str, Any]] = {}
-	for insight in app.insights:
-		insights[insight.name] = _encode_insight(insight, env_keys)
+		prompt_lookup: Dict[str, Prompt] = {}
+		prompts: Dict[str, Dict[str, Any]] = {}
+		for prompt in app.prompts:
+			model_name = prompt.model
+			if model_name not in ai_models:
+				raise ValueError(f"Prompt '{prompt.name}' references undefined model '{model_name}'")
+			prompts[prompt.name] = _encode_prompt(prompt, env_keys)
+			prompt_lookup[prompt.name] = prompt
 
-	models: Dict[str, Dict[str, Any]] = {}
-	for model in app.models:
-		models[model.name] = _encode_model(model, env_keys)
+		insights: Dict[str, Dict[str, Any]] = {}
+		for insight in app.insights:
+			insights[insight.name] = _encode_insight(insight, env_keys)
 
-	templates: Dict[str, Dict[str, Any]] = {}
-	for template in app.templates:
-		templates[template.name] = _encode_template(template, env_keys)
+		models: Dict[str, Dict[str, Any]] = {}
+		for model in app.models:
+			models[model.name] = _encode_model(model, env_keys)
 
-	chains: Dict[str, Dict[str, Any]] = {}
-	for chain in app.chains:
-		chains[chain.name] = _encode_chain(chain, env_keys)
+		templates: Dict[str, Dict[str, Any]] = {}
+		for template in app.templates:
+			templates[template.name] = _encode_template(template, env_keys)
 
-	experiments: Dict[str, Dict[str, Any]] = {}
-	for experiment in app.experiments:
-		experiments[experiment.name] = _encode_experiment(experiment, env_keys)
+		chains: Dict[str, Dict[str, Any]] = {}
+		for chain in app.chains:
+			chains[chain.name] = _encode_chain(chain, env_keys)
 
-	crud_resources: Dict[str, Dict[str, Any]] = {}
-	for resource in app.crud_resources:
-		crud_resources[resource.name] = _encode_crud_resource(resource, env_keys)
+		experiments: Dict[str, Dict[str, Any]] = {}
+		for experiment in app.experiments:
+			experiments[experiment.name] = _encode_experiment(experiment, env_keys)
 
-	pages: List[PageSpec] = []
-	for index, page in enumerate(app.pages):
-		pages.append(_encode_page(index, page, env_keys))
+		crud_resources: Dict[str, Dict[str, Any]] = {}
+		for resource in app.crud_resources:
+			crud_resources[resource.name] = _encode_crud_resource(resource, env_keys)
 
-	app_payload: Dict[str, Any] = {
-		"name": app.name,
-		"database": app.database,
-		"theme": dict(app.theme.values),
-		"variables": [_encode_variable(var, env_keys) for var in app.variables],
-	}
+		pages: List[PageSpec] = []
+		for index, page in enumerate(app.pages):
+			pages.append(_encode_page(index, page, env_keys, prompt_lookup))
 
-	sorted_env_keys = sorted(env_keys)
+		app_payload: Dict[str, Any] = {
+			"name": app.name,
+			"database": app.database,
+			"theme": dict(app.theme.values),
+			"variables": [_encode_variable(var, env_keys) for var in app.variables],
+		}
 
-	return BackendState(
-		app=app_payload,
-		datasets=datasets,
-		frames=frames,
-		connectors=connectors,
-		ai_connectors=ai_connectors,
-		insights=insights,
-		models=models,
-		templates=templates,
-		chains=chains,
-		experiments=experiments,
-		crud_resources=crud_resources,
-		pages=pages,
-		env_keys=sorted_env_keys,
-	)
+		sorted_env_keys = sorted(env_keys)
+
+		return BackendState(
+			app=app_payload,
+			datasets=datasets,
+			frames=frames,
+			connectors=connectors,
+			ai_connectors=ai_connectors,
+			ai_models=ai_models,
+			prompts=prompts,
+			insights=insights,
+			models=models,
+			templates=templates,
+			chains=chains,
+			experiments=experiments,
+			crud_resources=crud_resources,
+			pages=pages,
+			env_keys=sorted_env_keys,
+		)
+	finally:
+		_FRAME_ANALYZER = None
 
 
 def _encode_dataset(dataset: Dataset, env_keys: Set[str]) -> Dict[str, Any]:
@@ -419,6 +449,9 @@ def _encode_frame(frame: Frame, env_keys: Set[str]) -> Dict[str, Any]:
 		"metadata": metadata_value,
 		"examples": examples,
 		"options": options_value,
+		"key": list(frame.key or []),
+		"splits": dict(frame.splits or {}),
+		"source_config": _encode_frame_source(frame.source_config),
 	}
 
 
@@ -515,7 +548,26 @@ def _encode_frame_access(policy: Optional[FrameAccessPolicy], env_keys: Set[str]
 	}
 
 
-def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[PageComponent]:
+def _encode_frame_source(source: Optional[FrameSourceDef]) -> Optional[Dict[str, Any]]:
+	if source is None:
+		return None
+	payload: Dict[str, Any] = {"kind": source.kind}
+	if source.connection:
+		payload["connection"] = source.connection
+	if source.table:
+		payload["table"] = source.table
+	if source.path:
+		payload["path"] = source.path
+	if source.format:
+		payload["format"] = source.format
+	return payload
+
+
+def _encode_statement(
+	statement: PageStatement,
+	env_keys: Set[str],
+	prompt_lookup: Dict[str, Prompt],
+) -> Optional[PageComponent]:
 	if isinstance(statement, ShowText):
 		_collect_template_markers(statement.text, env_keys)
 		payload = {
@@ -565,7 +617,7 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 				for field in statement.fields
 			],
 			"layout": _encode_layout_spec(statement.layout),
-			"operations": [_encode_action_operation(op, env_keys) for op in statement.on_submit_ops],
+			"operations": [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.on_submit_ops],
 			"styles": dict(statement.styles),
 		}
 		return PageComponent(type="form", payload=payload)
@@ -574,7 +626,7 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 		payload = {
 			"name": statement.name,
 			"trigger": statement.trigger,
-			"operations": [_encode_action_operation(op, env_keys) for op in statement.operations],
+			"operations": [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.operations],
 		}
 		return PageComponent(type="action", payload=payload)
 
@@ -590,14 +642,14 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 	if isinstance(statement, IfBlock):
 		body_payload: List[Dict[str, Any]] = []
 		for stmt in statement.body:
-			encoded = _encode_statement_dict(stmt, env_keys)
+			encoded = _encode_statement_dict(stmt, env_keys, prompt_lookup)
 			if encoded:
 				body_payload.append(encoded)
 		elif_payload: List[Dict[str, Any]] = []
 		for branch in statement.elifs:
 			branch_body: List[Dict[str, Any]] = []
 			for stmt in branch.body:
-				encoded = _encode_statement_dict(stmt, env_keys)
+				encoded = _encode_statement_dict(stmt, env_keys, prompt_lookup)
 				if encoded:
 					branch_body.append(encoded)
 			elif_payload.append({
@@ -606,7 +658,7 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 			})
 		else_payload: List[Dict[str, Any]] = []
 		for stmt in statement.else_body or []:
-			encoded = _encode_statement_dict(stmt, env_keys)
+			encoded = _encode_statement_dict(stmt, env_keys, prompt_lookup)
 			if encoded:
 				else_payload.append(encoded)
 		payload = {
@@ -620,7 +672,7 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 	if isinstance(statement, ForLoop):
 		loop_body: List[Dict[str, Any]] = []
 		for stmt in statement.body:
-			encoded = _encode_statement_dict(stmt, env_keys)
+			encoded = _encode_statement_dict(stmt, env_keys, prompt_lookup)
 			if encoded:
 				loop_body.append(encoded)
 		payload = {
@@ -634,7 +686,7 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 	if isinstance(statement, WhileLoop):
 		loop_body: List[Dict[str, Any]] = []
 		for stmt in statement.body:
-			encoded = _encode_statement_dict(stmt, env_keys)
+			encoded = _encode_statement_dict(stmt, env_keys, prompt_lookup)
 			if encoded:
 				loop_body.append(encoded)
 		payload = {
@@ -662,19 +714,23 @@ def _encode_statement(statement: PageStatement, env_keys: Set[str]) -> Optional[
 	return None
 
 
-def _encode_statement_dict(statement: PageStatement, env_keys: Set[str]) -> Optional[Dict[str, Any]]:
-	component = _encode_statement(statement, env_keys)
+def _encode_statement_dict(
+	statement: PageStatement,
+	env_keys: Set[str],
+	prompt_lookup: Dict[str, Prompt],
+) -> Optional[Dict[str, Any]]:
+	component = _encode_statement(statement, env_keys, prompt_lookup)
 	if component is None:
 		return None
 	return _component_to_serializable(component)
 
 
-def _encode_page(index: int, page: Page, env_keys: Set[str]) -> PageSpec:
+def _encode_page(index: int, page: Page, env_keys: Set[str], prompt_lookup: Dict[str, Prompt]) -> PageSpec:
 	slug = _slugify_page_name(page.name)
 	api_path = _page_api_path(page.route)
 	components: List[PageComponent] = []
 	for statement in page.statements:
-		component = _encode_statement(statement, env_keys)
+		component = _encode_statement(statement, env_keys, prompt_lookup)
 		if component is not None:
 			component.index = len(components)
 			components.append(component)
@@ -1010,6 +1066,58 @@ def _encode_template(template: Template, env_keys: Set[str]) -> Dict[str, Any]:
 	}
 
 
+def _encode_ai_model(model: AIModel, env_keys: Set[str]) -> Dict[str, Any]:
+	config_payload = _encode_value(model.config, env_keys)
+	metadata_value = _encode_value(model.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	return {
+		"name": model.name,
+		"provider": model.provider,
+		"model": model.model_name,
+		"config": config_payload if isinstance(config_payload, dict) else model.config,
+		"description": model.description,
+		"metadata": metadata_value,
+	}
+
+
+def _encode_prompt(prompt: Prompt, env_keys: Set[str]) -> Dict[str, Any]:
+	_collect_template_markers(prompt.template, env_keys)
+	parameters_value = _encode_value(prompt.parameters, env_keys)
+	if not isinstance(parameters_value, dict):
+		parameters_value = {"value": parameters_value} if parameters_value is not None else {}
+	metadata_value = _encode_value(prompt.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	return {
+		"name": prompt.name,
+		"model": prompt.model,
+		"template": prompt.template,
+		"input": [_encode_prompt_field(field, env_keys) for field in prompt.input_fields],
+		"output": [_encode_prompt_field(field, env_keys) for field in prompt.output_fields],
+		"parameters": parameters_value,
+		"metadata": metadata_value,
+		"description": prompt.description,
+	}
+
+
+def _encode_prompt_field(field: PromptField, env_keys: Set[str]) -> Dict[str, Any]:
+	metadata_value = _encode_value(field.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	payload: Dict[str, Any] = {
+		"name": field.name,
+		"type": field.field_type,
+		"required": field.required,
+		"enum": list(field.enum or []),
+		"description": field.description,
+		"metadata": metadata_value,
+	}
+	if field.default is not None:
+		payload["default"] = _encode_value(field.default, env_keys)
+	return payload
+
+
 def _encode_chain(chain: Chain, env_keys: Set[str]) -> Dict[str, Any]:
 	encoded_steps: List[Dict[str, Any]] = []
 	for step in chain.steps:
@@ -1117,6 +1225,15 @@ def _encode_crud_resource(resource: CrudResource, env_keys: Set[str]) -> Dict[st
 
 
 def _encode_variable(variable: VariableAssignment, env_keys: Set[str]) -> Dict[str, Any]:
+	if isinstance(variable.value, FrameExpression):
+		pipeline_payload = _encode_frame_expression_value(variable.value, env_keys)
+		return {
+			"name": variable.name,
+			"value": {"__frame_pipeline__": pipeline_payload},
+			"value_source": pipeline_payload.get("root"),
+			"value_expr": None,
+			"frame_pipeline": pipeline_payload,
+		}
 	return {
 		"name": variable.name,
 		"value": _encode_value(variable.value, env_keys),
@@ -1125,7 +1242,18 @@ def _encode_variable(variable: VariableAssignment, env_keys: Set[str]) -> Dict[s
 	}
 
 
-def _encode_action_operation(operation: ActionOperationType, env_keys: Set[str]) -> Dict[str, Any]:
+def _encode_frame_expression_value(expression: FrameExpression, env_keys: Set[str]) -> Dict[str, Any]:
+	if _FRAME_ANALYZER is None:
+		raise FrameTypeError("Frame expressions require frame analyzer context during encoding")
+	plan = _FRAME_ANALYZER.analyze(expression)
+	return plan.to_payload(_expression_to_runtime, _expression_to_source)
+
+
+def _encode_action_operation(
+	operation: ActionOperationType,
+	env_keys: Set[str],
+	prompt_lookup: Dict[str, Prompt],
+) -> Dict[str, Any]:
 	if isinstance(operation, UpdateOperation):
 		return {
 			"type": "update",
@@ -1165,9 +1293,41 @@ def _encode_action_operation(operation: ActionOperationType, env_keys: Set[str])
 				key: _encode_value(value, env_keys) for key, value in operation.inputs.items()
 			},
 		}
+	if isinstance(operation, RunPromptOperation):
+		_validate_prompt_arguments(prompt_lookup, operation.prompt_name, operation.arguments)
+		return {
+			"type": "prompt_call",
+			"prompt": operation.prompt_name,
+			"arguments": {
+				key: _encode_value(value, env_keys) for key, value in operation.arguments.items()
+			},
+		}
 	if isinstance(operation, ActionOperation):
 		return {"type": type(operation).__name__}
 	return {"type": "operation"}
+
+
+def _validate_prompt_arguments(
+	prompt_lookup: Dict[str, Prompt],
+	prompt_name: str,
+	arguments: Dict[str, Expression],
+) -> None:
+	prompt = prompt_lookup.get(prompt_name)
+	if prompt is None:
+		raise ValueError(f"Prompt '{prompt_name}' is not defined")
+	valid_names = {field.name for field in prompt.input_fields}
+	required_names = {field.name for field in prompt.input_fields if field.required}
+	provided = set(arguments.keys())
+	missing = sorted(required_names - provided)
+	if missing:
+		raise ValueError(
+			f"Prompt '{prompt_name}' is missing required inputs: {', '.join(missing)}"
+		)
+	extra = sorted(provided - valid_names)
+	if extra:
+		raise ValueError(
+			f"Prompt '{prompt_name}' does not accept inputs: {', '.join(extra)}"
+		)
 
 
 def _encode_value(value: Any, env_keys: Set[str]) -> Any:
@@ -1185,6 +1345,9 @@ def _encode_value(value: Any, env_keys: Set[str]) -> Any:
 		return marker
 	if isinstance(value, Literal):
 		return value.value
+	if isinstance(value, FrameExpression):
+		pipeline_payload = _encode_frame_expression_value(value, env_keys)
+		return {"__frame_pipeline__": pipeline_payload}
 	if isinstance(value, (NameRef, AttributeRef, BinaryOp, UnaryOp, CallExpression)):
 		return _expression_to_source(value)
 	if isinstance(value, list):

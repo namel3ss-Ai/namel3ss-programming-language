@@ -62,11 +62,25 @@ class ProgramParserMixin(
                     raise self._error("Insight must appear after app declaration", line_no, line)
                 insight = self._parse_insight(line, line_no, indent)
                 self.app.insights.append(insight)
+            elif stripped.startswith('ai model '):
+                if self.app is None:
+                    raise self._error("Model must appear after app declaration", line_no, line)
+                ai_model = self._parse_ai_model(line, line_no, indent)
+                self.app.ai_models.append(ai_model)
+            elif stripped.startswith('prompt '):
+                if self.app is None:
+                    raise self._error("Prompt must appear after app declaration", line_no, line)
+                prompt = self._parse_prompt(line, line_no, indent)
+                self.app.prompts.append(prompt)
             elif stripped.startswith('model '):
                 if self.app is None:
                     raise self._error("Model must appear after app declaration", line_no, line)
-                model = self._parse_model(line, line_no, indent)
-                self.app.models.append(model)
+                if self._looks_like_ai_model(line, indent):
+                    ai_model = self._parse_ai_model(line, line_no, indent)
+                    self.app.ai_models.append(ai_model)
+                else:
+                    model = self._parse_model(line, line_no, indent)
+                    self.app.models.append(model)
             elif stripped.startswith('connector '):
                 if self.app is None:
                     raise self._error("Connector must appear after app declaration", line_no, line)

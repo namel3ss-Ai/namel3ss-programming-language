@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base import Theme
-from .ai import Chain, Connector, Template
+from .ai import AIModel, Chain, Connector, Prompt, Template
 from .experiments import Experiment
 from .datasets import Dataset, RefreshPolicy
 from .frames import Frame
@@ -38,6 +38,8 @@ class App:
     insights: List[Insight] = field(default_factory=list)
     models: List[Model] = field(default_factory=list)
     connectors: List[Connector] = field(default_factory=list)
+    ai_models: List[AIModel] = field(default_factory=list)
+    prompts: List[Prompt] = field(default_factory=list)
     templates: List[Template] = field(default_factory=list)
     chains: List[Chain] = field(default_factory=list)
     experiments: List[Experiment] = field(default_factory=list)

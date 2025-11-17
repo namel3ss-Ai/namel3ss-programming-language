@@ -27,6 +27,12 @@ async def _execute_action_operation(
         arguments = _resolve_placeholders(arguments_raw, context)
         payload = call_llm_connector(name, arguments)
         result = {"type": "connector_call", "result": payload}
+    elif otype == "prompt_call":
+        name = operation.get("prompt") or operation.get("name")
+        arguments_raw = operation.get("arguments") or {}
+        arguments = _resolve_placeholders(arguments_raw, context)
+        payload = run_prompt(name, arguments)
+        result = {"type": "prompt_call", "result": payload}
     elif otype == "chain_run":
         name = operation.get("name")
         inputs_raw = operation.get("inputs") or {}

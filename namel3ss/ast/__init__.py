@@ -80,7 +80,7 @@ from .models import (
     ModelServingSpec,
     ModelTrainingSpec,
 )
-from .ai import Chain, ChainStep, Connector, Template
+from .ai import AIModel, Chain, ChainStep, Connector, Prompt, PromptField, Template
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant
 from .pages import (
     Action,
@@ -100,6 +100,7 @@ from .pages import (
     PageStatement,
     PredictStatement,
     RunChainOperation,
+    RunPromptOperation,
     ShowChart,
     ShowForm,
     ShowTable,
@@ -204,14 +205,18 @@ __all__ = [
     "CallPythonOperation",
     "AskConnectorOperation",
     "RunChainOperation",
+    "RunPromptOperation",
+    "ActionOperationType",
+    "Connector",
+    "AIModel",
+    "Template",
+    "PromptField",
+    "Prompt",
+    "ChainStep",
+    "Chain",
     "UpdateOperation",
     "ToastOperation",
     "GoToPageOperation",
-    "ActionOperationType",
-    "Connector",
-    "Template",
-    "ChainStep",
-    "Chain",
     "Experiment",
     "ExperimentVariant",
     "ExperimentMetric",

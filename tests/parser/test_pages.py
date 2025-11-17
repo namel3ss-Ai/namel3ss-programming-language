@@ -13,6 +13,7 @@ from namel3ss.ast import (
     NameRef,
     PredictStatement,
     RunChainOperation,
+    RunPromptOperation,
     RefreshPolicy,
     ShowChart,
     ShowForm,
@@ -293,6 +294,26 @@ def test_parse_ai_operations_in_form() -> None:
     assert set(chain_op.inputs.keys()) == {"text"}
 
 
+def test_parse_run_prompt_operation() -> None:
+    source = (
+        'app "AIApp".\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  action "Submit":\n'
+        '    when form.submit:\n'
+        '      run prompt summarize_ticket with:\n'
+        '        ticket = form.ticket\n'
+    )
+
+    app = Parser(source).parse()
+
+    action = next(stmt for stmt in app.pages[0].statements if isinstance(stmt, Action))
+    operation = action.operations[0]
+    assert isinstance(operation, RunPromptOperation)
+    assert operation.prompt_name == "summarize_ticket"
+    assert "ticket" in operation.arguments
+
+
 def test_parse_nested_if_in_for() -> None:
     """Nested control flow should retain expression structure inside loops."""
 
@@ -485,4 +506,3 @@ def test_parse_chart_layout_metadata() -> None:
     assert chart.layout.variant == 'card'
     assert chart.layout.align == 'center'
     assert chart.layout.emphasis == 'primary'
-
