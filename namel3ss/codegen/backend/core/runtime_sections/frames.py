@@ -5,28 +5,132 @@ from textwrap import dedent
 FRAMES_SECTION = dedent(
     '''
 from namel3ss.codegen.backend.core.runtime.frames import (
+    DEFAULT_FRAME_LIMIT as _DEFAULT_FRAME_LIMIT,
+    MAX_FRAME_LIMIT as _MAX_FRAME_LIMIT,
+    N3Frame as _N3Frame,
     project_frame_rows as _project_frame_rows,
 )
+
+_FRAME_ERROR_NOT_FOUND = "FRAME_NOT_FOUND"
+_FRAME_ERROR_INVALID_PARAMS = "INVALID_QUERY_PARAMS"
 
 
 async def fetch_frame_rows(
     key: str,
     session: Optional[AsyncSession],
     context: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    return await _fetch_frame_rows_internal(key, session, context, set())
+    *,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    order_by: Optional[str] = None,
+    as_response: bool = False,
+) -> Any:
+    try:
+        frame = await _resolve_frame_runtime(key, session, context, set())
+        enforce_defaults = as_response or limit is not None or (offset not in {None, 0}) or order_by is not None
+        if not enforce_defaults:
+            return frame.rows
+        window, total, effective_limit, normalized_offset, normalized_order = _materialize_frame_view(
+            frame,
+            limit,
+            offset,
+            order_by,
+            require_defaults=as_response,
+        )
+        if not as_response:
+            return window
+        schema_payload = frame.schema_payload()
+        errors = _collect_runtime_errors(context, scope=frame.name)
+        return {
+            "name": frame.name,
+            "source": _frame_source(frame.spec, frame.name),
+            "schema": schema_payload,
+            "rows": window,
+            "total": total,
+            "limit": effective_limit,
+            "offset": normalized_offset,
+            "order_by": normalized_order,
+            "errors": errors,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Frame execution failed for %s", key)
+        raise _frame_error(500, "FRAME_INTERNAL_ERROR", "Unexpected error while processing frame request.")
 
 
-async def _fetch_frame_rows_internal(
+async def fetch_frame_schema(
     key: str,
     session: Optional[AsyncSession],
     context: Dict[str, Any],
-    visited: Set[str],
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    frame_key = _normalize_frame_key(key)
+    frame_spec = _require_frame_spec(frame_key, context)
+    frame = _N3Frame(frame_key, frame_spec, [])
+    return frame.schema_payload()
+
+
+async def export_frame_csv(
+    key: str,
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+    *,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    order_by: Optional[str] = None,
+) -> bytes:
+    frame = await _resolve_frame_runtime(key, session, context, set())
+    window, *_ = _materialize_frame_view(
+        frame,
+        limit,
+        offset,
+        order_by,
+        require_defaults=False,
+    )
+    column_names = [column.get("name") for column in frame.schema_payload()["columns"] if column.get("name")]
+    return frame.to_csv_bytes(columns=column_names, rows=window)
+
+
+async def export_frame_parquet(
+    key: str,
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+    *,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    order_by: Optional[str] = None,
+) -> bytes:
+    frame = await _resolve_frame_runtime(key, session, context, set())
+    window, *_ = _materialize_frame_view(
+        frame,
+        limit,
+        offset,
+        order_by,
+        require_defaults=False,
+    )
+    return frame.to_parquet_bytes(rows=window)
+
+
+def _frame_error(status_code: int, error: str, detail: Optional[str] = None) -> HTTPException:
+    payload = {"status_code": status_code, "error": error, "detail": detail}
+    return HTTPException(status_code=status_code, detail=payload)
+
+
+def _normalize_frame_key(key: str) -> str:
     if not key:
-        return []
-    frame_key = str(key)
-    if frame_key in visited:
+        raise _frame_error(404, _FRAME_ERROR_NOT_FOUND, "Frame name must be provided.")
+    return str(key)
+
+
+async def _resolve_frame_runtime(
+    key: str,
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+    visited: Optional[Set[str]] = None,
+) -> _N3Frame:
+    frame_key = _normalize_frame_key(key)
+    active_visited = visited or set()
+    if frame_key in active_visited:
         _record_runtime_error(
             context,
             code="frame_recursion_detected",
@@ -35,26 +139,12 @@ async def _fetch_frame_rows_internal(
             source="frame",
             severity="error",
         )
-        return []
-    visited.add(frame_key)
-    frame_spec = FRAMES.get(frame_key)
-    if not isinstance(frame_spec, dict):
-        _record_runtime_error(
-            context,
-            code="frame_missing",
-            message=f"Frame '{frame_key}' is not defined.",
-            scope=frame_key,
-            source="frame",
-            severity="error",
-        )
-        return []
-    base_rows = await _load_frame_source_rows(frame_key, frame_spec, session, context, visited)
+        return _N3Frame(frame_key, {}, [])
+    active_visited.add(frame_key)
+    frame_spec = _require_frame_spec(frame_key, context)
+    base_rows = await _load_frame_source_rows(frame_key, frame_spec, session, context, active_visited)
     if not base_rows:
-        examples = frame_spec.get("examples")
-        if isinstance(examples, list):
-            example_rows = [row for row in examples if isinstance(row, dict)]
-            if example_rows:
-                base_rows = _clone_rows(example_rows)
+        base_rows = _frame_example_rows(frame_spec)
     shaped_rows = _project_frame_rows(
         frame_key,
         frame_spec,
@@ -65,7 +155,130 @@ async def _fetch_frame_rows_internal(
         runtime_truthy=_runtime_truthy,
         record_error=_record_runtime_error,
     )
-    return shaped_rows
+    return _N3Frame(frame_key, frame_spec, shaped_rows or [])
+
+
+def _require_frame_spec(frame_key: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    frame_spec = FRAMES.get(frame_key)
+    if isinstance(frame_spec, dict):
+        return frame_spec
+    _record_runtime_error(
+        context,
+        code="frame_missing",
+        message=f"Frame '{frame_key}' is not defined.",
+        scope=frame_key,
+        source="frame",
+        severity="error",
+    )
+    raise _frame_error(404, _FRAME_ERROR_NOT_FOUND, f"Frame '{frame_key}' does not exist.")
+
+
+def _frame_example_rows(frame_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    examples = frame_spec.get("examples")
+    if not isinstance(examples, list):
+        return []
+    dict_rows = [row for row in examples if isinstance(row, dict)]
+    if not dict_rows:
+        return []
+    return _clone_rows(dict_rows)
+
+
+def _frame_source(frame_spec: Dict[str, Any], frame_key: str) -> Dict[str, Any]:
+    return {
+        "type": str(frame_spec.get("source_type") or "dataset"),
+        "name": frame_spec.get("source") or frame_spec.get("name") or frame_key,
+    }
+
+
+def _materialize_frame_view(
+    frame: _N3Frame,
+    limit: Optional[int],
+    offset: Optional[int],
+    order_by: Optional[str],
+    *,
+    require_defaults: bool,
+) -> Tuple[List[Dict[str, Any]], int, int, int, Optional[str]]:
+    normalized_limit, normalized_offset = _normalize_pagination(limit, offset, require_defaults=require_defaults)
+    order_spec, normalized_order = _normalize_order_by(order_by, frame)
+    if normalized_limit is None and normalized_offset == 0 and order_spec is None:
+        window = frame.rows
+        total = len(window)
+        effective_limit = total
+    else:
+        window, total = frame.window_rows(order_spec, normalized_limit, normalized_offset)
+        effective_limit = normalized_limit if normalized_limit is not None else max(total - normalized_offset, 0)
+    return window, total, effective_limit, normalized_offset, normalized_order
+
+
+def _normalize_pagination(
+    limit: Optional[int],
+    offset: Optional[int],
+    *,
+    require_defaults: bool,
+) -> Tuple[Optional[int], int]:
+    normalized_limit: Optional[int]
+    if limit is None:
+        normalized_limit = _DEFAULT_FRAME_LIMIT if require_defaults else None
+    else:
+        normalized_limit = _coerce_positive_int(limit, "limit")
+    if normalized_limit is not None:
+        normalized_limit = min(normalized_limit, _MAX_FRAME_LIMIT)
+    normalized_offset = _coerce_non_negative_int(offset, "offset")
+    return normalized_limit, normalized_offset
+
+
+def _coerce_positive_int(value: Any, field: str) -> int:
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, f"{field.title()} must be an integer.")
+    if result <= 0:
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, f"{field.title()} must be positive.")
+    return result
+
+
+def _coerce_non_negative_int(value: Any, field: str) -> int:
+    if value is None:
+        return 0
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, f"{field.title()} must be an integer.")
+    if result < 0:
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, f"{field.title()} cannot be negative.")
+    return result
+
+
+def _normalize_order_by(order_by: Optional[str], frame: _N3Frame) -> Tuple[Optional[Tuple[str, bool]], Optional[str]]:
+    if order_by is None:
+        return None, None
+    candidate = str(order_by).strip()
+    if not candidate:
+        return None, None
+    descending = False
+    column_token = candidate
+    if candidate.startswith("-"):
+        descending = True
+        column_token = candidate[1:]
+    if ":" in column_token:
+        column_token, direction_token = column_token.split(":", 1)
+        direction_token = direction_token.strip().lower()
+        if direction_token in {"desc", "descending", "down"}:
+            descending = True
+        elif direction_token in {"asc", "ascending", "up"}:
+            descending = False
+    column_name = column_token.strip()
+    if not column_name:
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, "order_by must reference a column name.")
+    valid_columns = {column.get("name") for column in frame.spec.get("columns") or [] if column.get("name")}
+    if column_name not in valid_columns:
+        raise _frame_error(
+            400,
+            _FRAME_ERROR_INVALID_PARAMS,
+            f"Column '{column_name}' is not defined for frame '{frame.name}'.",
+        )
+    normalized = f"{column_name}:{'desc' if descending else 'asc'}"
+    return (column_name, descending), normalized
 
 
 async def _load_frame_source_rows(
@@ -91,7 +304,8 @@ async def _load_frame_source_rows(
             )
             return []
     if source_kind == "frame":
-        return await _fetch_frame_rows_internal(source_name, session, context, visited)
+        nested_frame = await _resolve_frame_runtime(source_name, session, context, visited)
+        return nested_frame.rows
     if source_kind == "table":
         tables = context.get("tables")
         if isinstance(tables, dict):
