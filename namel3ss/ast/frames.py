@@ -6,6 +6,66 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Literal
 
 from .base import Expression
+@dataclass
+class FrameSourceDef:
+    """Describes how to load data for a frame."""
+
+    kind: Literal["sql", "file"]
+    connection: Optional[str] = None
+    table: Optional[str] = None
+    path: Optional[str] = None
+    format: Optional[Literal["csv", "parquet"]] = None
+
+
+@dataclass
+class FrameExpression(Expression):
+    """Marker base class for frame operation expressions."""
+
+    pass
+
+
+@dataclass
+class FrameRef(FrameExpression):
+    name: str
+
+
+@dataclass
+class FrameFilter(FrameExpression):
+    source: FrameExpression
+    predicate: Expression
+
+
+@dataclass
+class FrameSelect(FrameExpression):
+    source: FrameExpression
+    columns: List[str]
+
+
+@dataclass
+class FrameOrderBy(FrameExpression):
+    source: FrameExpression
+    columns: List[str]
+    descending: bool = False
+
+
+@dataclass
+class FrameGroupBy(FrameExpression):
+    source: FrameExpression
+    columns: List[str]
+
+
+@dataclass
+class FrameSummarise(FrameExpression):
+    source: FrameExpression
+    aggregations: Dict[str, Expression]
+
+
+@dataclass
+class FrameJoin(FrameExpression):
+    left: FrameExpression
+    right: str
+    on: List[str]
+    how: Literal["inner", "left", "right", "outer"] = "inner"
 
 
 @dataclass
@@ -101,6 +161,9 @@ class Frame:
     metadata: Dict[str, Any] = field(default_factory=dict)
     examples: List[Dict[str, Any]] = field(default_factory=list)
     options: Dict[str, Any] = field(default_factory=dict)
+    key: List[str] = field(default_factory=list)
+    splits: Dict[str, float] = field(default_factory=dict)
+    source_config: Optional[FrameSourceDef] = None
 
 
 __all__ = [
@@ -111,4 +174,13 @@ __all__ = [
     "FrameIndex",
     "FrameRelationship",
     "FrameAccessPolicy",
+    "FrameSourceDef",
+    "FrameExpression",
+    "FrameRef",
+    "FrameFilter",
+    "FrameSelect",
+    "FrameOrderBy",
+    "FrameGroupBy",
+    "FrameSummarise",
+    "FrameJoin",
 ]

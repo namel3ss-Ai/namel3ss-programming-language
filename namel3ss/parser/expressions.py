@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from namel3ss.ast import (
     AttributeRef,
@@ -8,6 +8,14 @@ from namel3ss.ast import (
     CallExpression,
     ContextValue,
     Expression,
+    FrameExpression,
+    FrameFilter,
+    FrameGroupBy,
+    FrameJoin,
+    FrameOrderBy,
+    FrameRef,
+    FrameSelect,
+    FrameSummarise,
     Literal,
     NameRef,
     UnaryOp,
@@ -21,6 +29,8 @@ class ExpressionParserMixin(ParserBase):
 
     _expr_text: str
     _expr_pos: int
+
+    _FRAME_DSL_METHODS = {"filter", "select", "order_by", "group_by", "summarise", "join"}
 
     def _parse_expression(self, text: str) -> Expression:
         """Parse an expression from text using recursive descent with precedence."""
@@ -216,6 +226,9 @@ class ExpressionParserMixin(ParserBase):
                 else:
                     break
             name = self._expr_text[start:self._expr_pos]
+            frame_chain = self._try_parse_frame_chain(name)
+            if frame_chain is not None:
+                return frame_chain
             current: Union[NameRef, AttributeRef] = NameRef(name=name)
 
             while True:
@@ -279,3 +292,218 @@ class ExpressionParserMixin(ParserBase):
             self.pos,
             self._expr_text,
         )
+
+    def _try_parse_frame_chain(self, root_name: str) -> Optional[FrameExpression]:
+        self._expr_skip_whitespace()
+        if self._expr_pos >= len(self._expr_text) or self._expr_text[self._expr_pos] != '.':
+            return None
+        chain_start = self._expr_pos
+        current: FrameExpression = FrameRef(name=root_name)
+        consumed = False
+        while True:
+            self._expr_skip_whitespace()
+            if self._expr_pos >= len(self._expr_text) or self._expr_text[self._expr_pos] != '.':
+                break
+            self._expr_pos += 1
+            method_start = self._expr_pos
+            method = self._expr_parse_identifier_token()
+            if method not in self._FRAME_DSL_METHODS:
+                if consumed:
+                    raise self._error(
+                        f"Unknown frame operation '{method}'",
+                        self.pos,
+                        self._expr_text,
+                    )
+                self._expr_pos = chain_start
+                return None
+            consumed = True
+            if method == 'filter':
+                current = FrameFilter(source=current, predicate=self._parse_frame_predicate())
+            elif method == 'select':
+                current = FrameSelect(source=current, columns=self._parse_frame_column_list())
+            elif method == 'order_by':
+                columns, descending = self._parse_frame_order_by_args()
+                current = FrameOrderBy(source=current, columns=columns, descending=descending)
+            elif method == 'group_by':
+                columns = self._parse_frame_column_list()
+                current = FrameGroupBy(source=current, columns=columns)
+            elif method == 'summarise':
+                aggregations = self._parse_frame_aggregation_block()
+                current = FrameSummarise(source=current, aggregations=aggregations)
+            elif method == 'join':
+                target, on_columns, how = self._parse_frame_join_args()
+                current = FrameJoin(left=current, right=target, on=on_columns, how=how)
+        if consumed:
+            return current
+        self._expr_pos = chain_start
+        return None
+
+    def _parse_frame_predicate(self) -> Expression:
+        self._expr_skip_whitespace()
+        self._expr_consume('(')
+        predicate = self._parse_logical_or()
+        self._expr_skip_whitespace()
+        self._expr_consume(')')
+        return predicate
+
+    def _parse_frame_column_list(self) -> List[str]:
+        self._expr_skip_whitespace()
+        self._expr_consume('(')
+        columns: List[str] = []
+        self._expr_skip_whitespace()
+        if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
+            raise self._error("Column list cannot be empty", self.pos, self._expr_text)
+        while True:
+            column = self._expr_parse_identifier_or_string()
+            columns.append(column)
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ',':
+                self._expr_pos += 1
+                self._expr_skip_whitespace()
+                continue
+            break
+        self._expr_consume(')')
+        return columns
+
+    def _parse_frame_order_by_args(self) -> tuple[List[str], bool]:
+        self._expr_skip_whitespace()
+        self._expr_consume('(')
+        columns: List[str] = []
+        descending = False
+        parsed_any = False
+        while True:
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
+                break
+            token = self._expr_parse_identifier_or_string()
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == '=':
+                keyword = token
+                self._expr_pos += 1
+                self._expr_skip_whitespace()
+                value_expr = self._parse_logical_or()
+                if keyword != 'descending':
+                    raise self._error("Only 'descending' keyword is supported in order_by", self.pos, self._expr_text)
+                descending = self._expr_eval_bool_literal(value_expr)
+            else:
+                columns.append(token)
+            parsed_any = True
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ',':
+                self._expr_pos += 1
+                continue
+            break
+        if not parsed_any or not columns:
+            raise self._error("order_by requires at least one column", self.pos, self._expr_text)
+        self._expr_consume(')')
+        return columns, descending
+
+    def _parse_frame_aggregation_block(self) -> Dict[str, Expression]:
+        self._expr_skip_whitespace()
+        self._expr_consume('(')
+        aggregations: Dict[str, Expression] = {}
+        self._expr_skip_whitespace()
+        if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
+            raise self._error("summarise requires at least one aggregation", self.pos, self._expr_text)
+        while True:
+            name = self._expr_parse_identifier_token()
+            self._expr_skip_whitespace()
+            self._expr_consume('=')
+            self._expr_skip_whitespace()
+            aggregations[name] = self._parse_logical_or()
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ',':
+                self._expr_pos += 1
+                continue
+            break
+        self._expr_consume(')')
+        return aggregations
+
+    def _parse_frame_join_args(self) -> tuple[str, List[str], str]:
+        self._expr_skip_whitespace()
+        self._expr_consume('(')
+        target = self._expr_parse_identifier_or_string()
+        on_columns: List[str] = []
+        how = 'inner'
+        while True:
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
+                break
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ',':
+                self._expr_pos += 1
+            self._expr_skip_whitespace()
+            if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
+                break
+            keyword = self._expr_parse_identifier_token()
+            self._expr_skip_whitespace()
+            self._expr_consume('=')
+            self._expr_skip_whitespace()
+            value_expr = self._parse_logical_or()
+            if keyword == 'on':
+                on_columns = [self._expr_eval_identifier_like(value_expr)]
+            elif keyword == 'how':
+                how_value = self._expr_eval_identifier_like(value_expr)
+                how_value_lower = how_value.lower()
+                if how_value_lower not in {'inner', 'left', 'right', 'outer'}:
+                    raise self._error("join how must be inner|left|right|outer", self.pos, self._expr_text)
+                how = how_value_lower
+            else:
+                raise self._error(f"Unsupported join keyword '{keyword}'", self.pos, self._expr_text)
+        if not on_columns:
+            raise self._error("join requires 'on' column", self.pos, self._expr_text)
+        self._expr_consume(')')
+        return target, on_columns, how
+
+    def _expr_parse_identifier_token(self) -> str:
+        self._expr_skip_whitespace()
+        if self._expr_pos >= len(self._expr_text):
+            raise self._error("Expected identifier", self.pos, self._expr_text)
+        ch = self._expr_text[self._expr_pos]
+        if not (ch.isalpha() or ch == '_'):
+            raise self._error("Expected identifier", self.pos, self._expr_text)
+        start = self._expr_pos
+        while self._expr_pos < len(self._expr_text):
+            ch = self._expr_text[self._expr_pos]
+            if ch.isalnum() or ch == '_':
+                self._expr_pos += 1
+            else:
+                break
+        return self._expr_text[start:self._expr_pos]
+
+    def _expr_parse_identifier_or_string(self) -> str:
+        self._expr_skip_whitespace()
+        if self._expr_pos >= len(self._expr_text):
+            raise self._error("Expected identifier or string literal", self.pos, self._expr_text)
+        ch = self._expr_text[self._expr_pos]
+        if ch in {'"', "'"}:
+            return self._expr_parse_string_literal()
+        if ch.isalpha() or ch == '_':
+            return self._expr_parse_identifier_token()
+        raise self._error("Expected identifier or string literal", self.pos, self._expr_text)
+
+    def _expr_parse_string_literal(self) -> str:
+        quote = self._expr_text[self._expr_pos]
+        self._expr_pos += 1
+        start = self._expr_pos
+        while self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] != quote:
+            if self._expr_text[self._expr_pos] == '\\':
+                self._expr_pos += 2
+            else:
+                self._expr_pos += 1
+        if self._expr_pos >= len(self._expr_text):
+            raise self._error("Unterminated string literal", self.pos, self._expr_text)
+        value = self._expr_text[start:self._expr_pos]
+        self._expr_pos += 1
+        return value
+
+    def _expr_eval_bool_literal(self, expr: Expression) -> bool:
+        if isinstance(expr, Literal) and isinstance(expr.value, bool):
+            return expr.value
+        raise self._error("Expected boolean literal", self.pos, self._expr_text)
+
+    def _expr_eval_identifier_like(self, expr: Expression) -> str:
+        if isinstance(expr, Literal) and isinstance(expr.value, str):
+            return expr.value
+        if isinstance(expr, NameRef):
+            return expr.name
+        raise self._error("Expected identifier or string literal", self.pos, self._expr_text)
