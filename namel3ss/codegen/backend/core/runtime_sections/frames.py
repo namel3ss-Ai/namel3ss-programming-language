@@ -206,7 +206,11 @@ def _materialize_frame_view(
         effective_limit = total
     else:
         window, total = frame.window_rows(order_spec, normalized_limit, normalized_offset)
-        effective_limit = normalized_limit if normalized_limit is not None else max(total - normalized_offset, 0)
+        remaining = max(total - normalized_offset, 0)
+        if normalized_limit is None:
+            effective_limit = remaining
+        else:
+            effective_limit = min(normalized_limit, remaining)
     return window, total, effective_limit, normalized_offset, normalized_order
 
 
