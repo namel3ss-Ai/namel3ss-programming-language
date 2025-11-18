@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Dict, List, Optional, Set
 
+from namel3ss.plugins.utils import normalize_plugin_category
+
 from ...ast import (
 	Action,
 	ActionOperation,
@@ -18,6 +20,7 @@ from ...ast import (
 	CallExpression,
 	CallPythonOperation,
 	Chain,
+	ChainStep,
 	Connector,
 	ComputedColumnOp,
 	ContextValue,
@@ -72,6 +75,9 @@ from ...ast import (
 	ModelTrainingSpec,
 	ModelRegistryInfo,
 	ModelServingSpec,
+	Evaluator,
+	Metric,
+	Guardrail,
 	NameRef,
 	OrderByOp,
 	Page,
@@ -86,12 +92,17 @@ from ...ast import (
 	Prompt,
 	PromptField,
 	AIModel,
+	WorkflowIfBlock,
+	WorkflowForBlock,
+	WorkflowWhileBlock,
+	WorkflowNode,
 	WhileLoop,
 	BreakStatement,
 	ContinueStatement,
 	ToastOperation,
 	GoToPageOperation,
 	Template,
+	Memory,
 	UnaryOp,
 	UpdateOperation,
 	VariableAssignment,
@@ -99,6 +110,7 @@ from ...ast import (
 	WindowOp,
 	CrudResource,
 )
+from ...effects import EffectAnalyzer
 from ...frames import FrameExpressionAnalyzer, FrameTypeError
 
 
@@ -144,6 +156,7 @@ class BackendState:
 	connectors: Dict[str, Dict[str, Any]]
 	ai_connectors: Dict[str, Dict[str, Any]]
 	ai_models: Dict[str, Dict[str, Any]]
+	memories: Dict[str, Dict[str, Any]]
 	prompts: Dict[str, Dict[str, Any]]
 	insights: Dict[str, Dict[str, Any]]
 	models: Dict[str, Dict[str, Any]]
@@ -151,6 +164,9 @@ class BackendState:
 	chains: Dict[str, Dict[str, Any]]
 	experiments: Dict[str, Dict[str, Any]]
 	crud_resources: Dict[str, Dict[str, Any]]
+	evaluators: Dict[str, Dict[str, Any]]
+	metrics: Dict[str, Dict[str, Any]]
+	guardrails: Dict[str, Dict[str, Any]]
 	pages: List[PageSpec]
 	env_keys: List[str]
 
@@ -167,6 +183,8 @@ def build_backend_state(app: App) -> BackendState:
 	global _FRAME_ANALYZER
 	_FRAME_ANALYZER = FrameExpressionAnalyzer(app.frames) if app.frames else None
 	try:
+		EffectAnalyzer(app).analyze()
+
 		datasets: Dict[str, Dict[str, Any]] = {}
 		connectors: Dict[str, Dict[str, Any]] = {}
 		for dataset in app.datasets:
@@ -188,6 +206,11 @@ def build_backend_state(app: App) -> BackendState:
 		ai_models: Dict[str, Dict[str, Any]] = {}
 		for model in app.ai_models:
 			ai_models[model.name] = _encode_ai_model(model, env_keys)
+
+		memories: Dict[str, Dict[str, Any]] = {}
+		for memory in app.memories:
+			memories[memory.name] = _encode_memory(memory, env_keys)
+		memory_names = set(memories.keys())
 
 		prompt_lookup: Dict[str, Prompt] = {}
 		prompts: Dict[str, Dict[str, Any]] = {}
@@ -212,7 +235,7 @@ def build_backend_state(app: App) -> BackendState:
 
 		chains: Dict[str, Dict[str, Any]] = {}
 		for chain in app.chains:
-			chains[chain.name] = _encode_chain(chain, env_keys)
+			chains[chain.name] = _encode_chain(chain, env_keys, memory_names)
 
 		experiments: Dict[str, Dict[str, Any]] = {}
 		for experiment in app.experiments:
@@ -221,6 +244,18 @@ def build_backend_state(app: App) -> BackendState:
 		crud_resources: Dict[str, Dict[str, Any]] = {}
 		for resource in app.crud_resources:
 			crud_resources[resource.name] = _encode_crud_resource(resource, env_keys)
+
+		evaluators: Dict[str, Dict[str, Any]] = {}
+		for evaluator in app.evaluators:
+			evaluators[evaluator.name] = _encode_evaluator(evaluator, env_keys)
+
+		metrics: Dict[str, Dict[str, Any]] = {}
+		for metric in app.metrics:
+			metrics[metric.name] = _encode_metric(metric)
+
+		guardrails: Dict[str, Dict[str, Any]] = {}
+		for guardrail in app.guardrails:
+			guardrails[guardrail.name] = _encode_guardrail(guardrail)
 
 		pages: List[PageSpec] = []
 		for index, page in enumerate(app.pages):
@@ -241,6 +276,7 @@ def build_backend_state(app: App) -> BackendState:
 			frames=frames,
 			connectors=connectors,
 			ai_connectors=ai_connectors,
+			memories=memories,
 			ai_models=ai_models,
 			prompts=prompts,
 			insights=insights,
@@ -249,6 +285,9 @@ def build_backend_state(app: App) -> BackendState:
 			chains=chains,
 			experiments=experiments,
 			crud_resources=crud_resources,
+			evaluators=evaluators,
+			metrics=metrics,
+			guardrails=guardrails,
 			pages=pages,
 			env_keys=sorted_env_keys,
 		)
@@ -1046,8 +1085,11 @@ def _encode_ai_connector(connector: Connector, env_keys: Set[str]) -> Dict[str, 
 	encoded: Dict[str, Any] = {
 		"name": connector.name,
 		"type": connector.connector_type,
+		"category": normalize_plugin_category(connector.connector_type),
 		"config": config_payload,
 	}
+	if connector.provider:
+		encoded["provider"] = connector.provider
 	if connector.description:
 		encoded["description"] = connector.description
 	return encoded
@@ -1064,6 +1106,25 @@ def _encode_template(template: Template, env_keys: Set[str]) -> Dict[str, Any]:
 		"prompt": template.prompt,
 		"metadata": metadata_payload,
 	}
+
+
+def _encode_memory(memory: Memory, env_keys: Set[str]) -> Dict[str, Any]:
+	config_encoded = _encode_value(memory.config, env_keys)
+	if not isinstance(config_encoded, dict):
+		config_encoded = {"value": config_encoded} if config_encoded is not None else {}
+	metadata_encoded = _encode_value(memory.metadata, env_keys)
+	if not isinstance(metadata_encoded, dict):
+		metadata_encoded = {"value": metadata_encoded} if metadata_encoded is not None else {}
+	payload: Dict[str, Any] = {
+		"name": memory.name,
+		"scope": memory.scope,
+		"kind": memory.kind,
+		"config": config_encoded,
+		"metadata": metadata_encoded,
+	}
+	if memory.max_items is not None:
+		payload["max_items"] = int(memory.max_items)
+	return payload
 
 
 def _encode_ai_model(model: AIModel, env_keys: Set[str]) -> Dict[str, Any]:
@@ -1118,19 +1179,10 @@ def _encode_prompt_field(field: PromptField, env_keys: Set[str]) -> Dict[str, An
 	return payload
 
 
-def _encode_chain(chain: Chain, env_keys: Set[str]) -> Dict[str, Any]:
-	encoded_steps: List[Dict[str, Any]] = []
-	for step in chain.steps:
-		options_encoded = _encode_value(step.options, env_keys)
-		if not isinstance(options_encoded, dict):
-			options_encoded = {"value": options_encoded}
-		encoded_steps.append(
-			{
-				"kind": step.kind,
-				"target": step.target,
-				"options": options_encoded,
-			}
-		)
+def _encode_chain(chain: Chain, env_keys: Set[str], memory_names: Set[str]) -> Dict[str, Any]:
+	encoded_steps = [
+		_encode_workflow_node(node, env_keys, memory_names, chain.name) for node in chain.steps
+	]
 	metadata_encoded = _encode_value(chain.metadata, env_keys)
 	if not isinstance(metadata_encoded, dict):
 		metadata_encoded = {"value": metadata_encoded}
@@ -1140,6 +1192,144 @@ def _encode_chain(chain: Chain, env_keys: Set[str]) -> Dict[str, Any]:
 		"steps": encoded_steps,
 		"metadata": metadata_encoded,
 	}
+
+
+def _encode_workflow_node(
+	node: WorkflowNode,
+	env_keys: Set[str],
+	memory_names: Set[str],
+	chain_name: str,
+) -> Dict[str, Any]:
+	if isinstance(node, ChainStep):
+		return _encode_chain_step(node, env_keys, memory_names, chain_name)
+	if isinstance(node, WorkflowIfBlock):
+		payload: Dict[str, Any] = {
+			"type": "if",
+			"condition": _expression_to_runtime(node.condition),
+			"condition_source": _expression_to_source(node.condition),
+			"then": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.then_steps],
+			"elif": [
+				{
+					"condition": _expression_to_runtime(branch_condition),
+					"condition_source": _expression_to_source(branch_condition),
+					"steps": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in branch_steps],
+				}
+				for branch_condition, branch_steps in node.elif_steps
+			],
+			"else": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.else_steps],
+		}
+		return payload
+	if isinstance(node, WorkflowForBlock):
+		payload: Dict[str, Any] = {
+			"type": "for",
+			"loop_var": node.loop_var,
+			"source_kind": node.source_kind,
+			"body": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.body],
+		}
+		if node.source_name:
+			payload["source_name"] = node.source_name
+		if node.source_expression is not None:
+			payload["source_expression"] = _expression_to_runtime(node.source_expression)
+			payload["source_expression_source"] = _expression_to_source(node.source_expression)
+		if node.max_iterations:
+			payload["max_iterations"] = int(node.max_iterations)
+		return payload
+	if isinstance(node, WorkflowWhileBlock):
+		payload = {
+			"type": "while",
+			"condition": _expression_to_runtime(node.condition),
+			"condition_source": _expression_to_source(node.condition),
+			"body": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.body],
+		}
+		if node.max_iterations:
+			payload["max_iterations"] = int(node.max_iterations)
+		return payload
+	raise TypeError(f"Unsupported workflow node '{type(node).__name__}' in chain '{chain_name}'")
+
+
+def _encode_chain_step(
+	step: ChainStep,
+	env_keys: Set[str],
+	memory_names: Set[str],
+	chain_name: str,
+) -> Dict[str, Any]:
+	options_encoded = _encode_value(step.options, env_keys)
+	if not isinstance(options_encoded, dict):
+		options_encoded = {"value": options_encoded}
+	_validate_chain_memory_options(step.options, memory_names, chain_name, step.kind, step.target)
+	payload: Dict[str, Any] = {
+		"type": "step",
+		"kind": step.kind,
+		"target": step.target,
+		"options": options_encoded,
+		"stop_on_error": bool(step.stop_on_error),
+	}
+	if step.name:
+		payload["name"] = step.name
+	if step.evaluation:
+		evaluation_payload: Dict[str, Any] = {
+			"evaluators": list(step.evaluation.evaluators),
+		}
+		if step.evaluation.guardrail:
+			evaluation_payload["guardrail"] = step.evaluation.guardrail
+		payload["evaluation"] = evaluation_payload
+	return payload
+
+
+def _encode_evaluator(evaluator: Evaluator, env_keys: Set[str]) -> Dict[str, Any]:
+	config_encoded = _encode_value(evaluator.config, env_keys)
+	config_payload = config_encoded if isinstance(config_encoded, dict) else {}
+	return {
+		"name": evaluator.name,
+		"kind": evaluator.kind,
+		"provider": evaluator.provider,
+		"config": config_payload,
+	}
+
+
+def _encode_metric(metric: Metric) -> Dict[str, Any]:
+	return {
+		"name": metric.name,
+		"evaluator": metric.evaluator,
+		"aggregation": metric.aggregation,
+		"params": dict(metric.params or {}),
+	}
+
+
+def _encode_guardrail(guardrail: Guardrail) -> Dict[str, Any]:
+	return {
+		"name": guardrail.name,
+		"evaluators": list(guardrail.evaluators),
+		"action": guardrail.action,
+		"message": guardrail.message,
+	}
+
+
+def _validate_chain_memory_options(
+	options: Dict[str, Any],
+	memory_names: Set[str],
+	chain_name: str,
+	step_kind: str,
+	target: str,
+) -> None:
+	if not options:
+		return
+	for key in ("read_memory", "write_memory"):
+		if key not in options:
+			continue
+		names = options[key]
+		if isinstance(names, str):
+			collection = [names]
+		elif isinstance(names, list):
+			collection = names
+		else:
+			continue
+		missing = [name for name in collection if name not in memory_names]
+		if missing:
+			missing_str = ", ".join(sorted(missing))
+			raise ValueError(
+				f"Chain '{chain_name}' step '{step_kind}:{target}' references undefined memory: {missing_str}"
+			)
 
 
 def _encode_experiment(experiment: Experiment, env_keys: Set[str]) -> Dict[str, Any]:

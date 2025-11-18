@@ -33,7 +33,7 @@ def _build_frames_app_source() -> str:
 
 
 def _generate_frames_backend(tmp_path: Path) -> Path:
-    app = Parser(_build_frames_app_source()).parse()
+    app = Parser(_build_frames_app_source()).parse_app()
     backend_dir = tmp_path / "frames_backend"
     generate_backend(app, backend_dir)
     return backend_dir

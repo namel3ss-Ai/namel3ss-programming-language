@@ -53,12 +53,14 @@ async def _render_statement(
     if stype == "variable":
         name = statement.get("name")
         expr = statement.get("value_expr")
-        if expr is not None:
+        raw_value = statement.get("value")
+        pipeline_plan = raw_value.get("__frame_pipeline__") if isinstance(raw_value, dict) else None
+        if pipeline_plan is not None:
+            value = await _resolve_frame_pipeline_value(raw_value, session, context)
+        elif expr is not None:
             value = await _evaluate_runtime_expression(expr, context, scope)
-
-
         else:
-            value = _resolve_placeholders(statement.get("value"), context)
+            value = _resolve_placeholders(raw_value, context)
         if name:
             _assign_variable(scope, context, name, value)
         return []

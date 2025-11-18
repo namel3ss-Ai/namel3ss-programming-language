@@ -5,7 +5,22 @@ import re
 import textwrap
 from typing import Any, Dict, List, Optional, Tuple
 
-from namel3ss.ast import AIModel, Chain, ChainStep, Connector, ContextValue, Prompt, PromptField, Template
+from namel3ss.ast import (
+    AIModel,
+    Chain,
+    ChainStep,
+    Connector,
+    ContextValue,
+    Memory,
+    Prompt,
+    PromptField,
+    StepEvaluationConfig,
+    Template,
+    WorkflowForBlock,
+    WorkflowIfBlock,
+    WorkflowNode,
+    WorkflowWhileBlock,
+)
 
 from .base import ParserBase
 
@@ -80,12 +95,15 @@ class AIParserMixin(ParserBase):
         connector_type = match.group(2)
         config: Dict[str, Any] = {}
         description: Any = None
+        provider_value: Optional[Any] = None
+        kind_override: Optional[str] = None
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
                 break
             indent = self._indent(nxt)
             stripped_line = nxt.strip()
+            lowered = stripped_line.lower()
             if not stripped_line or stripped_line.startswith('#'):
                 self._advance()
                 continue
@@ -106,12 +124,35 @@ class AIParserMixin(ParserBase):
                 value = self._transform_config(nested)
             else:
                 value = self._transform_config(self._coerce_scalar(remainder))
-            if key.lower() == "description":
+            lowered_key = key.lower()
+            if lowered_key == "description":
                 description = value
+            elif lowered_key == "provider":
+                provider_value = value
+                config[key] = value
+            elif lowered_key == "kind":
+                kind_override = str(value or "").strip()
             else:
                 config[key] = value
         description_text = None if description is None else str(description)
-        return Connector(name=name, connector_type=connector_type, config=config, description=description_text)
+        provider_raw = provider_value if provider_value is not None else config.get("provider")
+        if provider_raw is None:
+            raise self._error("Connector must define a provider", line_no, line)
+        if not isinstance(provider_raw, str):
+            raise self._error("Connector provider must be a string literal", line_no, line)
+        provider_text = provider_raw.strip()
+        if not provider_text:
+            raise self._error("Connector provider cannot be empty", line_no, line)
+        effective_type = kind_override or connector_type
+        if not effective_type:
+            raise self._error("Connector type cannot be empty", line_no, line)
+        return Connector(
+            name=name,
+            connector_type=effective_type,
+            provider=provider_text,
+            config=config,
+            description=description_text,
+        )
 
     def _parse_template(self, line: str, line_no: int, base_indent: int) -> Template:
         stripped = line.strip()
@@ -129,6 +170,7 @@ class AIParserMixin(ParserBase):
                 break
             indent = self._indent(nxt)
             stripped_line = nxt.strip()
+            lowered = stripped_line.lower()
             if not stripped_line or stripped_line.startswith('#'):
                 self._advance()
                 continue
@@ -161,12 +203,13 @@ class AIParserMixin(ParserBase):
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
-        match = re.match(r'define\s+chain\s+"([^"]+)"', stripped)
+        match = re.match(r'define\s+chain\s+"([^"]+)"(?:\s+effect\s+([\w\-]+))?', stripped, flags=re.IGNORECASE)
         if not match:
             raise self._error('Expected: define chain "Name":', line_no, line)
         name = match.group(1)
+        declared_effect = self._parse_effect_annotation(match.group(2), line_no, line)
         input_key = "input"
-        steps: List[ChainStep] = []
+        workflow_nodes: List[WorkflowNode] = []
         metadata: Dict[str, Any] = {}
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -174,12 +217,16 @@ class AIParserMixin(ParserBase):
                 break
             indent = self._indent(nxt)
             stripped_line = nxt.strip()
+            lowered = stripped_line.lower()
             if not stripped_line or stripped_line.startswith('#'):
                 self._advance()
                 continue
             if indent <= base_indent:
                 break
-            if '->' in stripped_line:
+            if lowered.startswith('steps:') or lowered.startswith('workflow:'):
+                self._advance()
+                workflow_nodes.extend(self._parse_workflow_block(indent))
+            elif '->' in stripped_line:
                 pipeline = [segment.strip() for segment in stripped_line.split('->') if segment.strip()]
                 self._advance()
                 for index, segment in enumerate(pipeline):
@@ -196,6 +243,7 @@ class AIParserMixin(ParserBase):
                     kind = tokens[0].lower()
                     target = tokens[1] if len(tokens) > 1 else tokens[0]
                     options: Dict[str, Any] = {}
+                    token_offset = 2
                     if kind == 'python' and len(tokens) > 1:
                         module_spec = tokens[1]
                         module_name, _, method_name = module_spec.partition(':')
@@ -204,7 +252,11 @@ class AIParserMixin(ParserBase):
                             options['module'] = module_name
                         if method_name:
                             options['method'] = method_name
-                    steps.append(ChainStep(kind=kind, target=target, options=options))
+                    remaining = tokens[token_offset:]
+                    if remaining:
+                        option_values = self._parse_chain_step_options(remaining)
+                        options.update(option_values)
+                    workflow_nodes.append(ChainStep(kind=kind, target=target, options=options))
             else:
                 assign = re.match(r'([\w\.\- ]+)\s*(=|:)\s*(.*)$', stripped_line)
                 if not assign:
@@ -221,7 +273,40 @@ class AIParserMixin(ParserBase):
                 else:
                     value = self._transform_config(self._coerce_scalar(remainder))
                 metadata[key] = value
-        return Chain(name=name, input_key=input_key, steps=steps, metadata=metadata)
+        return Chain(name=name, input_key=input_key, steps=workflow_nodes, metadata=metadata, declared_effect=declared_effect)
+
+    def _parse_memory(self, line: str, line_no: int, base_indent: int) -> Memory:
+        stripped = line.strip()
+        if stripped.endswith(":"):
+            stripped = stripped[:-1]
+        match = re.match(r'memory\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
+        if not match:
+            raise self._error('Expected: memory "Name":', line_no, line)
+        name = match.group(1)
+        config = self._parse_kv_block(base_indent)
+        scope_raw = config.pop("scope", config.pop("context", "session"))
+        scope = str(scope_raw or "session").lower()
+        if scope not in _MEMORY_SCOPES:
+            allowed = ", ".join(sorted(_MEMORY_SCOPES))
+            raise self._error(f"Unknown memory scope '{scope}'. Allowed scopes: {allowed}", line_no, line)
+        kind_raw = config.pop("kind", config.pop("mode", "list"))
+        kind = str(kind_raw or "list").lower()
+        if kind not in _MEMORY_KINDS:
+            allowed = ", ".join(sorted(_MEMORY_KINDS))
+            raise self._error(f"Unknown memory kind '{kind}'. Allowed kinds: {allowed}", line_no, line)
+        max_items_raw = config.pop("max_items", config.pop("limit", None))
+        max_items = self._coerce_int(max_items_raw) if max_items_raw is not None else None
+        metadata_raw = config.pop("metadata", {})
+        metadata = self._transform_config(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        normalized_config = {key: self._transform_config(value) for key, value in config.items()}
+        return Memory(
+            name=name,
+            scope=scope,
+            kind=kind,
+            max_items=max_items,
+            config=normalized_config,
+            metadata=metadata if isinstance(metadata, dict) else {},
+        )
 
     def _parse_ai_model(self, line: str, line_no: int, base_indent: int) -> AIModel:
         stripped = line.strip()
@@ -341,7 +426,7 @@ class AIParserMixin(ParserBase):
         parameters_transformed = self._transform_config(parameters)
         parameters_payload = parameters_transformed if isinstance(parameters_transformed, dict) else {"value": parameters_transformed}
 
-        return Prompt(
+        prompt_object = Prompt(
             name=name,
             model=model_name,
             template=template_text,
@@ -351,6 +436,242 @@ class AIParserMixin(ParserBase):
             metadata=metadata,
             description=description,
         )
+        prompt_object.effects = {"ai"}
+        return prompt_object
+
+    def _parse_chain_step_options(self, tokens: List[str]) -> Dict[str, Any]:
+        options: Dict[str, Any] = {}
+        idx = 0
+        while idx < len(tokens):
+            key = tokens[idx].strip().lower()
+            idx += 1
+            if idx >= len(tokens):
+                raise self._error("Expected value after chain step option", self.pos - 1, tokens[idx - 1])
+            raw_value = tokens[idx].strip()
+            idx += 1
+            if key in {"read_memory", "memory_read"}:
+                names = self._split_memory_names(raw_value)
+                existing = options.setdefault("read_memory", [])
+                existing.extend(names)
+            elif key in {"write_memory", "memory_write"}:
+                names = self._split_memory_names(raw_value)
+                existing = options.setdefault("write_memory", [])
+                existing.extend(names)
+            else:
+                options[key] = raw_value
+        return options
+
+    def _parse_step_evaluation_config(self, value: Any, line_no: int, header: str) -> StepEvaluationConfig:
+        if not isinstance(value, dict):
+            raise self._error("Step evaluation must be a block", line_no, header)
+        evaluators_raw = value.get("evaluators")
+        guardrail_raw = value.get("guardrail")
+        evaluators: List[str] = []
+        if isinstance(evaluators_raw, (list, tuple)):
+            evaluators = [str(entry) for entry in evaluators_raw if entry]
+        elif isinstance(evaluators_raw, str):
+            evaluators = [evaluators_raw]
+        if not evaluators:
+            raise self._error("Step evaluation must reference at least one evaluator", line_no, header)
+        guardrail_name = str(guardrail_raw) if guardrail_raw is not None else None
+        return StepEvaluationConfig(evaluators=[str(name) for name in evaluators], guardrail=guardrail_name)
+
+    def _parse_workflow_block(self, parent_indent: int) -> List[WorkflowNode]:
+        nodes: List[WorkflowNode] = []
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            if indent <= parent_indent:
+                break
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if not stripped.startswith('-'):
+                raise self._error("Workflow entries must begin with '-'", self.pos + 1, nxt)
+            line_no = self.pos + 1
+            entry_line = stripped[1:].strip()
+            self._advance()
+            nodes.append(self._parse_workflow_entry(entry_line, indent, line_no))
+        return nodes
+
+    def _parse_workflow_entry(self, header: str, indent: int, line_no: int) -> WorkflowNode:
+        lowered = header.lower()
+        if lowered.startswith('step'):
+            return self._parse_workflow_step_entry(header, indent, line_no)
+        if lowered.startswith('if '):
+            return self._parse_workflow_if_entry(header, indent, line_no)
+        if lowered.startswith('for '):
+            return self._parse_workflow_for_entry(header, indent, line_no)
+        if lowered.startswith('while '):
+            return self._parse_workflow_while_entry(header, indent, line_no)
+        raise self._error("Unsupported workflow entry", line_no, header)
+
+    def _parse_workflow_step_entry(self, header: str, indent: int, line_no: int) -> ChainStep:
+        match = re.match(r'step(?:\s+"([^"]+)")?(?:\s*:)?$', header, flags=re.IGNORECASE)
+        if not match:
+            raise self._error("Expected: - step \"Name\":", line_no, header)
+        name = match.group(1)
+        config = self._parse_kv_block(indent)
+        normalized = {key: self._transform_config(value) for key, value in config.items()}
+        kind_value = normalized.pop('kind', normalized.pop('type', None))
+        if kind_value is None:
+            raise self._error("Workflow step must define 'kind:'", line_no, header)
+        target_value = normalized.pop('target', normalized.pop('connector', None))
+        if target_value is None:
+            target_value = kind_value
+        stop_on_error_raw = normalized.pop('stop_on_error', None)
+        continue_on_error_raw = normalized.pop('continue_on_error', None)
+        if stop_on_error_raw is not None:
+            stop_on_error = self._parse_bool(str(stop_on_error_raw))
+        elif continue_on_error_raw is not None:
+            stop_on_error = not self._parse_bool(str(continue_on_error_raw))
+        else:
+            stop_on_error = True
+        evaluation_value = normalized.pop('evaluation', None)
+        evaluation = None
+        if evaluation_value is not None:
+            evaluation = self._parse_step_evaluation_config(evaluation_value, line_no, header)
+        options_value = normalized.pop('options', {})
+        options = self._coerce_options_dict(options_value)
+        for key, value in normalized.items():
+            options[key] = value
+        return ChainStep(
+            kind=str(kind_value),
+            target=str(target_value),
+            options=options,
+            name=name,
+            stop_on_error=stop_on_error,
+            evaluation=evaluation,
+        )
+
+    def _parse_workflow_if_entry(self, header: str, indent: int, line_no: int) -> WorkflowIfBlock:
+        if not header.rstrip().endswith(':'):
+            raise self._error("Workflow if entries must end with ':'", line_no, header)
+        condition_text = header[:-1].strip()[2:].strip()
+        if not condition_text:
+            raise self._error("Workflow if condition cannot be empty", line_no, header)
+        condition_expr = self._parse_expression(condition_text)
+        then_steps: List[WorkflowNode] = []
+        elif_branches: List[Tuple[Expression, List[WorkflowNode]]] = []
+        else_steps: List[WorkflowNode] = []
+        seen_then = False
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            current_indent = self._indent(nxt)
+            if current_indent <= indent:
+                break
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            lowered = stripped.lower()
+            if lowered.startswith('then:'):
+                self._advance()
+                then_steps = self._parse_workflow_block(current_indent)
+                seen_then = True
+                continue
+            if lowered.startswith('elif '):
+                self._advance()
+                branch_text = stripped[4:].strip()
+                if not branch_text.endswith(':'):
+                    raise self._error("Workflow elif must end with ':'", self.pos, stripped)
+                branch_expr = self._parse_expression(branch_text[:-1].strip())
+                branch_steps = self._parse_workflow_block(current_indent)
+                elif_branches.append((branch_expr, branch_steps))
+                continue
+            if lowered.startswith('else:'):
+                self._advance()
+                else_steps = self._parse_workflow_block(current_indent)
+                continue
+            raise self._error("Unexpected entry inside workflow if block", self.pos + 1, nxt)
+        if not then_steps:
+            raise self._error("Workflow if block must define a 'then:' section", line_no, header)
+        return WorkflowIfBlock(condition=condition_expr, then_steps=then_steps, elif_steps=elif_branches, else_steps=else_steps)
+
+    def _parse_workflow_for_entry(self, header: str, indent: int, line_no: int) -> WorkflowForBlock:
+        match = re.match(r'for\s+([A-Za-z_][\w]*)\s+in\s+(.+):$', header, flags=re.IGNORECASE)
+        if not match:
+            raise self._error("Expected: - for item in <expression>:", line_no, header)
+        loop_var = match.group(1)
+        source_text = match.group(2).strip()
+        source_kind = "expression"
+        source_name: Optional[str] = None
+        source_expression: Optional[Expression] = None
+        lowered = source_text.lower()
+        if lowered.startswith('dataset '):
+            source_kind = "dataset"
+            source_name = self._strip_quotes(source_text.split(None, 1)[1].strip())
+        else:
+            source_expression = self._parse_expression(source_text)
+        config = self._parse_workflow_optional_config(indent)
+        max_iterations = None
+        if config:
+            max_iterations = self._coerce_int(config.pop('max_iterations', config.pop('limit', None)))
+            if max_iterations is not None and max_iterations <= 0:
+                max_iterations = None
+            if config:
+                unknown = ", ".join(config.keys())
+                raise self._error(f"Unsupported options in workflow for block: {unknown}", line_no, header)
+        body = self._parse_workflow_block(indent)
+        return WorkflowForBlock(
+            loop_var=loop_var,
+            source_kind=source_kind,
+            source_name=source_name,
+            source_expression=source_expression,
+            body=body,
+            max_iterations=max_iterations,
+        )
+
+    def _parse_workflow_while_entry(self, header: str, indent: int, line_no: int) -> WorkflowWhileBlock:
+        if not header.rstrip().endswith(':'):
+            raise self._error("Workflow while entries must end with ':'", line_no, header)
+        condition_text = header[:-1].strip()[5:].strip()
+        if not condition_text:
+            raise self._error("Workflow while condition cannot be empty", line_no, header)
+        condition_expr = self._parse_expression(condition_text)
+        config = self._parse_workflow_optional_config(indent)
+        max_iterations = None
+        if config:
+            max_iterations = self._coerce_int(config.pop('max_iterations', config.pop('limit', None)))
+            if max_iterations is not None and max_iterations <= 0:
+                max_iterations = None
+            if config:
+                unknown = ", ".join(config.keys())
+                raise self._error(f"Unsupported options in workflow while block: {unknown}", line_no, header)
+        body = self._parse_workflow_block(indent)
+        return WorkflowWhileBlock(condition=condition_expr, body=body, max_iterations=max_iterations)
+
+    def _parse_workflow_optional_config(self, parent_indent: int) -> Dict[str, Any]:
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= parent_indent or stripped.startswith('-'):
+                break
+            return self._parse_kv_block(parent_indent)
+        return {}
+
+    def _split_memory_names(self, raw: str) -> List[str]:
+        if not raw:
+            return []
+        candidates = [part.strip() for part in raw.split(',') if part.strip()]
+        normalized: List[str] = []
+        for candidate in candidates:
+            if (candidate.startswith('"') and candidate.endswith('"')) or (candidate.startswith("'") and candidate.endswith("'")):
+                normalized.append(candidate[1:-1])
+            else:
+                normalized.append(candidate)
+        return normalized
 
     def _transform_config(self, value: Any) -> Any:
         if isinstance(value, str):
@@ -526,3 +847,5 @@ class AIParserMixin(ParserBase):
             if any(token in lowered for token in _AI_MODEL_BLOCK_HINTS):
                 saw_ai_hint = True
         return saw_ai_hint
+_MEMORY_SCOPES = {"session", "page", "conversation", "global"}
+_MEMORY_KINDS = {"list", "conversation", "key_value", "vector"}

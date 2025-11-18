@@ -22,7 +22,7 @@ def test_parse_experiment_with_variants_and_metrics() -> None:
         '    owner: "research"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     assert len(app.experiments) == 1
     experiment = app.experiments[0]

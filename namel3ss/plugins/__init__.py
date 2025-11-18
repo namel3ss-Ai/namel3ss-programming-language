@@ -107,7 +107,9 @@ class PluginManager:
             if attr is not None and callable(attr):
                 handler = attr
         if handler is None:
-            raise RuntimeError(f"Plugin '{identifier}' does not expose a register_plugin function or callable entry point.")
+            raise RuntimeError(
+                f"Plugin '{identifier}' does not expose a register_plugin function or callable entry point."
+            )
         handler(registrar)
         self._loaded[identifier] = plugin
 
@@ -132,3 +134,15 @@ class PluginManager:
     def emit_workspace(self, *args, **kwargs) -> None:
         for hook in self.registry.workspace_hooks:
             hook(*args, **kwargs)
+
+
+__all__ = [
+    "CommandRegistrar",
+    "PluginCommand",
+    "PluginHook",
+    "PluginManager",
+    "PluginRegistry",
+]
+
+# Ensure built-in tool plugins are registered.
+from . import builtins as _builtin_tool_plugins  # noqa: E402,F401

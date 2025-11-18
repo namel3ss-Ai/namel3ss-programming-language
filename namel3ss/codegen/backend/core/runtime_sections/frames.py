@@ -8,6 +8,9 @@ from namel3ss.codegen.backend.core.runtime.frames import (
     DEFAULT_FRAME_LIMIT as _DEFAULT_FRAME_LIMIT,
     MAX_FRAME_LIMIT as _MAX_FRAME_LIMIT,
     N3Frame as _N3Frame,
+    FramePipelineExecutionError as _FramePipelineExecutionError,
+    build_pipeline_frame_spec as _build_pipeline_frame_spec,
+    execute_frame_pipeline_plan as _execute_frame_pipeline_plan,
     project_frame_rows as _project_frame_rows,
 )
 
@@ -337,6 +340,81 @@ async def _load_frame_source_rows(
         detail=source_kind,
     )
     return []
+
+
+async def _evaluate_frame_pipeline(
+    plan: Dict[str, Any],
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+    visited: Set[str],
+) -> _N3Frame:
+    if not isinstance(plan, dict):
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, "Invalid frame pipeline payload.")
+    root = plan.get("root")
+    if not isinstance(root, str) or not root:
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, "Frame pipeline requires a root frame.")
+    base_frame = await _resolve_frame_runtime(root, session, context, set(visited))
+    operations: List[Dict[str, Any]] = []
+    for operation in plan.get("operations") or []:
+        if not isinstance(operation, dict):
+            continue
+        if operation.get("op") == "join":
+            join_target = operation.get("join_target")
+            if not join_target:
+                raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, "Join operation requires a target frame.")
+            join_frame = await _resolve_frame_runtime(join_target, session, context, set(visited))
+            op_payload = dict(operation)
+            op_payload["join_rows"] = join_frame.rows
+            op_payload["join_schema"] = join_frame.spec.get("columns")
+            operations.append(op_payload)
+            continue
+        operations.append(operation)
+    schema_payload = plan.get("schema") or {}
+    try:
+        rows = _execute_frame_pipeline_plan(
+            root,
+            schema_payload,
+            base_frame.rows,
+            operations,
+            context=context,
+            evaluate_expression=_evaluate_dataset_expression,
+            runtime_truthy=_runtime_truthy,
+        )
+    except _FramePipelineExecutionError as exc:
+        _record_runtime_error(
+            context,
+            code="frame_pipeline_failed",
+            message=str(exc),
+            scope=root,
+            source="frame",
+            detail=str(exc),
+            severity="error",
+        )
+        raise
+    derived_spec = _build_pipeline_frame_spec(schema_payload, base_frame.spec, f"{root}__pipeline")
+    return _N3Frame(derived_spec.get("name") or root, derived_spec, rows)
+
+
+async def _resolve_frame_pipeline_value(
+    value: Dict[str, Any],
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return []
+    plan = value.get("__frame_pipeline__")
+    if not isinstance(plan, dict):
+        return []
+    try:
+        derived = await _evaluate_frame_pipeline(plan, session, context, set())
+    except _FramePipelineExecutionError as exc:
+        raise _frame_error(400, _FRAME_ERROR_INVALID_PARAMS, str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Frame pipeline evaluation failed")
+        raise _frame_error(500, "FRAME_PIPELINE_FAILED", "Frame pipeline evaluation failed.")
+    return derived.rows
 '''
 )
 

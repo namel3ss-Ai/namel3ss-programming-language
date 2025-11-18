@@ -22,7 +22,7 @@ def test_parse_model_declaration() -> None:
         '    promoted: true\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert len(app.models) == 1
     model = app.models[0]
     assert isinstance(model, Model)
@@ -84,7 +84,7 @@ def test_parse_model_with_extended_metadata() -> None:
         '  show text "hi"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     model = app.models[0]
 
     assert model.training.framework == 'pytorch'

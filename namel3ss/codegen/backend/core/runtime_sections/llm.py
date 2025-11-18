@@ -4,11 +4,17 @@ from textwrap import dedent
 
 LLM_SECTION = dedent(
     '''
+import asyncio
 import copy
+import inspect
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Tuple
+
+from namel3ss.codegen.backend.core.runtime.expression_sandbox import (
+    evaluate_expression_tree as _evaluate_expression_tree,
+)
 
 
 def _stringify_prompt_value(name: str, value: Any) -> str:
@@ -307,6 +313,820 @@ def _extract_llm_text(
     if isinstance(payload, str):
         return payload
     return json.dumps(payload)
+
+
+def _extract_memory_names(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple, set)):
+        names: List[str] = []
+        for item in value:
+            if isinstance(item, str):
+                names.append(item)
+        return names
+    return []
+
+
+_SCHEMA_TYPE_MAPPING = {
+    "string": str,
+    "number": (int, float),
+    "integer": int,
+    "boolean": bool,
+    "object": dict,
+    "array": (list, tuple),
+}
+
+
+def _tool_schema(plugin: Any, attr: str) -> Optional[Dict[str, Any]]:
+    schema = getattr(plugin, attr, None)
+    return dict(schema) if isinstance(schema, dict) else None
+
+
+def _matches_schema_type(value: Any, expected: str) -> bool:
+    normalized = expected.strip().lower()
+    type_info = _SCHEMA_TYPE_MAPPING.get(normalized)
+    if type_info is None:
+        return True
+    return isinstance(value, type_info)
+
+
+def _validate_tool_payload(plugin: Any, payload: Dict[str, Any], chain_name: str, step_label: str) -> None:
+    schema = _tool_schema(plugin, "input_schema")
+    if not schema:
+        return
+    for field, rule in schema.items():
+        details = rule if isinstance(rule, dict) else {"type": str(rule)}
+        required = bool(details.get("required"))
+        expected_type = str(details.get("type") or "").strip()
+        if required and field not in payload:
+            raise ValueError(f"Tool step '{step_label}' in chain '{chain_name}' is missing required field '{field}'.")
+        if expected_type and field in payload and not _matches_schema_type(payload[field], expected_type):
+            raise TypeError(
+                f"Field '{field}' in tool step '{step_label}' does not match expected type '{expected_type}'."
+            )
+
+
+def _await_plugin_result(result: Any) -> Any:
+    if inspect.isawaitable(result):
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        if running_loop and running_loop.is_running():
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(result)
+            finally:
+                loop.close()
+        return asyncio.run(result)
+    return result
+
+
+def _call_tool_plugin(plugin: Any, context: Dict[str, Any], payload: Dict[str, Any]) -> Any:
+    result = plugin.call(context, payload)
+    return _await_plugin_result(result)
+
+
+_VIOLATION_LABELS = {"violation", "unsafe", "toxic", "blocked"}
+
+
+def _evaluation_result_is_violation(result: Any) -> bool:
+    if isinstance(result, dict):
+        if bool(result.get("violation")):
+            return True
+        label = result.get("label")
+        if isinstance(label, str) and label.strip().lower() in _VIOLATION_LABELS:
+            return True
+    return False
+
+
+def _run_step_evaluations(
+    config: Dict[str, Any],
+    entry: Dict[str, Any],
+    output: Any,
+    context: Dict[str, Any],
+    chain_name: str,
+    step_label: str,
+) -> Dict[str, Any]:
+    evaluator_names = config.get("evaluators") or []
+    if not evaluator_names:
+        return {}
+    plugins = context.get("evaluators") if isinstance(context.get("evaluators"), dict) else {}
+    evaluation_results: Dict[str, Any] = {}
+    for evaluator_name in evaluator_names:
+        plugin = plugins.get(evaluator_name)
+        if plugin is None:
+            message = f"Evaluator '{evaluator_name}' is not configured."
+            _record_runtime_error(
+                context,
+                code="evaluation_missing",
+                message=message,
+                scope=f"chain:{chain_name}",
+                detail=f"step:{step_label}",
+            )
+            raise RuntimeError(message)
+        payload = {
+            "output": output,
+            "step": step_label,
+            "chain": chain_name,
+        }
+        try:
+            evaluation_results[evaluator_name] = _await_plugin_result(plugin.call(context, payload))
+        except Exception as exc:
+            message = f"Evaluator '{evaluator_name}' failed: {exc}"
+            _record_runtime_error(
+                context,
+                code="evaluation_failed",
+                message=message,
+                scope=f"chain:{chain_name}",
+                detail=f"step:{step_label}",
+            )
+            raise
+    entry["evaluation"] = evaluation_results
+    return evaluation_results
+
+
+def _apply_guardrail(
+    guardrail_name: str,
+    evaluation_results: Dict[str, Any],
+    output: Any,
+    entry: Dict[str, Any],
+    chain_name: str,
+    step_label: str,
+    context: Dict[str, Any],
+) -> Any:
+    guardrail = GUARDRAILS.get(guardrail_name, {})
+    if not guardrail:
+        message = f"Guardrail '{guardrail_name}' is not defined."
+        _record_runtime_error(
+            context,
+            code="guardrail_missing",
+            message=message,
+            scope=f"chain:{chain_name}",
+            detail=f"step:{step_label}",
+        )
+        raise RuntimeError(message)
+    evaluator_names = guardrail.get("evaluators") or []
+    violation = False
+    for evaluator_name in evaluator_names:
+        result = evaluation_results.get(evaluator_name)
+        if result is None:
+            continue
+        if _evaluation_result_is_violation(result):
+            violation = True
+            break
+    entry["guardrail"] = {
+        "name": guardrail_name,
+        "action": guardrail.get("action"),
+        "violated": violation,
+    }
+    if not violation:
+        return output
+    action = str(guardrail.get("action") or "block").lower()
+    message = guardrail.get("message") or f"Guardrail '{guardrail_name}' blocked step '{step_label}'."
+    data = {
+        "guardrail": guardrail_name,
+        "chain": chain_name,
+        "step": step_label,
+    }
+    if action == "log_only":
+        _record_runtime_event(
+            context,
+            event="guardrail_violation",
+            level="warning",
+            message=message,
+            data=data,
+        )
+        return output
+    _record_runtime_error(
+        context,
+        code="guardrail_violation",
+        message=message,
+        scope=f"chain:{chain_name}",
+        detail=f"step:{step_label}",
+    )
+    blocked_payload = {
+        "status": "blocked",
+        "message": message,
+        "guardrail": guardrail_name,
+    }
+    entry["output"] = blocked_payload
+    entry["status"] = "error"
+    return blocked_payload
+
+
+def _execute_workflow_nodes(
+    nodes: List[Dict[str, Any]],
+    *,
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    memory_state: Dict[str, Dict[str, Any]],
+    allow_stubs: bool,
+    steps_history: List[Dict[str, Any]],
+    chain_name: str,
+) -> Tuple[str, Any, Any]:
+    status = "partial"
+    result_value: Any = None
+    current_value = working
+    encountered_error = False
+    for node in nodes or []:
+        node_type = str(node.get("type") or "step").lower()
+        if node_type == "step":
+            step_status, current_value, step_result, stop_on_error = _execute_workflow_step(
+                node,
+                context=context,
+                chain_scope=chain_scope,
+                args=args,
+                working=current_value,
+                memory_state=memory_state,
+                allow_stubs=allow_stubs,
+                steps_history=steps_history,
+                chain_name=chain_name,
+            )
+            if step_status == "error":
+                encountered_error = True
+                if stop_on_error:
+                    return "error", step_result, current_value
+            elif step_status == "ok":
+                status = "ok"
+                result_value = step_result
+            elif step_status == "stub" and status != "error" and result_value is None:
+                result_value = step_result
+        elif node_type == "if":
+            branch_status, branch_result, branch_value = _execute_workflow_if(
+                node,
+                context=context,
+                chain_scope=chain_scope,
+                args=args,
+                working=current_value,
+                memory_state=memory_state,
+                allow_stubs=allow_stubs,
+                steps_history=steps_history,
+                chain_name=chain_name,
+            )
+            if branch_status == "error":
+                return "error", branch_result, branch_value
+            if branch_status == "ok" and branch_result is not None:
+                status = "ok"
+                result_value = branch_result
+            current_value = branch_value
+        elif node_type == "for":
+            loop_status, loop_result, loop_value = _execute_workflow_for(
+                node,
+                context=context,
+                chain_scope=chain_scope,
+                args=args,
+                working=current_value,
+                memory_state=memory_state,
+                allow_stubs=allow_stubs,
+                steps_history=steps_history,
+                chain_name=chain_name,
+            )
+            if loop_status == "error":
+                return "error", loop_result, loop_value
+            if loop_status == "ok" and loop_result is not None:
+                status = "ok"
+                result_value = loop_result
+            current_value = loop_value
+        elif node_type == "while":
+            while_status, while_result, while_value = _execute_workflow_while(
+                node,
+                context=context,
+                chain_scope=chain_scope,
+                args=args,
+                working=current_value,
+                memory_state=memory_state,
+                allow_stubs=allow_stubs,
+                steps_history=steps_history,
+                chain_name=chain_name,
+            )
+            if while_status == "error":
+                return "error", while_result, while_value
+            if while_status == "ok" and while_result is not None:
+                status = "ok"
+                result_value = while_result
+            current_value = while_value
+        else:
+            _record_runtime_error(
+                context,
+                code="workflow.unsupported_node",
+                message=f"Workflow node type '{node_type}' is not supported",
+                scope=chain_name,
+                source="workflow",
+            )
+            return "error", {"error": f"Unsupported workflow node '{node_type}'"}, current_value
+    if encountered_error and status != "error":
+        status = "error"
+    return status, result_value, current_value
+
+
+def _execute_workflow_step(
+    step: Dict[str, Any],
+    *,
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    memory_state: Dict[str, Dict[str, Any]],
+    allow_stubs: bool,
+    steps_history: List[Dict[str, Any]],
+    chain_name: str,
+) -> Tuple[str, Any, Any, bool]:
+    chain_scope["counter"] = chain_scope.get("counter", 0) + 1
+    step_label = step.get("name") or step.get("target") or f"step_{chain_scope['counter']}"
+    kind = (step.get("kind") or "").lower()
+    target = step.get("target") or ""
+    options = step.get("options") or {}
+    resolved_options = _resolve_placeholders(options, context)
+    stop_on_error = bool(step.get("stop_on_error", True))
+    read_memory = _extract_memory_names(resolved_options.pop("read_memory", None))
+    write_memory = _extract_memory_names(resolved_options.pop("write_memory", None))
+    memory_payload = _memory_snapshot(memory_state, read_memory) if read_memory else {}
+    entry: Dict[str, Any] = {
+        "step": len(steps_history) + 1,
+        "kind": kind,
+        "name": step_label,
+        "inputs": None,
+        "output": None,
+        "status": "partial",
+    }
+    steps_history.append(entry)
+    current_value = working
+    step_result: Any = None
+    if kind == "template":
+        template = AI_TEMPLATES.get(target) or {}
+        prompt = template.get("prompt", "")
+        template_context = {
+            "input": working,
+            "vars": args,
+            "payload": args,
+            "memory": memory_payload,
+            "steps": context.get("steps", {}),
+            "loop": context.get("loop", {}),
+            "locals": chain_scope.get("locals", {}),
+        }
+        entry["inputs"] = template_context
+        try:
+            rendered = _render_template_value(prompt, template_context)
+            entry["output"] = rendered
+            entry["status"] = "ok"
+            current_value = rendered
+            step_result = rendered
+            if write_memory:
+                _write_memory_entries(
+                    memory_state,
+                    write_memory,
+                    rendered,
+                    context=context,
+                    source=f"template:{step_label}",
+                )
+        except Exception as exc:
+            entry["output"] = {"error": str(exc)}
+            entry["status"] = "error"
+    elif kind == "connector":
+        connector_payload = dict(args)
+        connector_payload.setdefault("prompt", working)
+        if memory_payload:
+            connector_payload.setdefault("memory", {}).update(memory_payload)
+        entry["inputs"] = connector_payload
+        response = call_llm_connector(target, connector_payload)
+        entry["output"] = response
+        entry["status"] = response.get("status", "partial")
+        step_status = response.get("status")
+        if step_status == "ok":
+            current_value = response.get("result")
+            step_result = current_value
+        elif step_status == "error":
+            step_result = response
+        elif step_status == "stub":
+            step_result = response
+        if step_status == "ok" and write_memory:
+            _write_memory_entries(
+                memory_state,
+                write_memory,
+                response.get("result"),
+                context=context,
+                source=f"connector:{step_label}",
+            )
+    elif kind == "prompt":
+        prompt_payload = working if isinstance(working, dict) else working
+        if isinstance(prompt_payload, dict):
+            payload_data = dict(prompt_payload)
+        else:
+            payload_data = {"value": prompt_payload}
+        if memory_payload:
+            payload_data.setdefault("memory", {}).update(memory_payload)
+        if read_memory:
+            payload_data["read_memory"] = read_memory
+        if write_memory:
+            payload_data["write_memory"] = write_memory
+        response = run_prompt(target, payload_data, context=context, memory=memory_payload)
+        entry["inputs"] = response.get("inputs")
+        entry["output"] = response
+        entry["status"] = response.get("status", "partial")
+        step_status = response.get("status")
+        if step_status == "ok":
+            current_value = response.get("output")
+            step_result = current_value
+        elif step_status == "error":
+            step_result = response
+        elif step_status == "stub":
+            step_result = response
+    elif kind == "tool":
+        tools_registry = context.get("tools") if isinstance(context.get("tools"), dict) else {}
+        payload = dict(resolved_options)
+        if working is not None and "input" not in payload:
+            payload["input"] = working
+        if memory_payload:
+            payload.setdefault("memory", {}).update(memory_payload)
+        entry["inputs"] = payload
+        plugin = tools_registry.get(target)
+        if plugin is None:
+            message = f"Tool '{target}' is not configured"
+            entry["output"] = {"error": message}
+            entry["status"] = "error"
+            step_result = entry["output"]
+            _record_runtime_error(
+                context,
+                code="tool_not_found",
+                message=message,
+                scope=f"chain:{chain_name}",
+                detail=f"step:{step_label}",
+            )
+        else:
+            try:
+                _validate_tool_payload(plugin, payload, chain_name, step_label)
+                tool_result = _call_tool_plugin(plugin, context, payload)
+                entry["output"] = tool_result
+                entry["status"] = "ok"
+                current_value = tool_result
+                step_result = tool_result
+                if write_memory:
+                    _write_memory_entries(
+                        memory_state,
+                        write_memory,
+                        tool_result,
+                        context=context,
+                        source=f"tool:{step_label}",
+                    )
+            except Exception as exc:
+                message = str(exc)
+                entry["output"] = {"error": message}
+                entry["status"] = "error"
+                step_result = entry["output"]
+                _record_runtime_error(
+                    context,
+                    code="tool_step_error",
+                    message=f"Tool step '{step_label}' failed in chain '{chain_name}'",
+                    scope=f"chain:{chain_name}",
+                    detail=message,
+                )
+    elif kind == "python":
+        module_name = resolved_options.get("module") or target or ""
+        method_name = resolved_options.get("method") or "predict"
+        python_args = dict(args)
+        provided_args = resolved_options.get("arguments")
+        if isinstance(provided_args, dict):
+            python_args.update(provided_args)
+        if memory_payload:
+            python_args.setdefault("memory", {}).update(memory_payload)
+        entry["inputs"] = python_args
+        response = call_python_model(module_name, method_name, python_args)
+        entry["output"] = response
+        entry["status"] = response.get("status", "partial")
+        step_status = response.get("status")
+        if step_status == "ok":
+            current_value = response.get("result")
+            step_result = current_value
+        elif step_status == "error":
+            step_result = response
+        elif step_status == "stub":
+            step_result = response
+        if step_status == "ok" and write_memory:
+            _write_memory_entries(
+                memory_state,
+                write_memory,
+                response.get("result"),
+                context=context,
+                source=f"python:{step_label}",
+            )
+    else:
+        entry["output"] = {"error": f"Unsupported step kind '{kind}'"}
+        entry["status"] = "error"
+        step_result = entry["output"]
+    evaluation_cfg = step.get("evaluation")
+    if evaluation_cfg:
+        try:
+            evaluation_results = _run_step_evaluations(
+                evaluation_cfg,
+                entry,
+                current_value,
+                context,
+                chain_name,
+                step_label,
+            )
+        except Exception as exc:
+            entry["output"] = {"error": str(exc)}
+            entry["status"] = "error"
+            step_result = entry["output"]
+            entry["result"] = current_value
+            chain_scope.setdefault("steps", {})[step_label] = entry
+            return entry.get("status", "partial"), current_value, step_result, stop_on_error
+        guardrail_name = evaluation_cfg.get("guardrail")
+        if guardrail_name:
+            try:
+                current_value = _apply_guardrail(
+                    guardrail_name,
+                    evaluation_results,
+                    current_value,
+                    entry,
+                    chain_name,
+                    step_label,
+                    context,
+                )
+                step_result = current_value
+            except Exception as exc:
+                entry["output"] = {"error": str(exc)}
+                entry["status"] = "error"
+                step_result = entry["output"]
+                entry["result"] = current_value
+                chain_scope.setdefault("steps", {})[step_label] = entry
+                return entry.get("status", "partial"), current_value, step_result, stop_on_error
+    entry["result"] = current_value
+    chain_scope.setdefault("steps", {})[step_label] = entry
+    return entry.get("status", "partial"), current_value, step_result, stop_on_error
+
+
+def _execute_workflow_if(
+    node: Dict[str, Any],
+    *,
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    memory_state: Dict[str, Dict[str, Any]],
+    allow_stubs: bool,
+    steps_history: List[Dict[str, Any]],
+    chain_name: str,
+) -> Tuple[str, Any, Any]:
+    condition = node.get("condition")
+    condition_source = node.get("condition_source")
+    scope = _workflow_scope(chain_scope, args, working)
+    branch_nodes = node.get("then") or []
+    branch_selected = False
+    if _evaluate_workflow_condition(condition, condition_source, scope, context, chain_name):
+        branch_selected = True
+    else:
+        for branch in node.get("elif", []):
+            if _evaluate_workflow_condition(
+                branch.get("condition"),
+                branch.get("condition_source"),
+                scope,
+                context,
+                chain_name,
+            ):
+                branch_nodes = branch.get("steps") or []
+                branch_selected = True
+                break
+        if not branch_selected:
+            branch_nodes = node.get("else") or []
+    if not branch_nodes:
+        return "partial", None, working
+    return _execute_workflow_nodes(
+        branch_nodes,
+        context=context,
+        chain_scope=chain_scope,
+        args=args,
+        working=working,
+        memory_state=memory_state,
+        allow_stubs=allow_stubs,
+        steps_history=steps_history,
+        chain_name=chain_name,
+    )
+
+
+def _execute_workflow_for(
+    node: Dict[str, Any],
+    *,
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    memory_state: Dict[str, Dict[str, Any]],
+    allow_stubs: bool,
+    steps_history: List[Dict[str, Any]],
+    chain_name: str,
+) -> Tuple[str, Any, Any]:
+    iterable = _resolve_workflow_iterable(node, context, chain_scope, args, working, chain_name)
+    if not iterable:
+        return "partial", None, working
+    loop_var = node.get("loop_var") or "item"
+    max_iterations = node.get("max_iterations")
+    iterations = 0
+    result_value: Any = None
+    current_value = working
+    loop_context = context.setdefault("loop", {})
+    scope_loop = chain_scope.setdefault("loop", {})
+    for item in iterable:
+        if max_iterations and iterations >= max_iterations:
+            break
+        chain_scope["locals"][loop_var] = item
+        loop_context[loop_var] = item
+        scope_loop[loop_var] = item
+        branch_status, branch_result, branch_value = _execute_workflow_nodes(
+            node.get("body") or [],
+            context=context,
+            chain_scope=chain_scope,
+            args=args,
+            working=current_value,
+            memory_state=memory_state,
+            allow_stubs=allow_stubs,
+            steps_history=steps_history,
+            chain_name=chain_name,
+        )
+        if branch_status == "error":
+            chain_scope["locals"].pop(loop_var, None)
+            loop_context.pop(loop_var, None)
+            return "error", branch_result, branch_value
+        if branch_result is not None:
+            result_value = branch_result
+        current_value = branch_value
+        iterations += 1
+    chain_scope["locals"].pop(loop_var, None)
+    loop_context.pop(loop_var, None)
+    scope_loop.pop(loop_var, None)
+    return ("ok" if iterations else "partial"), result_value, current_value
+
+
+def _execute_workflow_while(
+    node: Dict[str, Any],
+    *,
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    memory_state: Dict[str, Dict[str, Any]],
+    allow_stubs: bool,
+    steps_history: List[Dict[str, Any]],
+    chain_name: str,
+) -> Tuple[str, Any, Any]:
+    max_iterations = node.get("max_iterations") or 100
+    iterations = 0
+    result_value: Any = None
+    current_value = working
+    condition = node.get("condition")
+    source = node.get("condition_source")
+    while iterations < max_iterations:
+        scope = _workflow_scope(chain_scope, args, current_value)
+        if not _evaluate_workflow_condition(condition, source, scope, context, chain_name):
+            break
+        branch_status, branch_result, branch_value = _execute_workflow_nodes(
+            node.get("body") or [],
+            context=context,
+            chain_scope=chain_scope,
+            args=args,
+            working=current_value,
+            memory_state=memory_state,
+            allow_stubs=allow_stubs,
+            steps_history=steps_history,
+            chain_name=chain_name,
+        )
+        if branch_status == "error":
+            return "error", branch_result, branch_value
+        if branch_result is not None:
+            result_value = branch_result
+        current_value = branch_value
+        iterations += 1
+    if iterations >= max_iterations:
+        _record_runtime_error(
+            context,
+            code="workflow.loop_limit",
+            message=f"Workflow while loop in chain '{chain_name}' exceeded iteration limit",
+            scope=chain_name,
+            source="workflow",
+        )
+        return "error", {"error": "Loop iteration limit exceeded"}, current_value
+    return ("ok" if iterations else "partial"), result_value, current_value
+
+
+def _evaluate_workflow_condition(
+    expression: Optional[Any],
+    expression_source: Optional[str],
+    scope: Dict[str, Any],
+    context: Dict[str, Any],
+    chain_name: str,
+) -> bool:
+    if expression is None and not expression_source:
+        return False
+    try:
+        if expression is None:
+            return bool(_evaluate_expression_tree(expression_source or "", scope, context))
+        return bool(_evaluate_expression_tree(expression, scope, context))
+    except Exception as exc:
+        _record_runtime_error(
+            context,
+            code="workflow.condition_failed",
+            message=f"Workflow condition in chain '{chain_name}' failed",
+            scope=chain_name,
+            source="workflow",
+            detail=str(exc),
+        )
+    return False
+
+
+def _resolve_workflow_iterable(
+    node: Dict[str, Any],
+    context: Dict[str, Any],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    chain_name: str,
+) -> List[Any]:
+    source_kind = str(node.get("source_kind") or "expression").lower()
+    if source_kind == "dataset":
+        name = node.get("source_name")
+        dataset_rows = context.get("datasets_data", {}).get(name)
+        if not dataset_rows:
+            _record_runtime_error(
+                context,
+                code="workflow.dataset_missing",
+                message=f"Dataset '{name}' is not available for workflow loop",
+                scope=chain_name,
+                source="workflow",
+            )
+            return []
+        return list(dataset_rows)
+    expr_payload = node.get("source_expression")
+    expr_source = node.get("source_expression_source")
+    value = _evaluate_workflow_expression(
+        expr_payload,
+        expr_source,
+        chain_scope,
+        args,
+        working,
+        context,
+        chain_name,
+    )
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        return list(value.values())
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    if isinstance(value, str):
+        return list(value)
+    try:
+        return list(value)
+    except Exception:
+        return []
+
+
+def _evaluate_workflow_expression(
+    expression: Optional[Any],
+    expression_source: Optional[str],
+    chain_scope: Dict[str, Any],
+    args: Dict[str, Any],
+    working: Any,
+    context: Dict[str, Any],
+    chain_name: str,
+) -> Any:
+    if expression is None and not expression_source:
+        return None
+    scope = _workflow_scope(chain_scope, args, working)
+    try:
+        if expression is None:
+            expr_text = expression_source or ""
+            if not expr_text:
+                return None
+            return _evaluate_expression_tree(expr_text, scope, context)
+        return _evaluate_expression_tree(expression, scope, context)
+    except Exception as exc:
+        _record_runtime_error(
+            context,
+            code="workflow.expression_failed",
+            message=f"Workflow expression in chain '{chain_name}' failed",
+            scope=chain_name,
+            source="workflow",
+            detail=str(exc),
+        )
+    return None
+
+
+def _workflow_scope(chain_scope: Dict[str, Any], args: Dict[str, Any], working: Any) -> Dict[str, Any]:
+    scope = {
+        "input": chain_scope.get("input"),
+        "steps": chain_scope.get("steps", {}),
+        "locals": chain_scope.get("locals", {}),
+        "loop": chain_scope.get("loop", {}),
+        "payload": args,
+        "value": working,
+    }
+    scope.update(chain_scope.get("locals", {}))
+    return scope
 
 
 def _normalize_prompt_inputs(prompt_spec: Dict[str, Any], payload: Any) -> Dict[str, Any]:
@@ -614,13 +1434,23 @@ def call_llm_connector(
 def run_prompt(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
+    *,
+    context: Optional[Dict[str, Any]] = None,
+    memory: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     start_time = time.time()
     allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
     prompt_spec = AI_PROMPTS.get(name)
     model_name = str(prompt_spec.get("model") or "") if prompt_spec else ""
     prompt_text = ""
-    normalized_inputs: Dict[str, Any] = dict(payload or {}) if isinstance(payload, dict) else {}
+    payload_dict = dict(payload or {}) if isinstance(payload, dict) else {}
+    memory_state = _ensure_memory_state(context)
+    read_memory = _extract_memory_names(payload_dict.pop("read_memory", None))
+    write_memory = _extract_memory_names(payload_dict.pop("write_memory", None))
+    memory_payload = dict(memory or {})
+    if not memory_payload and read_memory:
+        memory_payload = _memory_snapshot(memory_state, read_memory)
+    normalized_inputs: Dict[str, Any] = dict(payload_dict) if isinstance(payload, dict) else {}
 
     def _elapsed_ms() -> float:
         return float(round((time.time() - start_time) * 1000.0, 3))
@@ -657,7 +1487,10 @@ def run_prompt(
         metadata = {"elapsed_ms": _elapsed_ms()}
         return _stub_response(f"Prompt '{name}' is not defined", metadata) if allow_stubs else _error_response(f"Prompt '{name}' is not defined", metadata)
 
-    normalized_inputs = _normalize_prompt_inputs(prompt_spec, payload or {})
+    normalized_inputs = _normalize_prompt_inputs(
+        prompt_spec,
+        payload_dict if isinstance(payload, dict) else (payload or {}),
+    )
     validated_inputs, validation_errors = _validate_prompt_inputs(prompt_spec, normalized_inputs)
     if validation_errors:
         metadata = {"elapsed_ms": _elapsed_ms()}
@@ -684,6 +1517,7 @@ def run_prompt(
                 "input": validated_inputs,
                 "vars": validated_inputs,
                 "payload": validated_inputs,
+                "memory": memory_payload,
             },
         )
     except Exception as exc:
@@ -737,6 +1571,14 @@ def run_prompt(
             "result": result_payload,
             "metadata": metadata,
         }
+        if write_memory:
+            _write_memory_entries(
+                memory_state,
+                write_memory,
+                structured_output or result_payload,
+                context=context,
+                source=f"prompt:{name}",
+            )
         if projection_errors:
             response["warnings"] = projection_errors
         return response
@@ -764,13 +1606,18 @@ def run_prompt(
         return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
 
 
-def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def run_chain(
+    name: str,
+    payload: Optional[Dict[str, Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Execute a configured AI chain and return detailed step results."""
 
     start_time = time.time()
     args = dict(payload or {})
     allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
     spec = AI_CHAINS.get(name)
+    runtime_context = context if isinstance(context, dict) else build_context(None)
 
     if not spec:
         response: Dict[str, Any] = {
@@ -786,116 +1633,30 @@ def run_chain(name: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, 
 
     input_key = spec.get("input_key", "input")
     working: Any = args.get(input_key, args)
+    memory_state = _ensure_memory_state(runtime_context)
+    chain_scope: Dict[str, Any] = {
+        "input": working,
+        "steps": {},
+        "locals": {},
+        "loop": {},
+        "counter": 0,
+    }
+    runtime_context["steps"] = chain_scope["steps"]
+    runtime_context.setdefault("chain", {})["steps"] = chain_scope["steps"]
+    runtime_context["payload"] = args
+
     steps_history: List[Dict[str, Any]] = []
-    result_value: Any = None
-    status: str = "partial"
-
-    for index, step in enumerate(spec.get("steps", []), start=1):
-        kind = (step.get("kind") or "").lower()
-        target = step.get("target") or ""
-        options = step.get("options") or {}
-        stop_on_error = bool(step.get("stop_on_error", True))
-
-        entry: Dict[str, Any] = {
-            "step": index,
-            "kind": kind,
-            "name": target,
-            "inputs": None,
-            "output": None,
-            "status": "partial",
-        }
-        steps_history.append(entry)
-
-        if kind == "template":
-            template = AI_TEMPLATES.get(target) or {}
-            prompt = template.get("prompt", "")
-            context = {
-                "input": working,
-                "vars": args,
-                "payload": args,
-            }
-            entry["inputs"] = context
-            try:
-                rendered = _render_template_value(prompt, context)
-                entry["output"] = rendered
-                entry["status"] = "ok"
-                working = rendered
-                result_value = rendered
-                status = "ok"
-            except Exception as exc:  # pragma: no cover
-                entry["output"] = {"error": str(exc)}
-                entry["status"] = "error"
-                status = "error"
-                if stop_on_error:
-                    break
-        elif kind == "connector":
-            connector_payload = dict(args)
-            connector_payload.setdefault("prompt", working)
-            entry["inputs"] = connector_payload
-            response = call_llm_connector(target, connector_payload)
-            entry["output"] = response
-            entry["status"] = response.get("status", "partial")
-            step_status = response.get("status")
-            if step_status == "ok":
-                working = response.get("result")
-                result_value = working
-                status = "ok"
-            elif step_status == "error":
-                status = "error"
-                result_value = response
-                if stop_on_error:
-                    break
-            elif step_status == "stub" and status != "error":
-                result_value = result_value or response
-        elif kind == "prompt":
-            prompt_payload = working if isinstance(working, dict) else working
-            response = run_prompt(target, prompt_payload)
-            entry["inputs"] = response.get("inputs")
-            entry["output"] = response
-            entry["status"] = response.get("status", "partial")
-            step_status = response.get("status")
-            if step_status == "ok":
-                working = response.get("output")
-                result_value = working
-                status = "ok"
-            elif step_status == "error":
-                status = "error"
-                result_value = response
-                if stop_on_error:
-                    break
-            elif step_status == "stub" and status != "error":
-                result_value = result_value or response
-        elif kind == "python":
-            module_name = options.get("module") or target or ""
-            method_name = options.get("method") or "predict"
-            python_args = args
-            provided_args = options.get("arguments")
-            if isinstance(provided_args, dict):
-                merged_args = dict(args)
-                merged_args.update(provided_args)
-                python_args = merged_args
-            entry["inputs"] = python_args
-            response = call_python_model(module_name, method_name, python_args)
-            entry["output"] = response
-            entry["status"] = response.get("status", "partial")
-            step_status = response.get("status")
-            if step_status == "ok":
-                working = response.get("result")
-                result_value = working
-                status = "ok"
-            elif step_status == "error":
-                status = "error"
-                result_value = response
-                if stop_on_error:
-                    break
-            elif step_status == "stub" and status != "error":
-                result_value = result_value or response
-        else:
-            entry["output"] = {"error": f"Unsupported step kind '{kind}'"}
-            entry["status"] = "error"
-            status = "error"
-            if stop_on_error:
-                break
+    status, result_value, working = _execute_workflow_nodes(
+        spec.get("steps", []),
+        context=runtime_context,
+        chain_scope=chain_scope,
+        args=args,
+        working=working,
+        memory_state=memory_state,
+        allow_stubs=allow_stubs,
+        steps_history=steps_history,
+        chain_name=name,
+    )
 
     elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
     if status != "error" and result_value is None:

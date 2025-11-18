@@ -167,6 +167,132 @@ def _collect_runtime_errors(
     return selected
 
 
+_GLOBAL_MEMORY_STORE: Dict[str, List[Dict[str, Any]]] = {}
+
+
+def _build_memory_runtime_state(
+    existing_state: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    definitions = globals().get("AI_MEMORIES", {})
+    state: Dict[str, Dict[str, Any]] = {}
+    for name, spec in definitions.items():
+        scope = str(spec.get("scope") or "session").lower()
+        kind = str(spec.get("kind") or "list").lower()
+        max_items_raw = spec.get("max_items")
+        try:
+            max_items = int(max_items_raw) if max_items_raw is not None else None
+            if max_items is not None and max_items <= 0:
+                max_items = None
+        except Exception:
+            max_items = None
+        config = spec.get("config") if isinstance(spec.get("config"), dict) else {}
+        if scope == "global":
+            entries = _GLOBAL_MEMORY_STORE.setdefault(name, [])
+        else:
+            existing_entries = []
+            if existing_state and name in existing_state:
+                existing_entries = list(existing_state[name].get("entries") or [])
+            entries = existing_entries
+        state[name] = {
+            "scope": scope,
+            "kind": kind,
+            "max_items": max_items,
+            "config": dict(config),
+            "entries": entries,
+        }
+    return state
+
+
+def _ensure_memory_state(context: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(context, dict):
+        return _build_memory_runtime_state()
+    memory_state = context.get("memory_state")
+    if isinstance(memory_state, dict):
+        return memory_state
+    memory_state = _build_memory_runtime_state()
+    context["memory_state"] = memory_state
+    return memory_state
+
+
+def _memory_snapshot(
+    memory_state: Dict[str, Dict[str, Any]],
+    names: Iterable[str],
+) -> Dict[str, List[Dict[str, Any]]]:
+    snapshot: Dict[str, List[Dict[str, Any]]] = {}
+    for name in names:
+        store = memory_state.get(name)
+        if not store:
+            continue
+        snapshot[name] = copy.deepcopy(store.get("entries") or [])
+    return snapshot
+
+
+def _normalize_memory_entry(kind: str, value: Any) -> Dict[str, Any]:
+    timestamp = time.time()
+    if kind == "conversation":
+        if isinstance(value, dict):
+            entry = dict(value)
+        else:
+            entry = {"content": value}
+        entry.setdefault("role", entry.get("role") or "system")
+        entry["timestamp"] = timestamp
+        return entry
+    if kind == "key_value":
+        entry: Dict[str, Any] = {}
+        if isinstance(value, dict):
+            if "key" in value:
+                entry["key"] = value["key"]
+            entry["value"] = value.get("value", value)
+        else:
+            entry["value"] = value
+        entry["timestamp"] = timestamp
+        return entry
+    return {"value": value, "timestamp": timestamp}
+
+
+def _write_memory_entries(
+    memory_state: Dict[str, Dict[str, Any]],
+    names: Iterable[str],
+    value: Any,
+    *,
+    context: Optional[Dict[str, Any]] = None,
+    source: Optional[str] = None,
+) -> None:
+    for name in names:
+        store = memory_state.get(name)
+        if not store:
+            if context is not None:
+                _record_runtime_error(
+                    context,
+                    code="memory.undefined",
+                    message=f"Memory '{name}' is not defined",
+                    scope="memory",
+                    detail=source,
+                )
+            else:
+                logger.warning("Memory '%s' is not defined", name)
+            continue
+        kind = str(store.get("kind") or "list").lower()
+        if kind == "vector":
+            if context is not None:
+                _record_runtime_error(
+                    context,
+                    code="memory.unsupported_kind",
+                    message=f"Memory '{name}' uses kind 'vector' without a configured backend",
+                    scope="memory",
+                    detail=source,
+                )
+            else:
+                logger.error("Memory '%s' uses kind 'vector' without a configured backend", name)
+            raise ValueError(f"Memory '{name}' uses unsupported kind 'vector' without a configured backend")
+        entries = store.setdefault("entries", [])
+        entries.append(_normalize_memory_entry(kind, value))
+        max_items = store.get("max_items")
+        if isinstance(max_items, int) and max_items > 0:
+            while len(entries) > max_items:
+                entries.pop(0)
+
+
 def build_context(page_slug: Optional[str]) -> Dict[str, Any]:
     base = CONTEXT.build(page_slug)
     context: Dict[str, Any] = dict(base)
@@ -187,6 +313,10 @@ def build_context(page_slug: Optional[str]) -> Dict[str, Any]:
     context.setdefault("templates", AI_TEMPLATES)
     context.setdefault("chains", AI_CHAINS)
     context.setdefault("experiments", AI_EXPERIMENTS)
+    memory_state = _ensure_memory_state(context)
+    context.setdefault("memory_state", memory_state)
+    context.setdefault("memory", memory_state)
+    context.setdefault("memory_definitions", AI_MEMORIES)
     context.setdefault("call_python_model", call_python_model)
     context.setdefault("call_llm_connector", call_llm_connector)
     context.setdefault("run_prompt", run_prompt)
@@ -194,7 +324,26 @@ def build_context(page_slug: Optional[str]) -> Dict[str, Any]:
     context.setdefault("evaluate_experiment", evaluate_experiment)
     context.setdefault("predict", predict)
     context.setdefault("datasets", DATASETS)
+    context.setdefault("datasets_data", {})
     context.setdefault("frames", FRAMES)
+    if AI_CONNECTORS:
+        tool_instances: Dict[str, Any] = {}
+        for connector_name, spec in AI_CONNECTORS.items():
+            if not isinstance(spec, dict):
+                continue
+            tool_instances[connector_name] = _instantiate_tool_plugin(connector_name, spec, context)
+        if tool_instances:
+            context.setdefault("tools", {}).update(tool_instances)
+    evaluator_instances: Dict[str, Any] = {}
+    for evaluator_name, spec in EVALUATORS.items():
+        if not isinstance(spec, dict):
+            continue
+        evaluator_instances[evaluator_name] = _instantiate_evaluator_plugin(evaluator_name, spec)
+    if evaluator_instances:
+        context.setdefault("evaluators", {}).update(evaluator_instances)
+    else:
+        context.setdefault("evaluators", {})
+    context.setdefault("guardrails", GUARDRAILS)
     return context
 
 
@@ -266,11 +415,16 @@ def _render_template_value(value: Any, context: Dict[str, Any]) -> Any:
                 parts = [segment for segment in path.split(".") if segment]
                 resolved = _resolve_context_scope(scope, parts, context, "")
                 return "" if resolved is None else str(resolved)
-            value = _resolve_context_path(context.get("vars"), [token], None)
-            if value is not None:
-                return str(value)
-            resolved = _resolve_context_path(context, [token], "")
-            return "" if resolved is None else str(resolved)
+            resolved = _resolve_context_path(context, [token], None)
+            if resolved is not None:
+                return str(resolved)
+            vars_context = context.get("vars") if isinstance(context.get("vars"), dict) else None
+            if vars_context is not None:
+                value = _resolve_context_path(vars_context, [token], None)
+                if value is not None:
+                    return str(value)
+            final_value = _resolve_context_path(context, [token], "")
+            return "" if final_value is None else str(final_value)
         return TEMPLATE_PATTERN.sub(_replace, value)
     if isinstance(value, list):
         return [_render_template_value(item, context) for item in value]
@@ -297,6 +451,77 @@ def register_dataset_transform(
     if not transform_type or handler is None:
         return
     DATASET_TRANSFORMS[transform_type.lower()] = handler
+
+
+_PLUGIN_CATEGORY_ALIASES: Dict[str, str] = {
+    "llm": "llm_provider",
+    "llm_provider": "llm_provider",
+    "vector": "vector_store",
+    "vector_store": "vector_store",
+    "embedding": "embedding_provider",
+    "embedding_provider": "embedding_provider",
+    "graph": "graph_db",
+    "graph_db": "graph_db",
+    "custom": "custom_tool",
+    "custom_tool": "custom_tool",
+    "tool": "custom_tool",
+}
+
+
+def _determine_connector_category(spec: Dict[str, Any]) -> str:
+    raw = spec.get("category") or spec.get("type")
+    key = str(raw or "").strip().lower()
+    if not key:
+        return ""
+    return _PLUGIN_CATEGORY_ALIASES.get(key, key)
+
+
+def _instantiate_tool_plugin(name: str, spec: Dict[str, Any], context: Dict[str, Any]) -> Any:
+    category = _determine_connector_category(spec)
+    provider_raw = spec.get("provider") or (spec.get("config") or {}).get("provider")
+    provider = str(provider_raw or "").strip()
+    if not category or not provider:
+        raise RuntimeError(f"Connector '{name}' is missing a plugin category or provider.")
+    try:
+        plugin_cls = get_plugin(category, provider)
+    except PluginRegistryError as exc:
+        message = f"Connector '{name}' references unknown plugin '{provider}' in category '{category}'."
+        logger.error(message)
+        raise RuntimeError(message) from exc
+    plugin = plugin_cls()
+    config_raw = spec.get("config", {})
+    config_resolved = _resolve_placeholders(config_raw, context)
+    if not isinstance(config_resolved, dict):
+        config_resolved = config_raw if isinstance(config_raw, dict) else {}
+    try:
+        plugin.configure(dict(config_resolved))
+    except Exception as exc:
+        message = f"Failed to configure connector '{name}': {exc}"
+        logger.error(message)
+        raise RuntimeError(message) from exc
+    return plugin
+
+
+def _instantiate_evaluator_plugin(name: str, spec: Dict[str, Any]) -> Any:
+    provider = str(spec.get("provider") or "").strip()
+    if not provider:
+        raise RuntimeError(f"Evaluator '{name}' is missing a provider.")
+    try:
+        plugin_cls = get_plugin(PLUGIN_CATEGORY_EVALUATOR, provider)
+    except PluginRegistryError as exc:
+        message = f"Evaluator '{name}' references unknown plugin '{provider}'."
+        logger.error(message)
+        raise RuntimeError(message) from exc
+    plugin = plugin_cls()
+    config_raw = spec.get("config", {})
+    config_payload = dict(config_raw) if isinstance(config_raw, dict) else {}
+    try:
+        plugin.configure(config_payload)
+    except Exception as exc:
+        message = f"Failed to configure evaluator '{name}': {exc}"
+        logger.error(message)
+        raise RuntimeError(message) from exc
+    return plugin
 
 
 class BreakFlow(Exception):

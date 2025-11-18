@@ -80,8 +80,25 @@ from .models import (
     ModelServingSpec,
     ModelTrainingSpec,
 )
-from .ai import AIModel, Chain, ChainStep, Connector, Prompt, PromptField, Template
+from .ai import (
+    AIModel,
+    Chain,
+    ChainStep,
+    Connector,
+    Memory,
+    Prompt,
+    PromptField,
+    StepEvaluationConfig,
+    Template,
+    WorkflowIfBlock,
+    WorkflowForBlock,
+    WorkflowWhileBlock,
+    WorkflowNode,
+)
+from .modules import ImportedName, Import, ModuleSpec
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant
+from .eval import Evaluator, Metric, Guardrail
+from .program import Module, Program
 from .pages import (
     Action,
     ActionOperation,
@@ -209,16 +226,30 @@ __all__ = [
     "ActionOperationType",
     "Connector",
     "AIModel",
+    "Memory",
     "Template",
     "PromptField",
     "Prompt",
     "ChainStep",
+    "StepEvaluationConfig",
     "Chain",
+    "WorkflowIfBlock",
+    "WorkflowForBlock",
+    "WorkflowWhileBlock",
+    "WorkflowNode",
+    "Import",
+    "ImportedName",
+    "ModuleSpec",
     "UpdateOperation",
     "ToastOperation",
     "GoToPageOperation",
     "Experiment",
     "ExperimentVariant",
+    "Evaluator",
+    "Metric",
+    "Guardrail",
     "ExperimentMetric",
     "CrudResource",
+    "Module",
+    "Program",
 ]

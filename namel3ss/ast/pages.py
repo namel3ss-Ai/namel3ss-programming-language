@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Literal, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Literal, Union, TYPE_CHECKING, Set
 
 from .base import Expression
 
@@ -138,6 +138,7 @@ class ShowForm(Statement):
     on_submit_ops: List['ActionOperationType'] = field(default_factory=list)
     styles: Dict[str, str] = field(default_factory=dict)
     layout: LayoutSpec = field(default_factory=LayoutSpec)
+    effects: Set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -145,6 +146,8 @@ class Action(Statement):
     name: str
     trigger: str
     operations: List['ActionOperationType'] = field(default_factory=list)
+    declared_effect: Optional[str] = None
+    effects: Set[str] = field(default_factory=set)
 
 
 @dataclass

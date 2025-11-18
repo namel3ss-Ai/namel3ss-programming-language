@@ -32,7 +32,7 @@ def _build_sample_app():
         '    when user clicks "Refresh":\n'
         '      show toast "Refreshing"\n'
     )
-    return Parser(source).parse()
+    return Parser(source).parse_app()
 
 
 def test_build_backend_state_encodes_frames() -> None:
@@ -58,7 +58,7 @@ def test_build_backend_state_encodes_frames() -> None:
         '  show text "Hello"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     state = build_backend_state(app)
 
     assert 'UsersFrame' in state.frames
@@ -115,7 +115,7 @@ def test_generate_site_adds_ai_dashboards(tmp_path: Path) -> None:
         '    accuracy goal 0.9\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     generate_site(app, tmp_path)
 
@@ -277,7 +277,7 @@ def test_codegen_wires_chart_insight_reference(tmp_path: Path) -> None:
         '    insight: "revenue_growth"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     backend_dir = tmp_path / 'backend'
     frontend_dir = tmp_path / 'site'
@@ -344,7 +344,7 @@ def test_backend_ai_helpers_return_deterministic_payloads(tmp_path: Path, monkey
         '  show text "Hello"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     backend_dir = tmp_path / 'backend_ai'
     generate_backend(app, backend_dir)
 
@@ -446,7 +446,7 @@ def test_frontend_interpolates_text_variables(tmp_path: Path) -> None:
         'page "Home" at "/home":\n'
         '  show text "Tax is {tax_rate}"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     generate_site(app, tmp_path)
 
@@ -476,7 +476,7 @@ def test_frontend_renders_insight_widgets(tmp_path: Path) -> None:
         '  show text "Hello"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     generate_site(app, tmp_path)
 
     page_html = (tmp_path / 'home.html').read_text(encoding='utf-8')
@@ -504,7 +504,7 @@ def test_generate_backend_emits_insight_routes_and_registries(tmp_path: Path) ->
         'page "Dashboard" at "/":\n'
         '  show table "Summary" from dataset sales_summary\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     generate_backend(app, tmp_path)
 
@@ -574,7 +574,7 @@ def test_cli_train_and_deploy_commands(tmp_path: Path, capsys) -> None:
             '    first_region: regions[0].region\n'
         )
 
-        app = Parser(source).parse()
+        app = Parser(source).parse_app()
         backend_dir = tmp_path / 'backend_insight'
         generate_backend(app, backend_dir)
 
@@ -618,7 +618,7 @@ def test_generate_backend_with_embed_insights_true(tmp_path: Path) -> None:
         'page "Dashboard" at "/":\n'
         '  show chart "Metrics" from dataset metrics\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     generate_backend(app, tmp_path, embed_insights=True)
 
@@ -641,7 +641,7 @@ def test_generate_backend_includes_context_runtime_helpers(tmp_path: Path) -> No
         'page "Dashboard" at "/":\n'
         '  show table "Orders" from dataset orders\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     generate_backend(app, tmp_path)
 
@@ -666,7 +666,7 @@ def test_generated_backend_resolves_env_placeholders(tmp_path: Path, monkeypatch
         '  show text "Welcome {ctx:user.name}! Token {env:NAMEL3SS_ORDERS_TOKEN}"\n'
         '  show table "Orders" from dataset orders\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     backend_dir = tmp_path / 'backend'
     generate_backend(app, backend_dir)
@@ -723,7 +723,7 @@ def test_generated_backend_handles_loop_control_flow(tmp_path: Path, monkeypatch
         '  show text "Final total {vars:seen}"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     backend_dir = tmp_path / 'backend_loops'
     generate_backend(app, backend_dir)
 
@@ -761,7 +761,7 @@ def test_frontend_generates_widget_bootstrap_with_layout(tmp_path: Path) -> None
         '      emphasis: "secondary"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     generate_site(app, tmp_path)
 
     page_html = (tmp_path / 'dashboard.html').read_text(encoding='utf-8')

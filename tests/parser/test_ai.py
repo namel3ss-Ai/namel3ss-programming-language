@@ -1,6 +1,6 @@
 """Parser tests for AI models and prompt declarations."""
 
-from namel3ss.ast import AIModel, Prompt
+from namel3ss.ast import AIModel, Prompt, ChainStep, WorkflowForBlock, WorkflowIfBlock, WorkflowWhileBlock
 from namel3ss.parser import Parser
 
 
@@ -26,7 +26,7 @@ def test_parse_ai_model_and_prompt_blocks() -> None:
         '  show text "ready"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     assert len(app.ai_models) == 1
     model = app.ai_models[0]
@@ -45,3 +45,106 @@ def test_parse_ai_model_and_prompt_blocks() -> None:
     assert prompt.output_fields[0].field_type == "text"
     assert prompt.metadata["tags"] == ["support"]
     assert "Summarize" in prompt.template
+
+
+def test_parse_chain_with_declared_effect() -> None:
+    source = (
+        'app "Chains".\n'
+        '\n'
+        'define template "echo":\n'
+        '  prompt = "{input}"\n'
+        '\n'
+        'define chain "echo_chain" effect pure:\n'
+        '  input -> template echo\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  show text "ready"\n'
+    )
+
+    app = Parser(source).parse_app()
+    assert app.chains[0].declared_effect == "pure"
+
+
+def test_parse_memory_block() -> None:
+    source = (
+        'app "MemoryApp".\n'
+        '\n'
+        'memory "chat_history":\n'
+        '  scope: session\n'
+        '  kind: conversation\n'
+        '  max_items: 25\n'
+        '  metadata:\n'
+        '    retention: short\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  show text "hi"\n'
+    )
+
+    app = Parser(source).parse_app()
+    assert len(app.memories) == 1
+    memory = app.memories[0]
+    assert memory.name == "chat_history"
+    assert memory.scope == "session"
+    assert memory.kind == "conversation"
+    assert memory.max_items == 25
+    assert memory.metadata["retention"] == "short"
+
+
+def test_parse_chain_with_workflow_nodes() -> None:
+    source = (
+        'app "Workflows".\n'
+        '\n'
+        'define chain "flow":\n'
+        '  steps:\n'
+        '    - step "classifier":\n'
+        '        kind: template\n'
+        '        target: classify\n'
+        '        continue_on_error: true\n'
+        '    - if ctx:input == "route":\n'
+        '        then:\n'
+        '          - step "branch_a":\n'
+        '              kind: template\n'
+        '              target: branch_a\n'
+        '        else:\n'
+        '          - step "branch_b":\n'
+        '              kind: template\n'
+        '              target: branch_b\n'
+        '    - for item in ctx:payload.items:\n'
+        '        max_iterations: 5\n'
+        '        - step "loop_step":\n'
+        '            kind: template\n'
+        '            target: loop\n'
+        '    - while value != "done":\n'
+        '        max_iterations: 3\n'
+        '        - step "finisher":\n'
+        '            kind: template\n'
+        '            target: finish\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  show text "ok"\n'
+    )
+
+    app = Parser(source).parse_app()
+    chain = app.chains[0]
+    assert len(chain.steps) == 4
+
+    first = chain.steps[0]
+    assert isinstance(first, ChainStep)
+    assert first.name == "classifier"
+    assert first.stop_on_error is False
+
+    conditional = chain.steps[1]
+    assert isinstance(conditional, WorkflowIfBlock)
+    assert len(conditional.then_steps) == 1
+    assert len(conditional.else_steps) == 1
+
+    loop_block = chain.steps[2]
+    assert isinstance(loop_block, WorkflowForBlock)
+    assert loop_block.loop_var == "item"
+    assert loop_block.max_iterations == 5
+    assert len(loop_block.body) == 1
+
+    while_block = chain.steps[3]
+    assert isinstance(while_block, WorkflowWhileBlock)
+    assert while_block.max_iterations == 3
+    assert len(while_block.body) == 1

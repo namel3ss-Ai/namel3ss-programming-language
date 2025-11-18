@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence
 
 from .codegen import generate_backend, generate_site
-from .parser import Parser, N3SyntaxError
+from .loader import load_program
+from .parser import N3SyntaxError
+from .resolver import ModuleResolutionError, resolve_program
 
 
 @dataclass
@@ -168,15 +170,15 @@ class DevAppSession:
         self._process = subprocess.Popen(command, cwd=self.backend_out, env=env)
 
     def _build(self, *, initial: bool) -> bool:
-        try:
-            source_text = self.source.read_text(encoding="utf-8")
-        except FileNotFoundError:
+        if not self.source.exists():
             with self._lock:
                 self._status.last_build_ok = False
                 self._status.last_error = f"Source file missing: {self.source}"
             return False
         try:
-            app = Parser(source_text).parse()
+            program = load_program(self.source.parent)
+            resolved = resolve_program(program, entry_path=self.source)
+            app = resolved.app
             generate_backend(
                 app,
                 str(self.backend_out),
@@ -192,7 +194,7 @@ class DevAppSession:
             with self._lock:
                 self._status.last_build_ok = True
                 self._status.last_error = None
-        except (N3SyntaxError, Exception) as exc:
+        except (N3SyntaxError, ModuleResolutionError, Exception) as exc:
             message = str(exc)
             if isinstance(exc, N3SyntaxError):
                 message = exc.format_message() if hasattr(exc, "format_message") else str(exc)

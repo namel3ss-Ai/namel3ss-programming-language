@@ -43,7 +43,7 @@ def test_parse_insight_logic_and_outputs() -> None:
         '    top_region: regions[0].name\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert len(app.insights) == 1
     insight = app.insights[0]
     assert insight.name == 'high_revenue_regions'
@@ -96,7 +96,7 @@ def test_parse_insight_with_compute_and_emit_narrative() -> None:
         '    "Revenue changed {delta_percent}% since last month."\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert len(app.insights) == 1
     insight = app.insights[0]
     assert insight.name == 'revenue_growth'
@@ -120,7 +120,7 @@ def test_parse_chart_with_inline_insight_reference() -> None:
         '    insight: "revenue_growth"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert len(app.pages) == 1
     page = app.pages[0]
     chart = next(stmt for stmt in page.statements if isinstance(stmt, ShowChart))

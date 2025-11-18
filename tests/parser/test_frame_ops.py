@@ -34,7 +34,7 @@ def _parse_first_assignment(expression_line: str):
         '\n'
         f'set derived = {expression_line}\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert app.variables, "Expected variable assignments to be parsed"
     return app.variables[0].value
 

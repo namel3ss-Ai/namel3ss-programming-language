@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base import Theme
-from .ai import AIModel, Chain, Connector, Prompt, Template
+from .ai import AIModel, Chain, Connector, Memory, Prompt, Template
 from .experiments import Experiment
 from .datasets import Dataset, RefreshPolicy
 from .frames import Frame
@@ -14,6 +14,7 @@ from .insights import Insight
 from .models import Model
 from .pages import PageStatement, VariableAssignment
 from .crud import CrudResource
+from .eval import Evaluator, Metric, Guardrail
 
 
 @dataclass
@@ -40,10 +41,14 @@ class App:
     connectors: List[Connector] = field(default_factory=list)
     ai_models: List[AIModel] = field(default_factory=list)
     prompts: List[Prompt] = field(default_factory=list)
+    memories: List[Memory] = field(default_factory=list)
     templates: List[Template] = field(default_factory=list)
     chains: List[Chain] = field(default_factory=list)
     experiments: List[Experiment] = field(default_factory=list)
     crud_resources: List[CrudResource] = field(default_factory=list)
+    evaluators: List[Evaluator] = field(default_factory=list)
+    metrics: List[Metric] = field(default_factory=list)
+    guardrails: List[Guardrail] = field(default_factory=list)
 
 
 __all__ = [

@@ -33,7 +33,7 @@ def test_parse_basic_app() -> None:
         '  show text "Welcome"\n'
         '  show table "Users" from table users\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     assert app.name == "Demo"
     assert app.database == "PRIMARY"
@@ -58,7 +58,7 @@ def test_parse_form_with_submit_actions() -> None:
         '    when user clicks "Send":\n'
         '      show toast "Notified"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     form = next(stmt for stmt in app.pages[0].statements if isinstance(stmt, ShowForm))
     assert form.fields[0].name == "name"
@@ -80,7 +80,7 @@ def test_parse_if_block() -> None:
         '    show text "Welcome, admin!"\n'
         '    show text "You have full access"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     assert len(page.statements) == 1
@@ -114,7 +114,7 @@ def test_parse_if_else_block() -> None:
         '  else:\n'
         '    show text "Access denied."\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     if_block = page.statements[0]
@@ -144,7 +144,7 @@ def test_parse_if_with_multiple_statements() -> None:
         '  else:\n'
         '    show text "No data found"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     if_block = page.statements[0]
@@ -174,7 +174,7 @@ def test_parse_for_loop_dataset() -> None:
         '  for order in dataset latest_orders:\n'
         '    show text "{order.id} – {order.total}"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     assert len(page.statements) == 1
@@ -200,7 +200,7 @@ def test_parse_for_loop_table() -> None:
         '    show text "{row.id} – {row.status}"\n'
         '    show text "Total: {row.total}"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     for_loop = page.statements[0]
@@ -225,7 +225,7 @@ def test_parse_show_table_from_frame() -> None:
         '  show table "Top" from frame TopUsers\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     table = next(stmt for stmt in page.statements if isinstance(stmt, ShowTable))
@@ -245,7 +245,7 @@ def test_parse_for_loop_frame() -> None:
         '    show text "{event.event_id}"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     loop = next(stmt for stmt in page.statements if isinstance(stmt, ForLoop))
@@ -271,7 +271,7 @@ def test_parse_ai_operations_in_form() -> None:
         '        text = form.text\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     form = next(stmt for stmt in app.pages[0].statements if isinstance(stmt, ShowForm))
     operations = form.on_submit_ops
@@ -305,13 +305,28 @@ def test_parse_run_prompt_operation() -> None:
         '        ticket = form.ticket\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     action = next(stmt for stmt in app.pages[0].statements if isinstance(stmt, Action))
     operation = action.operations[0]
     assert isinstance(operation, RunPromptOperation)
     assert operation.prompt_name == "summarize_ticket"
     assert "ticket" in operation.arguments
+
+
+def test_parse_action_with_effect_annotation() -> None:
+    source = (
+        'app "Effectful".\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  action "Responder" effect ai:\n'
+        '    when button.click:\n'
+        '      show toast "Clicked"\n'
+    )
+
+    app = Parser(source).parse_app()
+    action = next(stmt for stmt in app.pages[0].statements if isinstance(stmt, Action))
+    assert action.declared_effect == "ai"
 
 
 def test_parse_nested_if_in_for() -> None:
@@ -327,7 +342,7 @@ def test_parse_nested_if_in_for() -> None:
         '    else:\n'
         '      show text "{item.name} is inactive"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     for_loop = page.statements[0]
@@ -363,7 +378,7 @@ def test_parse_mixed_statements() -> None:
         '  for row in table items:\n'
         '    show text "{row.name}"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     page = app.pages[0]
     assert len(page.statements) == 4
@@ -399,7 +414,7 @@ def test_parse_page_reactive_and_predict_statement() -> None:
         '      horizon: 7\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     page = app.pages[0]
 
     assert page.reactive is True
@@ -430,7 +445,7 @@ def test_parse_page_reactive_header_short_form() -> None:
         '  show text "Hi"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     page = app.pages[0]
 
     assert page.route == '/live-dashboard'
@@ -445,7 +460,7 @@ def test_parse_page_reactive_kind_with_explicit_route() -> None:
         '  show text "Hi"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     page = app.pages[0]
 
     assert page.route == '/ops'
@@ -460,7 +475,7 @@ def test_parse_variable_assignment() -> None:
         '  set tax_rate = 0.18\n'
         '  set title = "Dashboard"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     page = app.pages[0]
     assignments = [stmt for stmt in page.statements if isinstance(stmt, VariableAssignment)]
     assert len(assignments) == 2
@@ -495,7 +510,7 @@ def test_parse_chart_layout_metadata() -> None:
         '      emphasis: "primary"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     page = app.pages[0]
     chart = next(stmt for stmt in page.statements if isinstance(stmt, ShowChart))
 

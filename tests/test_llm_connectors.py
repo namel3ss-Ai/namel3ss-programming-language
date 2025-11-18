@@ -48,7 +48,7 @@ def runtime_module(tmp_path, monkeypatch):
         'page "Home" at "/":\n'
         '  show text "Hello"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     backend_dir = tmp_path / "backend_llm"
     generate_backend(app, backend_dir)
 

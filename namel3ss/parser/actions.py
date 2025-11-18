@@ -22,10 +22,13 @@ class ActionParserMixin(DatasetParserMixin):
     """Parsing logic for action declarations inside pages."""
 
     def _parse_action(self, line: str, base_indent: int) -> Action:
-        match = re.match(r'action\s+"([^"]+)"\s*:?$', line.strip())
+        line_no = self.pos
+        stripped_line = line.strip()
+        match = re.match(r'action\s+"([^"]+)"(?:\s+effect\s+([\w\-]+))?\s*:?$', stripped_line, flags=re.IGNORECASE)
         if not match:
             raise self._error("Expected: action \"Name\":", self.pos, line)
         name = match.group(1)
+        declared_effect = self._parse_effect_annotation(match.group(2), line_no, line)
         trigger: Optional[str] = None
         operations: List[ActionOperationType] = []
         while self.pos < len(self.lines):
@@ -61,7 +64,7 @@ class ActionParserMixin(DatasetParserMixin):
                 operations.append(op)
         if trigger is None:
             trigger = ''
-        return Action(name=name, trigger=trigger, operations=operations)
+        return Action(name=name, trigger=trigger, operations=operations, declared_effect=declared_effect)
 
     def _parse_action_operation(self, stripped: str) -> ActionOperationType:
         line = self._advance()

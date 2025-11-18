@@ -31,13 +31,13 @@ async def _execute_action_operation(
         name = operation.get("prompt") or operation.get("name")
         arguments_raw = operation.get("arguments") or {}
         arguments = _resolve_placeholders(arguments_raw, context)
-        payload = run_prompt(name, arguments)
+        payload = run_prompt(name, arguments, context=context)
         result = {"type": "prompt_call", "result": payload}
     elif otype == "chain_run":
         name = operation.get("name")
         inputs_raw = operation.get("inputs") or {}
         inputs = _resolve_placeholders(inputs_raw, context)
-        payload = run_chain(name, inputs)
+        payload = run_chain(name, inputs, context=context)
         result = {"type": "chain_run", "result": payload}
     elif otype == "navigate":
         target_page = operation.get("page_name") or operation.get("page") or operation.get("target")

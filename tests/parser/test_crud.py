@@ -15,7 +15,7 @@ def test_parse_crud_minimal() -> None:
         'enable crud for table orders.\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     assert len(app.crud_resources) == 1
     resource = app.crud_resources[0]
@@ -50,7 +50,7 @@ def test_parse_crud_with_options_block() -> None:
         '    label: Orders Portal\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     assert len(app.crud_resources) == 1
     resource = app.crud_resources[0]
@@ -76,4 +76,4 @@ def test_parse_crud_invalid_identifier() -> None:
     )
 
     with pytest.raises(N3SyntaxError):
-        Parser(source).parse()
+        Parser(source).parse_app()

@@ -17,7 +17,7 @@ def _build_secure_backend(tmp_path: Path, source: str | None = None) -> Path:
         'page "Home" at "/":\n'
         '  show text "Hello"\n'
     )
-    app = Parser(sample_source).parse()
+    app = Parser(sample_source).parse_app()
     backend_dir = tmp_path / "secure_backend"
     generate_backend(app, backend_dir)
     return backend_dir

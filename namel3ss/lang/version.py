@@ -1,0 +1,6 @@
+"""Language specification version metadata for Namel3ss."""
+
+LANGUAGE_VERSION = "0.1.0"
+SUPPORTED_LANGUAGE_VERSIONS = [LANGUAGE_VERSION]
+
+__all__ = ["LANGUAGE_VERSION", "SUPPORTED_LANGUAGE_VERSIONS"]

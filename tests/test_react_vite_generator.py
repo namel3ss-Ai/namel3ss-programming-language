@@ -57,7 +57,7 @@ def _build_sample_app() -> App:
         '    on submit:\n'
         '      show toast "Saved"\n'
     )
-    return Parser(source).parse()
+    return Parser(source).parse_app()
 
 
 def test_react_vite_generates_pending_indicators(tmp_path) -> None:

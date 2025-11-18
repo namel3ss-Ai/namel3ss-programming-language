@@ -6,6 +6,7 @@ import re
 import tokenize
 from tokenize import TokenInfo
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union, Literal as TypingLiteral
+from pathlib import Path
 
 _CONTEXT_SENTINEL = "__n3_ctx__"
 _WHITESPACE_TOKENS: Set[int] = {
@@ -24,6 +25,7 @@ _LIKE_TOKEN_MAP: Dict[str, str] = {
     "like": "<<",
     "ilike": ">>",
 }
+_EFFECT_KEYWORDS: Set[str] = {"pure", "ai"}
 
 from namel3ss.ast import (
     AttributeRef,
@@ -35,11 +37,13 @@ from namel3ss.ast import (
     LayoutMeta,
     LayoutSpec,
     Literal,
+    Import,
     NameRef,
     PaginationPolicy,
     StreamingPolicy,
     UnaryOp,
     WindowFrame,
+    WindowOp,
 )
 
 
@@ -55,11 +59,21 @@ class N3SyntaxError(Exception):
 class ParserBase:
     """Shared parser state and helper utilities."""
 
-    def __init__(self, source: str):
+    def __init__(self, source: str, *, module_name: Optional[str] = None, path: str = ""):
         self.lines: List[str] = source.splitlines()
         self.pos: int = 0
         self.app = None
         self._loop_depth: int = 0
+        self._module_name_override: Optional[str] = module_name
+        self.module_name: Optional[str] = module_name
+        self.module_imports: List[Import] = []
+        self._import_aliases: Dict[str, str] = {}
+        self._named_imports: Dict[str, str] = {}
+        self._module_declared = False
+        self._explicit_app_declared = False
+        self.language_version: Optional[str] = None
+        self._allow_implicit_app = module_name is not None
+        self.source_path: str = path
 
     # ------------------------------------------------------------------
     # Cursor helpers
@@ -95,6 +109,15 @@ class ParserBase:
         elif line is None:
             line = ''
         return N3SyntaxError(message, line_no, line)
+
+    def _default_app_name(self) -> str:
+        if self.module_name:
+            return self.module_name.split('.')[-1]
+        if self.source_path:
+            stem = Path(self.source_path).stem
+            if stem:
+                return stem
+        return "app"
 
     # ------------------------------------------------------------------
     # Scalar coercion helpers
@@ -215,7 +238,7 @@ class ParserBase:
             if not stripped or stripped.startswith('#'):
                 self._advance()
                 continue
-            if indent <= parent_indent:
+            if indent <= parent_indent or stripped.startswith('-'):
                 break
             match = re.match(r'([\w\.\s]+):\s*(.*)$', stripped)
             if not match:
@@ -230,6 +253,32 @@ class ParserBase:
                 value = self._coerce_scalar(remainder)
                 config[key] = value
         return config
+
+    def _coerce_options_dict(self, raw: Any) -> Dict[str, Any]:
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return {key: self._transform_config(value) for key, value in raw.items()}
+        return {"value": self._transform_config(raw)}
+
+    def _strip_quotes(self, value: str) -> str:
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+            return value[1:-1]
+        return value
+
+    def _parse_effect_annotation(
+        self,
+        token: Optional[str],
+        line_no: int,
+        line: str,
+    ) -> Optional[str]:
+        if token is None:
+            return None
+        value = token.strip().lower()
+        if value not in _EFFECT_KEYWORDS:
+            allowed = ", ".join(sorted(_EFFECT_KEYWORDS))
+            raise self._error(f"Unknown effect '{token}'. Allowed effects: {allowed}", line_no, line)
+        return value
 
     # ------------------------------------------------------------------
     # Windowing & layout helpers

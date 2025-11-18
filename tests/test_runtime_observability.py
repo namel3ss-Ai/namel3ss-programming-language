@@ -17,7 +17,7 @@ def _mini_app():
         'page "Home" at "/":\n'
         '  show text "hello"\n'
     )
-    return Parser(source).parse()
+    return Parser(source).parse_app()
 
 
 def test_request_id_helpers(tmp_path: Path, monkeypatch) -> None:

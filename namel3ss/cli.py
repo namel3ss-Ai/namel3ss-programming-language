@@ -25,8 +25,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from . import __version__
+from .lang import LANGUAGE_VERSION as LANGUAGE_SPEC_VERSION
 from .ast import App, Chain, Experiment
-from .parser import Parser, N3SyntaxError
+from .parser import N3SyntaxError
+from .loader import load_program
 from .codegen import generate_backend, generate_site
 from .ml import get_default_model_registry
 from .utils import iter_dependency_reports
@@ -42,6 +44,7 @@ from .config import (
 )
 from .devserver import DevAppSession, summarize_sessions
 from .plugins import PluginManager
+from .resolver import ModuleResolutionError, resolve_program
 
 ENV_ALIAS_MAP = {
     "production": ".env.prod",
@@ -295,17 +298,25 @@ def _plural(word: str, count: int) -> str:
     return word if count == 1 else f"{word}s"
 
 
-def _load_cli_app(source_path: Path) -> App:
-    if not source_path.exists():
-        print(f"Error: file not found: {source_path}", file=sys.stderr)
-        sys.exit(1)
+def _program_root_for(source_path: Path) -> Path:
+    return source_path.parent if source_path.is_file() else source_path
 
-    source = source_path.read_text(encoding='utf-8')
+
+def _resolve_program(source_path: Path):
+    if not source_path.exists():
+        raise FileNotFoundError(f"File not found: {source_path}")
+    project_root = _program_root_for(source_path)
+    program = load_program(project_root)
+    return resolve_program(program, entry_path=source_path)
+
+
+def _load_cli_app(source_path: Path) -> App:
     try:
-        return Parser(source).parse()
-    except N3SyntaxError as exc:
+        resolved = _resolve_program(source_path)
+    except (FileNotFoundError, ModuleResolutionError, N3SyntaxError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
+    return resolved.app
 
 
 def _slugify_model_name(value: str) -> str:
@@ -519,11 +530,8 @@ def prepare_backend(
     FileNotFoundError
         If the source file does not exist
     """
-    if not source_path.exists():
-        raise FileNotFoundError(f"File not found: {source_path}")
-    
-    source = source_path.read_text(encoding='utf-8')
-    app: App = Parser(source).parse()
+    resolved = _resolve_program(source_path)
+    app = resolved.app
     
     # Generate backend scaffold
     generate_backend(
@@ -651,7 +659,7 @@ def run_dev_server(
             # Restore original directory
             os.chdir(original_dir)
             
-    except N3SyntaxError as exc:
+    except (N3SyntaxError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except FileNotFoundError as exc:
@@ -713,13 +721,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     env_entries = merge_env(env_entries, getattr(args, "env", []))
     _apply_env_overrides(env_entries)
 
-    source = source_path.read_text(encoding="utf-8")
-
-    try:
-        app: App = Parser(source).parse()
-    except N3SyntaxError as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
+    app = _load_cli_app(source_path)
 
     if args.print_ast:
         def default(o):
@@ -1187,7 +1189,7 @@ def main(argv: Optional[list] = None) -> None:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {__version__}"
+        version=f"%(prog)s {__version__} (language {LANGUAGE_SPEC_VERSION})"
     )
 
     parser.add_argument(

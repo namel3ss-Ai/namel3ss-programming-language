@@ -29,7 +29,7 @@ def test_parse_context_references_in_options() -> None:
         '  show text "Welcome {ctx:user.name}!"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
 
     dataset = app.datasets[0]
     headers = dataset.connector.options['headers']
@@ -63,7 +63,7 @@ def test_parse_dataset_computed_column_and_filter_expression() -> None:
         'page "Dummy" at "/d":\n'
         '  show text "ok"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     dataset = next(d for d in app.datasets if d.name == 'orders_enriched')
 
     computed = next(op for op in dataset.operations if isinstance(op, ComputedColumnOp))
@@ -105,7 +105,7 @@ def test_parse_dataset_with_connectors_and_runtime_policies() -> None:
         '  order by: region\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     dataset = app.datasets[0]
 
     assert dataset.source_type == 'sql'
@@ -158,7 +158,7 @@ def test_parse_dataset_with_inline_connector_options() -> None:
         '  show table "Orders" from dataset orders\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     dataset = app.datasets[0]
 
     assert dataset.connector is not None
@@ -213,7 +213,7 @@ def test_parse_dataset_with_schema_transforms_and_metadata() -> None:
         '  show text "ok"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     dataset = app.datasets[0]
 
     assert dataset.transforms and dataset.transforms[0].name == 'normalize_total'

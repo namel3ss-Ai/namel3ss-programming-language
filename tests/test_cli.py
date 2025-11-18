@@ -12,6 +12,7 @@ import pytest
 
 from namel3ss.cli import (
     CLIContext,
+    _load_cli_app,
     _apply_env_overrides,
     _format_error_detail,
     _traceback_excerpt,
@@ -28,6 +29,7 @@ from namel3ss.cli import (
     prepare_backend,
     run_dev_server,
 )
+from namel3ss.lang import LANGUAGE_VERSION
 from namel3ss.config import load_workspace_config
 from namel3ss.plugins import PluginManager
 from namel3ss.parser import N3SyntaxError
@@ -176,6 +178,31 @@ def test_cmd_build_with_backend(temp_n3_file, tmp_path, capsys, cli_context):
     assert "datasets available" in captured.out
     assert "connectors registered" in captured.out
     assert "insights routed" in captured.out
+
+
+def test_load_cli_app_merges_support_modules(tmp_path):
+    main_file = tmp_path / "app" / "main.n3"
+    support_file = tmp_path / "app" / "shared" / "pages.n3"
+    main_file.parent.mkdir(parents=True, exist_ok=True)
+    main_file.write_text(
+        'module demo.main\n'
+        'import demo.main.shared.pages\n'
+        'app "Demo".\n'
+        'page "Home" at "/":\n'
+        '  show text "home"\n',
+        encoding="utf-8",
+    )
+    support_file.parent.mkdir(parents=True, exist_ok=True)
+    support_file.write_text(
+        'module demo.main.shared.pages\n'
+        'page "Docs" at "/docs":\n'
+        '  show text "docs"\n',
+        encoding="utf-8",
+    )
+
+    app = _load_cli_app(main_file)
+    page_names = [page.name for page in app.pages]
+    assert sorted(page_names) == ["Docs", "Home"]
 
 
 def test_cmd_build_backend_only(temp_n3_file, tmp_path, capsys, cli_context):
@@ -358,6 +385,14 @@ def test_cmd_build_syntax_error(invalid_n3_file, tmp_path, capsys, cli_context):
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Syntax error" in captured.err
+
+
+def test_cli_reports_language_version(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert LANGUAGE_VERSION in output
 
 
 @mock.patch('namel3ss.cli.check_uvicorn_available', return_value=True)

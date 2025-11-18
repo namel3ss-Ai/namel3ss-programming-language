@@ -41,7 +41,7 @@ def _write_backend(tmp_path: Path) -> Path:
         'page "Dashboard" at "/dashboard":\n'
         '  show text "Hello"\n'
     )
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     backend_dir = tmp_path / "backend_stream"
     generate_backend(app, backend_dir, enable_realtime=True)
     return backend_dir

@@ -41,7 +41,7 @@ def test_parse_frame_with_columns_relationships_and_samples() -> None:
         '  show text "hi"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     assert len(app.frames) == 1
     frame = app.frames[0]
     assert frame.name == 'OrdersFrame'
@@ -89,7 +89,7 @@ def test_parse_frame_with_inline_options_and_defaults() -> None:
         '  show text "metrics"\n'
     )
 
-    app = Parser(source).parse()
+    app = Parser(source).parse_app()
     frame = app.frames[0]
     assert frame.options['caching']['ttl'] == 30
     assert frame.options['caching']['strategy'] == 'memory'

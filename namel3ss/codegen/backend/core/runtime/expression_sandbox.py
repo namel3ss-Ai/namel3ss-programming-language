@@ -452,7 +452,10 @@ class _ExpressionSpecEvaluator:
             if callable(resolver):
                 value = resolver(path)
             else:
-                current: Any = self._context.get("ctx") if isinstance(self._context, dict) else self._context
+                if isinstance(self._context, dict):
+                    current: Any = self._context.get("ctx", self._context)
+                else:
+                    current = self._context
                 value = current
                 for segment in path:
                     if isinstance(value, dict):

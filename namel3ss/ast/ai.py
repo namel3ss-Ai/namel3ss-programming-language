@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+from .base import Expression
+from dataclasses import dataclass, field
 
 
 @dataclass
 class Connector:
     name: str
     connector_type: str
+    provider: str = ""
     config: Dict[str, Any] = field(default_factory=dict)
     description: Optional[str] = None
+
+    @property
+    def category(self) -> str:
+        return self.connector_type
 
 
 @dataclass
@@ -30,6 +38,18 @@ class AIModel:
 class Template:
     name: str
     prompt: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Memory:
+    """Declarative memory store definition."""
+
+    name: str
+    scope: str = "session"
+    kind: str = "list"
+    max_items: Optional[int] = None
+    config: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -58,6 +78,13 @@ class Prompt:
     parameters: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     description: Optional[str] = None
+    effects: Set[str] = field(default_factory=set)
+
+
+@dataclass
+class StepEvaluationConfig:
+    evaluators: List[str] = field(default_factory=list)
+    guardrail: Optional[str] = None
 
 
 @dataclass
@@ -65,22 +92,60 @@ class ChainStep:
     kind: str
     target: str
     options: Dict[str, Any] = field(default_factory=dict)
+    name: Optional[str] = None
+    stop_on_error: bool = True
+    evaluation: Optional[StepEvaluationConfig] = None
+
+
+@dataclass
+class WorkflowIfBlock:
+    condition: Expression
+    then_steps: List["WorkflowNode"] = field(default_factory=list)
+    elif_steps: List[Tuple[Expression, List["WorkflowNode"]]] = field(default_factory=list)
+    else_steps: List["WorkflowNode"] = field(default_factory=list)
+
+
+@dataclass
+class WorkflowForBlock:
+    loop_var: str
+    source_kind: str = "expression"
+    source_name: Optional[str] = None
+    source_expression: Optional[Expression] = None
+    body: List["WorkflowNode"] = field(default_factory=list)
+    max_iterations: Optional[int] = None
+
+
+@dataclass
+class WorkflowWhileBlock:
+    condition: Expression
+    body: List["WorkflowNode"] = field(default_factory=list)
+    max_iterations: Optional[int] = None
 
 
 @dataclass
 class Chain:
     name: str
     input_key: str = "input"
-    steps: List[ChainStep] = field(default_factory=list)
+    steps: List["WorkflowNode"] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    declared_effect: Optional[str] = None
+    effects: Set[str] = field(default_factory=set)
+
+
+WorkflowNode = Union[ChainStep, WorkflowIfBlock, WorkflowForBlock, WorkflowWhileBlock]
 
 
 __all__ = [
     "Connector",
     "AIModel",
     "Template",
+    "Memory",
     "PromptField",
     "Prompt",
     "ChainStep",
+    "StepEvaluationConfig",
+    "WorkflowIfBlock",
+    "WorkflowForBlock",
+    "WorkflowWhileBlock",
     "Chain",
 ]

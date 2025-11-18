@@ -588,6 +588,78 @@ supply every required field, and the runtime enforces the schema when the model
 executes. The resulting `run_prompt()` output is a structured object matching
 the declared schema, so follow-on actions or Python hooks can consume typed
 values without building custom parsers.
+
+### Memory objects
+
+Declare first-class memory stores to capture chat history or intermediate
+results directly in `.n3`:
+
+```text
+memory "chat_history":
+  scope: session        # session, page, conversation, or global
+  kind: conversation    # list, key_value, conversation, vector
+  max_items: 50
+
+memory "scratchpad":
+  scope: page
+  kind: list
+  max_items: 10
+```
+
+Chains reference memory via inline options on each step:
+
+```text
+define chain "support_flow":
+  input -> template summarise read_memory chat_history write_memory chat_history
+```
+
+At runtime the generated helpers expose a structured `memory_state` inside the
+per-request context (`context["memory"]`). Each memory definition tracks its
+scope, kind, and retention policy, enforces `max_items`, and provides clear
+errors when a chain references an undefined store. `global` scopes share a
+process-wide buffer, while `session`/`page` scopes remain isolated to the
+current request. Vector/long-term memories are surfaced as extension hooks:
+declaring `kind: vector` requires wiring a backend and the runtime fails fast
+with a descriptive error if none is configured.
+
+### Workflow primitives
+
+Chains can declare ordered steps, branching logic, and loops inside a `steps:`
+block.  Each step is named and recorded in the runtime context so later
+expressions can reference `ctx:steps.<name>` or loop variables.
+
+```text
+define chain "SupportFlow":
+  steps:
+    - step "classify":
+        kind: prompt
+        target: ClassifyTicket
+    - if ctx:steps.classify.result.intent == "escalate":
+        then:
+          - step "notify":
+              kind: python
+              module: ops.alerting
+              arguments:
+                ticket_id: ctx:payload.ticket_id
+        else:
+          - step "auto_reply":
+              kind: template
+              target: AutoReply
+    - for item in ctx:payload.attachments:
+        max_iterations: 10
+        - step "store":
+            kind: python
+            module: storage.attachments
+            arguments:
+              attachment: item
+```
+
+Conditions and loop sources reuse the standard expression parser so context
+values, literals, and binary operators are all available.  `for`/`while`
+constructs accept `max_iterations` guards and expose the current item via
+`ctx:loop`.  Workflow execution uses the same observability plumbing as the
+original pipeline runner—step histories include nested workflow nodes, and
+step results are stored on `ctx:steps` for downstream routing.
 ```
 
 Generated backends now ship with `AI_CONNECTORS`, `AI_TEMPLATES`, `AI_CHAINS`,
