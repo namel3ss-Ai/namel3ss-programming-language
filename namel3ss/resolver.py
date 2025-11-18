@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 
 from namel3ss.ast import App, Module, Program, ChainStep, WorkflowIfBlock, WorkflowForBlock, WorkflowWhileBlock
 from namel3ss.lang import LANGUAGE_VERSION, SUPPORTED_LANGUAGE_VERSIONS
+from namel3ss.types import check_app
 from namel3ss.ast.modules import Import
+from namel3ss.errors import N3ResolutionError
 
 
 EXPORT_ATTRS: Tuple[str, ...] = (
@@ -30,6 +32,8 @@ EXPORT_ATTRS: Tuple[str, ...] = (
     "evaluators",
     "metrics",
     "guardrails",
+    "training_jobs",
+    "tuning_jobs",
 )
 
 EXPORT_LABELS: Dict[str, str] = {
@@ -50,10 +54,12 @@ EXPORT_LABELS: Dict[str, str] = {
     "evaluators": "evaluator",
     "metrics": "metric",
     "guardrails": "guardrail",
+    "training_jobs": "training job",
+    "tuning_jobs": "tuning job",
 }
 
 
-class ModuleResolutionError(RuntimeError):
+class ModuleResolutionError(N3ResolutionError):
     """Raised when module/import resolution fails."""
 
 
@@ -137,7 +143,9 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
         resolved.imports = _resolve_imports(resolved, resolved_modules)
 
     _validate_evaluations(resolved_modules)
+    _validate_training_artifacts(resolved_modules)
     merged_app = _merge_apps(resolved_modules, root)
+    check_app(merged_app, path=root.module.path)
     return ResolvedProgram(modules=resolved_modules, root=root, app=merged_app, language_version=language_version)
 
 
@@ -286,6 +294,88 @@ def _validate_evaluations(resolved_modules: Dict[str, ResolvedModule]) -> None:
                     raise ModuleResolutionError(
                         f"Chain '{chain.name}' step '{step.name or step.target}' references unknown guardrail '{evaluation.guardrail}'"
                     )
+
+
+def _validate_training_artifacts(resolved_modules: Dict[str, ResolvedModule]) -> None:
+    model_owners = _collect_global_symbols(resolved_modules, "models")
+    ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
+    dataset_owners = _collect_global_symbols(resolved_modules, "datasets")
+    frame_owners = _collect_global_symbols(resolved_modules, "frames")
+    metric_owners = _collect_global_symbols(resolved_modules, "metrics")
+    training_owners = _collect_global_symbols(resolved_modules, "training_jobs")
+    tuning_owners = _collect_global_symbols(resolved_modules, "tuning_jobs")
+
+    def _has_model(name: str) -> bool:
+        return name in model_owners or name in ai_model_owners
+
+    def _has_dataset(name: str) -> bool:
+        return name in dataset_owners or name in frame_owners
+
+    for module_name, resolved in resolved_modules.items():
+        training_jobs = resolved.exports.exports_by_kind.get("training_jobs", {})
+        for job in training_jobs.values():
+            if job.model and not _has_model(job.model):
+                raise ModuleResolutionError(
+                    f"Training job '{job.name}' in module '{module_name}' references unknown model '{job.model}'"
+                )
+            if job.dataset and not _has_dataset(job.dataset):
+                raise ModuleResolutionError(
+                    f"Training job '{job.name}' in module '{module_name}' references unknown dataset or frame '{job.dataset}'"
+                )
+            for metric_name in job.metrics or []:
+                if metric_name not in metric_owners:
+                    raise ModuleResolutionError(
+                        f"Training job '{job.name}' in module '{module_name}' references unknown metric '{metric_name}'"
+                    )
+
+        tuning_jobs = resolved.exports.exports_by_kind.get("tuning_jobs", {})
+        for job in tuning_jobs.values():
+            if job.training_job and job.training_job not in training_owners:
+                raise ModuleResolutionError(
+                    f"Tuning job '{job.name}' in module '{module_name}' references unknown training job '{job.training_job}'"
+                )
+            if job.objective_metric and job.objective_metric not in metric_owners:
+                raise ModuleResolutionError(
+                    f"Tuning job '{job.name}' in module '{module_name}' references unknown metric '{job.objective_metric}'"
+                )
+
+        experiments = resolved.exports.exports_by_kind.get("experiments", {})
+        for experiment in experiments.values():
+            for training_name in experiment.training_jobs:
+                if training_name not in training_owners:
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' in module '{module_name}' references unknown training job '{training_name}'"
+                    )
+            for tuning_name in experiment.tuning_jobs:
+                if tuning_name not in tuning_owners:
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' in module '{module_name}' references unknown tuning job '{tuning_name}'"
+                    )
+            for dataset_name in experiment.eval_datasets:
+                if not _has_dataset(dataset_name):
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' in module '{module_name}' references unknown evaluation dataset '{dataset_name}'"
+                    )
+            for metric_name in experiment.eval_metrics:
+                if metric_name not in metric_owners:
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' in module '{module_name}' references unknown evaluation metric '{metric_name}'"
+                    )
+            comparison = getattr(experiment, "comparison", None)
+            if comparison:
+                if comparison.baseline_model and not _has_model(comparison.baseline_model):
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' baseline model '{comparison.baseline_model}' is not defined"
+                    )
+                if comparison.best_of and comparison.best_of not in tuning_owners and comparison.best_of not in training_owners:
+                    raise ModuleResolutionError(
+                        f"Experiment '{experiment.name}' comparison references unknown job '{comparison.best_of}'"
+                    )
+                for challenger in comparison.challengers:
+                    if challenger not in tuning_owners and challenger not in training_owners:
+                        raise ModuleResolutionError(
+                            f"Experiment '{experiment.name}' comparison challenger '{challenger}' is not defined"
+                        )
 
 
 def _iter_chain_steps(nodes: List[Any]) -> List[ChainStep]:

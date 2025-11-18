@@ -24,16 +24,30 @@ class ExperimentMetric:
 
 
 @dataclass
+class ExperimentComparison:
+    baseline_model: Optional[str] = None
+    best_of: Optional[str] = None
+    challengers: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Experiment:
     name: str
     description: Optional[str] = None
     variants: List[ExperimentVariant] = field(default_factory=list)
     metrics: List[ExperimentMetric] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    training_jobs: List[str] = field(default_factory=list)
+    tuning_jobs: List[str] = field(default_factory=list)
+    eval_datasets: List[str] = field(default_factory=list)
+    eval_metrics: List[str] = field(default_factory=list)
+    comparison: Optional[ExperimentComparison] = None
 
 
 __all__ = [
     "Experiment",
     "ExperimentVariant",
     "ExperimentMetric",
+    "ExperimentComparison",
 ]

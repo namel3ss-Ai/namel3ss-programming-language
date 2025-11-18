@@ -45,16 +45,7 @@ from namel3ss.ast import (
     WindowFrame,
     WindowOp,
 )
-
-
-class N3SyntaxError(Exception):
-    """Custom exception raised when encountering invalid syntax."""
-
-    def __init__(self, message: str, line_no: int, line: str):
-        super().__init__(f"Syntax error on line {line_no}: {message}\n{line}")
-        self.line_no = line_no
-        self.line = line
-
+from namel3ss.errors import N3SyntaxError
 
 class ParserBase:
     """Shared parser state and helper utilities."""
@@ -107,8 +98,15 @@ class ParserBase:
         if line is None and 0 <= self.pos - 1 < len(self.lines):
             line = self.lines[self.pos - 1]
         elif line is None:
-            line = ''
-        return N3SyntaxError(message, line_no, line)
+            line = ""
+        line_hint = line.strip() or None
+        return N3SyntaxError(
+            f"Syntax error: {message}",
+            path=self.source_path or None,
+            line=line_no,
+            code="SYNTAX_ERROR",
+            hint=line_hint,
+        )
 
     def _default_app_name(self) -> str:
         if self.module_name:
@@ -253,6 +251,47 @@ class ParserBase:
                 value = self._coerce_scalar(remainder)
                 config[key] = value
         return config
+
+    def _parse_string_list(self, parent_indent: int) -> List[str]:
+        """Parse a bullet list (``- entry``) into a list of strings."""
+
+        values: List[str] = []
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            indent = self._indent(line)
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= parent_indent:
+                break
+            if not stripped.startswith('-'):
+                break
+            entry = stripped[1:].strip()
+            self._advance()
+            if not entry:
+                raise self._error("List entry cannot be empty", self.pos, line)
+            scalar = self._coerce_scalar(entry)
+            text = self._strip_quotes(str(scalar)) if scalar is not None else ""
+            if not text:
+                raise self._error("List entry cannot be blank", self.pos, line)
+            values.append(text)
+        return values
+
+    def _peek_next_content_line(self) -> Optional[str]:
+        """Return the next non-empty, non-comment line without advancing."""
+
+        idx = self.pos
+        while idx < len(self.lines):
+            line = self.lines[idx]
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                idx += 1
+                continue
+            return line
+        return None
 
     def _coerce_options_dict(self, raw: Any) -> Dict[str, Any]:
         if raw is None:

@@ -9,12 +9,28 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence
+from typing import BaseException, Callable, Iterable, List, Optional, Sequence
 
 from .codegen import generate_backend, generate_site
 from .loader import load_program
 from .parser import N3SyntaxError
 from .resolver import ModuleResolutionError, resolve_program
+
+
+def _format_dev_error(exc: BaseException) -> str:
+    formatter = getattr(exc, "format", None)
+    if callable(formatter):
+        try:
+            return formatter()
+        except Exception:
+            pass
+    legacy = getattr(exc, "format_message", None)
+    if callable(legacy):
+        try:
+            return legacy()
+        except Exception:
+            pass
+    return str(exc)
 
 
 @dataclass
@@ -195,9 +211,7 @@ class DevAppSession:
                 self._status.last_build_ok = True
                 self._status.last_error = None
         except (N3SyntaxError, ModuleResolutionError, Exception) as exc:
-            message = str(exc)
-            if isinstance(exc, N3SyntaxError):
-                message = exc.format_message() if hasattr(exc, "format_message") else str(exc)
+            message = _format_dev_error(exc)
             with self._lock:
                 self._status.last_build_ok = False
                 self._status.last_error = message

@@ -4,7 +4,7 @@ import re
 import shlex
 from typing import Any, Dict, List
 
-from namel3ss.ast import Experiment, ExperimentMetric, ExperimentVariant
+from namel3ss.ast import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
 
 from .base import ParserBase
 
@@ -43,6 +43,26 @@ class ExperimentParserMixin(ParserBase):
                 metadata = self._parse_kv_block(block_indent)
                 experiment.metadata.update(metadata)
                 continue
+            if lowered.startswith('training_jobs:'):
+                block_indent = indent
+                self._advance()
+                experiment.training_jobs.extend(self._parse_string_list(block_indent))
+                continue
+            if lowered.startswith('tuning_jobs:'):
+                block_indent = indent
+                self._advance()
+                experiment.tuning_jobs.extend(self._parse_string_list(block_indent))
+                continue
+            if lowered.startswith('eval_datasets:') or lowered.startswith('evaluation_datasets:'):
+                block_indent = indent
+                self._advance()
+                experiment.eval_datasets.extend(self._parse_string_list(block_indent))
+                continue
+            if lowered.startswith('eval_metrics:') or lowered.startswith('evaluation_metrics:'):
+                block_indent = indent
+                self._advance()
+                experiment.eval_metrics.extend(self._parse_string_list(block_indent))
+                continue
             if lowered.startswith('variants:'):
                 block_indent = indent
                 self._advance()
@@ -51,7 +71,17 @@ class ExperimentParserMixin(ParserBase):
             if lowered.startswith('metrics:'):
                 block_indent = indent
                 self._advance()
-                experiment.metrics.extend(self._parse_experiment_metrics(block_indent))
+                lookahead = self._peek_next_content_line()
+                if lookahead and self._indent(lookahead) > block_indent and lookahead.strip().startswith('-'):
+                    experiment.eval_metrics.extend(self._parse_string_list(block_indent))
+                else:
+                    experiment.metrics.extend(self._parse_experiment_metrics(block_indent))
+                continue
+            if lowered.startswith('compare:') or lowered.startswith('comparison:'):
+                block_indent = indent
+                self._advance()
+                data = self._parse_kv_block(block_indent)
+                experiment.comparison = self._parse_experiment_comparison(data)
                 continue
             # Treat unknown directives inside experiment as metadata entries using nested blocks
             key_match = re.match(r'([\w\s]+):\s*(.*)$', stripped)
@@ -152,6 +182,27 @@ class ExperimentParserMixin(ParserBase):
                 metric.metadata.update(block)
             metrics.append(metric)
         return metrics
+
+    def _parse_experiment_comparison(self, data: Dict[str, Any]) -> ExperimentComparison:
+        baseline = data.pop('baseline_model', data.pop('baseline', None))
+        best_of = data.pop('best_of', data.pop('select', None))
+        challengers = data.pop('challengers', data.pop('compare', []))
+        if isinstance(challengers, str):
+            challengers_list = [self._strip_quotes(challengers)]
+        elif isinstance(challengers, list):
+            challengers_list = [self._strip_quotes(str(item)) for item in challengers if item is not None]
+        else:
+            challengers_list = []
+        metadata = {key: self._coerce_scalar(value) for key, value in data.items()}
+        baseline_value = self._strip_quotes(str(baseline)) if baseline is not None else None
+        best_of_value = self._strip_quotes(str(best_of)) if best_of is not None else None
+        challengers_value = [entry for entry in challengers_list if entry]
+        return ExperimentComparison(
+            baseline_model=baseline_value or None,
+            best_of=best_of_value or None,
+            challengers=challengers_value,
+            metadata=metadata,
+        )
 
     def _parse_metric_line(self, text: str, line_no: int, raw_line: str) -> ExperimentMetric:
         tokens = text.split()

@@ -22,10 +22,11 @@ from namel3ss.ast import (
     NameRef,
     UnaryOp,
 )
+from namel3ss.errors import N3FrameOpError
 from namel3ss.types import N3FrameType
 
 
-class FrameTypeError(ValueError):
+class FrameTypeError(N3FrameOpError):
     """Raised when a frame expression fails static validation."""
 
 

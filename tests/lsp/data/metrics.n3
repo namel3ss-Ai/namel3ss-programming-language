@@ -1,0 +1,7 @@
+app "Analytics".
+
+dataset "customers" from table crm.customers:
+  filter by: active == true
+
+page "Customers" at "/customers":
+  show text "Customers"

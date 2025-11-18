@@ -1,0 +1,4 @@
+app "Broken App".
+
+page "Oops" at "/oops":
+show text "Missing indent"

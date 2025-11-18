@@ -24,12 +24,13 @@ from namel3ss.ast import (
     WorkflowNode,
     WorkflowWhileBlock,
 )
+from namel3ss.errors import N3EffectError
 
 AI_EFFECT = "ai"
 ALLOWED_DECLARED_EFFECTS: Set[str] = {"pure", AI_EFFECT}
 
 
-class EffectError(ValueError):
+class EffectError(N3EffectError):
     """Raised when an effect constraint is violated."""
 
 

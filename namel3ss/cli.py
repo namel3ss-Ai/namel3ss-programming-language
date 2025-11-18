@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, BaseException
 
 from . import __version__
 from .lang import LANGUAGE_VERSION as LANGUAGE_SPEC_VERSION
@@ -32,6 +32,7 @@ from .loader import load_program
 from .codegen import generate_backend, generate_site
 from .ml import get_default_model_registry
 from .utils import iter_dependency_reports
+from .types import N3TypeError
 from .config import (
     AppConfig,
     WorkspaceConfig,
@@ -77,6 +78,16 @@ def _cli_context(args: argparse.Namespace) -> CLIContext:
     if ctx is None:
         raise RuntimeError("CLIContext was not initialised before command execution.")
     return ctx
+
+
+def _format_cli_error(exc: BaseException) -> str:
+    formatter = getattr(exc, "format", None)
+    if callable(formatter):
+        try:
+            return formatter()
+        except Exception:
+            pass
+    return str(exc)
 
 
 def _match_app_config(config: WorkspaceConfig, source_path: Path) -> Optional[AppConfig]:
@@ -313,8 +324,8 @@ def _resolve_program(source_path: Path):
 def _load_cli_app(source_path: Path) -> App:
     try:
         resolved = _resolve_program(source_path)
-    except (FileNotFoundError, ModuleResolutionError, N3SyntaxError) as exc:
-        print(str(exc), file=sys.stderr)
+    except (FileNotFoundError, ModuleResolutionError, N3SyntaxError, N3TypeError) as exc:
+        print(_format_cli_error(exc), file=sys.stderr)
         sys.exit(1)
     return resolved.app
 
@@ -527,6 +538,8 @@ def prepare_backend(
     ------
     N3SyntaxError
         If the source file contains syntax errors
+    N3TypeError
+        If static type checking fails
     FileNotFoundError
         If the source file does not exist
     """
@@ -659,8 +672,8 @@ def run_dev_server(
             # Restore original directory
             os.chdir(original_dir)
             
-    except (N3SyntaxError, RuntimeError) as exc:
-        print(str(exc), file=sys.stderr)
+    except (N3SyntaxError, N3TypeError, RuntimeError) as exc:
+        print(_format_cli_error(exc), file=sys.stderr)
         sys.exit(1)
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -972,6 +985,31 @@ def cmd_typecheck(args: argparse.Namespace) -> None:
     command = override or ctx.config.tools.typecheck
     ctx.plugin_manager.emit_workspace(task="typecheck", command=command, args=args)
     _invoke_tool(command, "typecheck")
+
+
+def cmd_lsp(args: argparse.Namespace) -> None:
+    """Launch the Namel3ss language server over stdio."""
+
+    _cli_context(args)
+    try:
+        from namel3ss.lsp.server import create_server
+    except ImportError as exc:  # pragma: no cover - import guard
+        print(
+            "pygls is not installed. Please install the 'namel3ss[dev]' extras.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+    server = create_server()
+    pid = os.getpid()
+    print(f"Starting Namel3ss language server (pid={pid})", file=sys.stderr)
+    try:
+        server.start_io()
+    except KeyboardInterrupt:
+        print("Language server interrupted by user.", file=sys.stderr)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        print(f"Language server stopped unexpectedly: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
@@ -1406,6 +1444,12 @@ def main(argv: Optional[list] = None) -> None:
         help='Override the configured typecheck command'
     )
     typecheck_parser.set_defaults(func=cmd_typecheck)
+
+    lsp_parser = subparsers.add_parser(
+        'lsp',
+        help='Start the Namel3ss language server for editor integrations'
+    )
+    lsp_parser.set_defaults(func=cmd_lsp)
     
     args = parser.parse_args(argv)
 

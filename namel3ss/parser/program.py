@@ -34,7 +34,7 @@ _IMPORT_NAME_RE = re.compile(rf"^({_IDENTIFIER})(?:\s+as\s+({_IDENTIFIER}))?\s*$
 _LANG_VERSION_RE = re.compile(r'^language_version\s+"([0-9]+\.[0-9]+\.[0-9]+)"\s*\.?$', flags=re.IGNORECASE)
 
 
-class ProgramParserMixin(
+class LegacyProgramParser(
     FrameParserMixin,
     PageParserMixin,
     CrudParserMixin,
@@ -44,7 +44,7 @@ class ProgramParserMixin(
     AIParserMixin,
     EvaluationParserMixin,
 ):
-    """Top-level entry point for parsing programs."""
+    """Compatibility parser that retains the legacy line-by-line behavior."""
 
     def parse(self) -> Module:
         imports_allowed = True
@@ -163,6 +163,16 @@ class ProgramParserMixin(
                 self._ensure_app_initialized(line_no, line)
                 chain = self._parse_chain(line, line_no, indent)
                 self.app.chains.append(chain)
+            elif stripped.startswith('training '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                training_job = self._parse_training_job(line, line_no, indent)
+                self.app.training_jobs.append(training_job)
+            elif stripped.startswith('tuning '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                tuning_job = self._parse_tuning_job(line, line_no, indent)
+                self.app.tuning_jobs.append(tuning_job)
             elif stripped.startswith('experiment '):
                 imports_allowed = False
                 self._ensure_app_initialized(line_no, line)
@@ -304,3 +314,6 @@ class ProgramParserMixin(
             self.app.theme = Theme(values=theme_values)
         else:
             self.app.theme.values.update(theme_values)
+
+
+__all__ = ["LegacyProgramParser"]

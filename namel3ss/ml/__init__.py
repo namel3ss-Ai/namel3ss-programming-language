@@ -15,6 +15,17 @@ from .hooks import (
     train_churn_classifier,
     train_image_classifier,
 )
+from .training import (
+    LocalTrainingBackend,
+    RayTrainingBackend,
+    TrainingBackend,
+    TrainingPlan,
+    TrainingRunResult,
+    register_training_backend,
+    registered_training_backends,
+    resolve_training_backend,
+    resolve_training_plan,
+)
 
 __all__ = [
     "DEFAULT_MODEL_REGISTRY",
@@ -30,4 +41,13 @@ __all__ = [
     "run_image_classifier",
     "train_churn_classifier",
     "train_image_classifier",
+    "TrainingBackend",
+    "TrainingPlan",
+    "TrainingRunResult",
+    "LocalTrainingBackend",
+    "RayTrainingBackend",
+    "register_training_backend",
+    "registered_training_backends",
+    "resolve_training_backend",
+    "resolve_training_plan",
 ]

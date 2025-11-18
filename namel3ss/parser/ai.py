@@ -20,6 +20,11 @@ from namel3ss.ast import (
     WorkflowIfBlock,
     WorkflowNode,
     WorkflowWhileBlock,
+    TrainingJob,
+    TrainingComputeSpec,
+    TuningJob,
+    HyperparamSpec,
+    EarlyStoppingSpec,
 )
 
 from .base import ParserBase
@@ -79,6 +84,9 @@ _AI_MODEL_BLOCK_HINTS = (
     "headers",
     "params",
 )
+
+_TRAINING_HEADER = re.compile(r'^training\s+"([^"]+)"\s*:?', re.IGNORECASE)
+_TUNING_HEADER = re.compile(r'^tuning\s+"([^"]+)"\s*:?', re.IGNORECASE)
 
 
 class AIParserMixin(ParserBase):
@@ -660,6 +668,236 @@ class AIParserMixin(ParserBase):
                 break
             return self._parse_kv_block(parent_indent)
         return {}
+
+    def _parse_training_job(self, line: str, line_no: int, base_indent: int) -> TrainingJob:
+        match = _TRAINING_HEADER.match(line.strip())
+        if not match:
+            raise self._error('Expected: training "Name":', line_no, line)
+        name = match.group(1)
+        model_name: Optional[str] = None
+        dataset_name: Optional[str] = None
+        objective: Optional[str] = None
+        hyperparameters: Dict[str, Any] = {}
+        metrics: List[str] = []
+        metadata: Dict[str, Any] = {}
+        compute_spec = TrainingComputeSpec()
+        output_registry: Optional[str] = None
+        description: Optional[str] = None
+
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            lowered = stripped.lower()
+            if lowered.startswith('hyperparameters:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                hyperparameters = self._transform_config(block)
+                continue
+            if lowered.startswith('compute:'):
+                self._advance()
+                compute_spec = self._parse_training_compute_block(indent)
+                continue
+            if lowered.startswith('metrics:'):
+                self._advance()
+                metrics.extend(self._parse_string_list(indent))
+                continue
+            if lowered.startswith('metadata:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                metadata.update(self._transform_config(block))
+                continue
+            assign = re.match(r'([\w\.\- ]+)\s*:\s*(.*)$', stripped)
+            if not assign:
+                raise self._error("Invalid entry inside training block", self.pos + 1, nxt)
+            key = assign.group(1).strip().lower()
+            remainder = assign.group(2)
+            self._advance()
+            if remainder:
+                value = self._coerce_scalar(remainder)
+            else:
+                value = self._parse_kv_block(indent)
+            if key == 'model':
+                model_name = self._strip_quotes(self._stringify_value(value))
+            elif key == 'dataset':
+                dataset_name = self._strip_quotes(self._stringify_value(value))
+            elif key == 'objective':
+                objective = self._strip_quotes(self._stringify_value(value))
+            elif key in {'output_registry', 'registry', 'output'}:
+                output_registry = self._strip_quotes(self._stringify_value(value))
+            elif key == 'description':
+                description = self._stringify_value(value)
+            else:
+                metadata[key] = self._transform_config(value)
+
+        if not model_name:
+            raise self._error("Training job must define 'model:'", line_no, line)
+        if not dataset_name:
+            raise self._error("Training job must define 'dataset:'", line_no, line)
+        if not objective:
+            raise self._error("Training job must define 'objective:'", line_no, line)
+
+        return TrainingJob(
+            name=name,
+            model=model_name,
+            dataset=dataset_name,
+            objective=objective,
+            hyperparameters=hyperparameters,
+            compute=compute_spec,
+            output_registry=output_registry,
+            metrics=metrics,
+            description=description,
+            metadata=metadata,
+        )
+
+    def _parse_training_compute_block(self, parent_indent: int) -> TrainingComputeSpec:
+        config = self._parse_kv_block(parent_indent)
+        backend_raw = config.pop('backend', config.pop('target', 'local'))
+        queue_raw = config.pop('queue', None)
+        resources_raw = config.pop('resources', {})
+        metadata_raw = config.pop('metadata', {})
+        backend = self._strip_quotes(self._stringify_value(backend_raw)) or 'local'
+        queue = self._strip_quotes(self._stringify_value(queue_raw)) if queue_raw is not None else None
+        resources = self._coerce_options_dict(resources_raw)
+        metadata = self._coerce_options_dict(metadata_raw)
+        if config:
+            metadata.update({key: self._transform_config(val) for key, val in config.items()})
+        return TrainingComputeSpec(backend=backend, resources=resources, queue=queue, metadata=metadata)
+
+    def _parse_tuning_job(self, line: str, line_no: int, base_indent: int) -> TuningJob:
+        match = _TUNING_HEADER.match(line.strip())
+        if not match:
+            raise self._error('Expected: tuning "Name":', line_no, line)
+        name = match.group(1)
+        training_job_name: Optional[str] = None
+        strategy = "grid"
+        max_trials = 1
+        parallel_trials = 1
+        objective_metric = "loss"
+        search_space_specs: Dict[str, HyperparamSpec] = {}
+        early_stopping: Optional[EarlyStoppingSpec] = None
+        metadata: Dict[str, Any] = {}
+
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            lowered = stripped.lower()
+            if lowered.startswith('search_space:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                search_space_specs = self._build_hyperparam_specs(block)
+                continue
+            if lowered.startswith('early_stopping:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                early_stopping = self._build_early_stopping_spec(block)
+                continue
+            if lowered.startswith('metadata:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                metadata.update(self._transform_config(block))
+                continue
+            assign = re.match(r'([\w\.\- ]+)\s*:\s*(.*)$', stripped)
+            if not assign:
+                raise self._error("Invalid entry inside tuning block", self.pos + 1, nxt)
+            key = assign.group(1).strip().lower()
+            remainder = assign.group(2)
+            self._advance()
+            value = self._coerce_scalar(remainder) if remainder else None
+            if key == 'training_job':
+                training_job_name = self._strip_quotes(self._stringify_value(value))
+            elif key == 'strategy':
+                strategy = self._strip_quotes(self._stringify_value(value)) or strategy
+            elif key == 'max_trials':
+                max_trials = self._coerce_int(value) or max_trials
+            elif key == 'parallel_trials':
+                parallel_trials = self._coerce_int(value) or parallel_trials
+            elif key in {'objective_metric', 'metric'}:
+                objective_metric = self._strip_quotes(self._stringify_value(value)) or objective_metric
+            else:
+                metadata[key] = self._transform_config(value)
+
+        if not training_job_name:
+            raise self._error("Tuning job must reference 'training_job:'", line_no, line)
+        if not search_space_specs:
+            raise self._error("Tuning job must define a non-empty 'search_space:' block", line_no, line)
+
+        return TuningJob(
+            name=name,
+            training_job=training_job_name,
+            search_space=search_space_specs,
+            strategy=strategy,
+            max_trials=max_trials,
+            parallel_trials=parallel_trials,
+            early_stopping=early_stopping,
+            objective_metric=objective_metric,
+            metadata=metadata,
+        )
+
+    def _build_hyperparam_specs(self, block: Dict[str, Any]) -> Dict[str, HyperparamSpec]:
+        specs: Dict[str, HyperparamSpec] = {}
+        for name, entry in (block or {}).items():
+            if isinstance(entry, dict):
+                spec_data = dict(entry)
+            else:
+                spec_data = {"values": entry}
+            param_type = str(spec_data.pop('type', spec_data.pop('kind', 'categorical')) or 'categorical')
+            min_value = self._to_float(spec_data.pop('min', spec_data.pop('low', None)))
+            max_value = self._to_float(spec_data.pop('max', spec_data.pop('high', None)))
+            step_value = self._to_float(spec_data.pop('step', None))
+            values_entry = spec_data.pop('values', spec_data.pop('choices', None))
+            if values_entry is None and isinstance(entry, list):
+                values_entry = entry
+            if values_entry is not None and not isinstance(values_entry, list):
+                values_entry = [values_entry]
+            log_value = spec_data.pop('log', spec_data.pop('log_scale', False))
+            metadata = {key: self._transform_config(val) for key, val in spec_data.items()}
+            specs[name] = HyperparamSpec(
+                type=param_type,
+                min=min_value,
+                max=max_value,
+                values=values_entry,
+                log=bool(log_value),
+                step=step_value,
+                metadata=metadata,
+            )
+        return specs
+
+    def _build_early_stopping_spec(self, block: Dict[str, Any]) -> EarlyStoppingSpec:
+        metric_name = self._strip_quotes(self._stringify_value(block.get('metric')))
+        patience_value = self._coerce_int(block.get('patience')) or 0
+        min_delta_value = self._to_float(block.get('min_delta')) or 0.0
+        mode_value = self._strip_quotes(self._stringify_value(block.get('mode'))) or 'min'
+        metadata = {key: self._transform_config(val) for key, val in block.items() if key not in {'metric', 'patience', 'min_delta', 'mode'}}
+        return EarlyStoppingSpec(metric=metric_name, patience=patience_value, min_delta=min_delta_value, mode=mode_value, metadata=metadata)
+
+    def _to_float(self, value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
 
     def _split_memory_names(self, raw: str) -> List[str]:
         if not raw:

@@ -6,7 +6,16 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base import Theme
-from .ai import AIModel, Chain, Connector, Memory, Prompt, Template
+from .ai import (
+    AIModel,
+    Chain,
+    Connector,
+    Memory,
+    Prompt,
+    Template,
+    TrainingJob,
+    TuningJob,
+)
 from .experiments import Experiment
 from .datasets import Dataset, RefreshPolicy
 from .frames import Frame
@@ -49,6 +58,8 @@ class App:
     evaluators: List[Evaluator] = field(default_factory=list)
     metrics: List[Metric] = field(default_factory=list)
     guardrails: List[Guardrail] = field(default_factory=list)
+    training_jobs: List[TrainingJob] = field(default_factory=list)
+    tuning_jobs: List[TuningJob] = field(default_factory=list)
 
 
 __all__ = [

@@ -470,6 +470,14 @@ backend automatically.
 Namel3ss now scaffolds deterministic ML/DL plumbing so the generated
 projects are ready to host real models when you are:
 
+- **Training backends** – Declarative `training` blocks feed into
+  `namel3ss.ml.training`, which normalises a `TrainingPlan` and executes it via
+  local or Ray backends (auto-selected from the compute spec).  Plans inherit
+  hyperparameters, resource hints, metadata, and dataset references so results
+  can be piped into experiments, registries, or future CLI commands.
+
+
+
   representative sklearn and PyTorch entries.  Extend it freely or wire it to
   your own model catalogue.
   traditional ML and deep learning flows, using runtime-discovered model

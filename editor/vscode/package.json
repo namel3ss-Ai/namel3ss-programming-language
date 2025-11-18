@@ -1,0 +1,48 @@
+{
+  "name": "namel3ss-language-support",
+  "displayName": "Namel3ss Language Support",
+  "description": "Language client integration for the Namel3ss (.n3) language.",
+  "publisher": "namel3ss",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "namel3ss",
+        "aliases": [
+          "Namel3ss",
+          "namel3ss"
+        ],
+        "extensions": [
+          ".n3"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "namel3ss",
+        "scopeName": "source.namel3ss",
+        "path": "./syntaxes/namel3ss.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "namel3ss.restartLanguageServer",
+        "title": "Restart Namel3ss Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "lint": "echo 'No lint configured'"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

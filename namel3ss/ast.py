@@ -17,8 +17,27 @@ from .ast.base import (  # noqa: E402
     Theme,
     UnaryOp,
 )
-from .ast.ai import AIModel, Chain, ChainStep, Connector, Memory, Prompt, PromptField, Template  # noqa: E402
-from .ast.experiments import Experiment, ExperimentMetric, ExperimentVariant  # noqa: E402
+from .ast.ai import (  # noqa: E402
+    AIModel,
+    Chain,
+    ChainStep,
+    Connector,
+    Memory,
+    Prompt,
+    PromptField,
+    Template,
+    TrainingComputeSpec,
+    TrainingJob,
+    HyperparamSpec,
+    EarlyStoppingSpec,
+    TuningJob,
+)
+from .ast.experiments import (  # noqa: E402
+    Experiment,
+    ExperimentMetric,
+    ExperimentVariant,
+    ExperimentComparison,
+)
 from .ast.crud import CrudResource  # noqa: E402
 from .ast.datasets import (  # noqa: E402
     AggregateOp,
@@ -184,8 +203,14 @@ __all__ = [
     "Prompt",
     "Chain",
     "ChainStep",
+    "TrainingComputeSpec",
+    "TrainingJob",
+    "HyperparamSpec",
+    "EarlyStoppingSpec",
+    "TuningJob",
     "Experiment",
     "ExperimentVariant",
     "ExperimentMetric",
+    "ExperimentComparison",
     "CrudResource",
 ]
