@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -65,6 +66,25 @@ def cli_context(tmp_path):
     manager.load()
     config = load_workspace_config(tmp_path)
     return CLIContext(workspace_root=tmp_path, config=config, plugin_manager=manager)
+
+
+def _make_train_args(tmp_path: Path, **overrides):
+    args = mock.Mock()
+    args.file = str(tmp_path / "train_app.n3")
+    args.list = False
+    args.backends = False
+    args.plan = False
+    args.history = False
+    args.history_limit = 5
+    args.job = None
+    args.payload = None
+    args.payload_file = None
+    args.overrides = None
+    args.overrides_file = None
+    args.json = False
+    for key, value in overrides.items():
+        setattr(args, key, value)
+    return args
 
 
 def test_format_error_detail_truncates_long_messages():
@@ -596,17 +616,52 @@ def test_main_legacy_invocation(temp_n3_file, tmp_path, capsys):
     assert "Static site generated" in captured.out
 
 
-def test_cmd_train_without_trainer_returns_error(temp_n3_file, capsys, monkeypatch):
-    args = mock.Mock()
-    args.file = str(temp_n3_file)
-    args.model = "demo_model"
+def test_cmd_train_lists_jobs(monkeypatch, capsys, tmp_path):
+    args = _make_train_args(tmp_path, list=True)
+    runtime = SimpleNamespace(list_training_jobs=lambda: ["baseline"])
 
-    with mock.patch("namel3ss.cli._resolve_model_spec", return_value={"framework": "custom", "metadata": {}}):
-        cmd_train(args)
+    monkeypatch.setattr("namel3ss.cli._load_cli_app", lambda path: mock.Mock())
+    monkeypatch.setattr("namel3ss.cli._load_runtime_module", lambda app, cache_key: runtime)
 
-    captured = capsys.readouterr().out.strip()
-    payload = json.loads(captured)
-    assert payload["error"] == "trainer_not_configured"
+    cmd_train(args)
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["jobs"] == ["baseline"]
+
+
+def test_cmd_train_runs_training_job(monkeypatch, capsys, tmp_path):
+    args = _make_train_args(tmp_path, job="baseline")
+    runtime = SimpleNamespace(
+        list_training_jobs=lambda: ["baseline"],
+        run_training_job=lambda name, payload, overrides: {
+            "status": "ok",
+            "job": name,
+            "backend": "local",
+        },
+    )
+
+    monkeypatch.setattr("namel3ss.cli._load_cli_app", lambda path: mock.Mock())
+    monkeypatch.setattr("namel3ss.cli._load_runtime_module", lambda app, cache_key: runtime)
+
+    cmd_train(args)
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["status"] == "ok"
+    assert payload["job"] == "baseline"
+    assert payload["backend"] == "local"
+
+
+def test_cmd_train_errors_when_job_missing(monkeypatch, capsys, tmp_path):
+    args = _make_train_args(tmp_path, job="missing")
+    runtime = SimpleNamespace(list_training_jobs=lambda: ["baseline"])
+
+    monkeypatch.setattr("namel3ss.cli._load_cli_app", lambda path: mock.Mock())
+    monkeypatch.setattr("namel3ss.cli._load_runtime_module", lambda app, cache_key: runtime)
+
+    cmd_train(args)
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["error"] == "training_job_not_found"
 def test_cmd_deploy_without_deployer_returns_error(temp_n3_file, capsys, monkeypatch):
     args = mock.Mock()
     args.file = str(temp_n3_file)

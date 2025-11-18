@@ -1,6 +1,14 @@
-"""Parser tests for AI models and prompt declarations."""
+"""Parser tests for AI models, prompts, and training blocks."""
 
-from namel3ss.ast import AIModel, Prompt, ChainStep, WorkflowForBlock, WorkflowIfBlock, WorkflowWhileBlock
+from namel3ss.ast import (
+    AIModel,
+    Prompt,
+    TrainingJob,
+    ChainStep,
+    WorkflowForBlock,
+    WorkflowIfBlock,
+    WorkflowWhileBlock,
+)
 from namel3ss.parser import Parser
 
 
@@ -148,3 +156,46 @@ def test_parse_chain_with_workflow_nodes() -> None:
     assert isinstance(while_block, WorkflowWhileBlock)
     assert while_block.max_iterations == 3
     assert len(while_block.body) == 1
+
+
+def test_parse_training_job_block() -> None:
+    source = (
+        'app "Trainer".\n'
+        '\n'
+        'dataset "training_data" from table training_table.\n'
+        '\n'
+        'training "baseline":\n'
+        '  model: "image_classifier"\n'
+        '  dataset: "training_data"\n'
+        '  objective: "minimize_loss"\n'
+        '  hyperparameters:\n'
+        '    epochs: 10\n'
+        '    learning_rate: 0.01\n'
+        '  compute:\n'
+        '    backend: "vertex-ai"\n'
+        '    resources:\n'
+        '      accelerator: "a100"\n'
+        '  metadata:\n'
+        '    owner: "ml-team"\n'
+        '  metrics:\n'
+        '    - accuracy\n'
+        '\n'
+        'page "Home" at "/":\n'
+        '  show text "ok"\n'
+    )
+
+    app = Parser(source).parse_app()
+
+    assert len(app.training_jobs) == 1
+    job = app.training_jobs[0]
+    assert isinstance(job, TrainingJob)
+    assert job.name == "baseline"
+    assert job.model == "image_classifier"
+    assert job.dataset == "training_data"
+    assert job.objective == "minimize_loss"
+    assert job.hyperparameters["epochs"] == 10
+    assert job.hyperparameters["learning_rate"] == 0.01
+    assert job.compute.backend == "vertex-ai"
+    assert job.compute.resources["accelerator"] == "a100"
+    assert job.metadata["owner"] == "ml-team"
+    assert job.metrics == ["accuracy"]

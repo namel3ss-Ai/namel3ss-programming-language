@@ -46,6 +46,7 @@ from .core.routers import (
     _render_models_router_module,
     _render_page_endpoint,
     _render_pages_router_module,
+    _render_training_router_module,
     _render_routers_package,
 )
 from .core.runtime import _page_to_dict, _render_page_function, _render_runtime_module
@@ -72,6 +73,7 @@ __all__ = [
     "_render_insights_router_module",
     "_render_models_router_module",
     "_render_experiments_router_module",
+    "_render_training_router_module",
     "_render_pages_router_module",
     "_render_app_module",
     "_render_runtime_module",

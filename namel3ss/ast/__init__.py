@@ -85,18 +85,23 @@ from .ai import (
     Chain,
     ChainStep,
     Connector,
+    EarlyStoppingSpec,
+    HyperparamSpec,
     Memory,
     Prompt,
     PromptField,
     StepEvaluationConfig,
     Template,
+    TrainingComputeSpec,
+    TrainingJob,
+    TuningJob,
     WorkflowIfBlock,
     WorkflowForBlock,
     WorkflowWhileBlock,
     WorkflowNode,
 )
 from .modules import ImportedName, Import, ModuleSpec
-from .experiments import Experiment, ExperimentMetric, ExperimentVariant
+from .experiments import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
 from .eval import Evaluator, Metric, Guardrail
 from .program import Module, Program
 from .pages import (
@@ -232,6 +237,11 @@ __all__ = [
     "Prompt",
     "ChainStep",
     "StepEvaluationConfig",
+    "TrainingComputeSpec",
+    "TrainingJob",
+    "HyperparamSpec",
+    "EarlyStoppingSpec",
+    "TuningJob",
     "Chain",
     "WorkflowIfBlock",
     "WorkflowForBlock",
@@ -245,6 +255,7 @@ __all__ = [
     "GoToPageOperation",
     "Experiment",
     "ExperimentVariant",
+    "ExperimentComparison",
     "Evaluator",
     "Metric",
     "Guardrail",

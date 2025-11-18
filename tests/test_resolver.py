@@ -95,3 +95,37 @@ def test_resolver_validates_imported_symbols(tmp_path: Path) -> None:
     program = load_program(tmp_path)
     with pytest.raises(ModuleResolutionError):
         resolve_program(program, entry_path=root)
+
+
+def test_resolver_rejects_unknown_training_job_reference(tmp_path: Path) -> None:
+    root = tmp_path / "app.n3"
+    _write(
+        root,
+        'module training.app\n'
+        '\n'
+        'app "Trainer".\n'
+        '\n'
+        'dataset "training_data" from table training_table.\n'
+        '\n'
+        'model "image_classifier" using openai:\n'
+        '  name: "gpt-4o-mini"\n'
+        '\n'
+        'training "baseline":\n'
+        '  model: "image_classifier"\n'
+        '  dataset: "training_data"\n'
+        '  objective: "maximize_accuracy"\n'
+        '\n'
+        'tuning "grid":\n'
+        '  training_job: "missing"\n'
+        '  search_space:\n'
+        '    learning_rate:\n'
+        '      type: float\n'
+        '      min: 0.001\n'
+        '      max: 0.01\n'
+    )
+
+    program = load_program(tmp_path)
+    with pytest.raises(ModuleResolutionError) as excinfo:
+        resolve_program(program, entry_path=root)
+
+    assert "unknown training job" in str(excinfo.value)

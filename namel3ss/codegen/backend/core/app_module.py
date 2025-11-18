@@ -206,6 +206,10 @@ run_chain = runtime.run_chain
 run_prompt = runtime.run_prompt
 evaluate_experiment = runtime.evaluate_experiment
 run_experiment = runtime.run_experiment
+run_training_job = runtime.run_training_job
+resolve_training_job_plan = runtime.resolve_training_job_plan
+list_training_jobs = runtime.list_training_jobs
+available_training_backends = runtime.available_training_backends
 DATASETS = runtime.DATASETS
 INSIGHTS = runtime.INSIGHTS
 CONTEXT = runtime.CONTEXT
@@ -223,6 +227,10 @@ __all__ = [
     "run_prompt",
     "evaluate_experiment",
     "run_experiment",
+    "run_training_job",
+    "resolve_training_job_plan",
+    "list_training_jobs",
+    "available_training_backends",
     "DATASETS",
     "INSIGHTS",
     "CONTEXT",

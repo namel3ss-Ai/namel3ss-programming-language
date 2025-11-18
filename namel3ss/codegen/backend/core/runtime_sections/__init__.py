@@ -20,6 +20,7 @@ from .security import SECURITY_SECTION
 from .pubsub import PUBSUB_SECTION
 from .streams import STREAMS_SECTION
 from .observability import OBSERVABILITY_SECTION
+from .training import TRAINING_SECTION
 
 __all__ = [
     "ACTIONS_SECTION",
@@ -33,6 +34,7 @@ __all__ = [
     "INSIGHTS_SECTION",
     "LLM_SECTION",
     "MODELS_SECTION",
+    "TRAINING_SECTION",
     "PREDICTION_SECTION",
     "REGISTRY_SECTION",
     "RENDERING_SECTION",

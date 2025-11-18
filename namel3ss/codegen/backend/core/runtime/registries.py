@@ -29,6 +29,8 @@ def render_registries_block(
         _assign_literal("AI_TEMPLATES", "Dict[str, Dict[str, Any]]", state.templates),
         _assign_literal("AI_CHAINS", "Dict[str, Dict[str, Any]]", state.chains),
         _assign_literal("AI_EXPERIMENTS", "Dict[str, Dict[str, Any]]", state.experiments),
+        _assign_literal("TRAINING_JOBS", "Dict[str, Dict[str, Any]]", state.training_jobs),
+        _assign_literal("TUNING_JOBS", "Dict[str, Dict[str, Any]]", state.tuning_jobs),
         _assign_literal("INSIGHTS", "Dict[str, Dict[str, Any]]", state.insights),
         _assign_literal("CRUD_RESOURCES", "Dict[str, Dict[str, Any]]", state.crud_resources),
         _assign_literal("EVALUATORS", "Dict[str, Dict[str, Any]]", state.evaluators),
@@ -55,6 +57,7 @@ def render_registries_block(
         f"REALTIME_ENABLED: bool = {'True' if enable_realtime else 'False'}",
         "CONNECTOR_DRIVERS: Dict[str, Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[List[Dict[str, Any]]]]] = {}",
         "DATASET_TRANSFORMS: Dict[str, Callable[[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]], List[Dict[str, Any]]]] = {}",
+        "TRAINING_JOB_HISTORY: Dict[str, List[Dict[str, Any]]] = defaultdict(list)",
     ]
     return "\n".join(registries).rstrip()
 

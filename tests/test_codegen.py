@@ -234,6 +234,7 @@ def test_backend_emits_model_registry_stub(tmp_path: Path) -> None:
     assert 'AI_TEMPLATES' in runtime_content
     assert 'AI_CHAINS' in runtime_content
     assert 'AI_EXPERIMENTS' in runtime_content
+    assert 'TRAINING_JOBS' in runtime_content
     assert 'call_python_model(' in runtime_content
     assert 'call_llm_connector(' in runtime_content
     assert 'run_chain(' in runtime_content
@@ -243,6 +244,44 @@ def test_backend_emits_model_registry_stub(tmp_path: Path) -> None:
     assert '@router.post("/api/experiments/{slug}"' not in models_router_content
     experiments_router_content = (tmp_path / 'generated' / 'routers' / 'experiments.py').read_text(encoding='utf-8')
     assert '@router.get("/api/experiments/{slug}"' in experiments_router_content
+    training_router_content = (tmp_path / 'generated' / 'routers' / 'training.py').read_text(encoding='utf-8')
+    assert 'prefix="/api/training"' in training_router_content
+    assert '@router.get("/jobs"' in training_router_content
+    assert 'TrainingRunRequest' in training_router_content
+
+
+def test_runtime_training_job_stub(tmp_path: Path, monkeypatch) -> None:
+    source = (
+        'app "Trainer".\n'
+        '\n'
+        'dataset "training_data" from table training_table.\n'
+        '\n'
+        'training "baseline":\n'
+        '  model: "image_classifier"\n'
+        '  dataset: "training_data"\n'
+        '  objective: "minimize_loss"\n'
+        '  hyperparameters:\n'
+        '    epochs: 5\n'
+        '    learning_rate: 0.01\n'
+    )
+
+    app = Parser(source).parse_app()
+    backend_dir = tmp_path / 'backend_training'
+    generate_backend(app, backend_dir)
+
+    with _load_backend_module(tmp_path, backend_dir, monkeypatch) as module:
+        jobs = module.list_training_jobs()
+        assert 'baseline' in jobs
+        plan = module.resolve_training_job_plan('baseline')
+        assert plan['backend'] == 'local'
+        result = module.run_training_job('baseline')
+        assert result['status'] == 'ok'
+        assert result['backend'] == 'local'
+        assert result['job'] == 'baseline'
+        assert result['hyperparameters']['epochs'] == 5
+        assert result['artifacts']['samples'] >= 0
+        backends = module.available_training_backends()
+        assert 'local' in backends
 
 
 def test_runtime_includes_structured_realtime_helpers(tmp_path: Path) -> None:

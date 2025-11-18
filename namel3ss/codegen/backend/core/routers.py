@@ -14,6 +14,7 @@ __all__ = [
     "_render_models_router_module",
     "_render_experiments_router_module",
     "_render_frames_router_module",
+    "_render_training_router_module",
     "_render_pages_router_module",
     "_render_crud_router_module",
     "_render_observability_router_module",
@@ -29,12 +30,13 @@ def _render_routers_package() -> str:
 
 from __future__ import annotations
 
-from . import crud, experiments, frames, insights, models, observability, pages
+from . import crud, experiments, frames, insights, models, observability, pages, training
 
 insights_router = insights.router
 models_router = models.router
 experiments_router = experiments.router
 frames_router = frames.router
+training_router = training.router
 pages_router = pages.router
 crud_router = crud.router
 observability_router = observability.router
@@ -44,6 +46,7 @@ GENERATED_ROUTERS = (
     models_router,
     experiments_router,
     frames_router,
+    training_router,
     pages_router,
     crud_router,
     observability_router,
@@ -54,6 +57,7 @@ __all__ = [
     "models_router",
     "experiments_router",
     "frames_router",
+    "training_router",
     "pages_router",
     "crud_router",
     "observability_router",
@@ -343,6 +347,84 @@ async def download_frame_parquet(
     )
     headers = {"Content-Disposition": f"attachment; filename={name}.parquet"}
     return Response(content=payload, media_type="application/octet-stream", headers=headers)
+
+
+__all__ = ["router"]
+'''
+    return textwrap.dedent(template).strip() + "\n"
+
+
+def _render_training_router_module() -> str:
+    template = '''
+"""Generated FastAPI router for training job endpoints."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from ..helpers import rate_limit_dependency, router_dependencies
+from ..runtime import (
+    available_training_backends,
+    get_training_job,
+    list_training_jobs,
+    resolve_training_job_plan,
+    run_training_job,
+    training_job_history,
+)
+
+router = APIRouter(prefix="/api/training", tags=["training"], dependencies=router_dependencies())
+
+
+class TrainingRunRequest(BaseModel):
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    overrides: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.get("/jobs", response_model=List[str])
+async def list_training_jobs_endpoint() -> List[str]:
+    return list_training_jobs()
+
+
+@router.get("/jobs/{name}")
+async def get_training_job_endpoint(name: str) -> Dict[str, Any]:
+    spec = get_training_job(name)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Training job '{name}' not found.")
+    return spec
+
+
+@router.get("/jobs/{name}/history")
+async def get_training_job_history(name: str) -> List[Dict[str, Any]]:
+    return training_job_history(name)
+
+
+@router.post(
+    "/jobs/{name}/plan",
+    dependencies=[rate_limit_dependency("training")],
+)
+async def preview_training_plan(name: str, request: TrainingRunRequest) -> Dict[str, Any]:
+    try:
+        return resolve_training_job_plan(name, request.payload, request.overrides)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - runtime failure
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/jobs/{name}/run",
+    dependencies=[rate_limit_dependency("training")],
+)
+async def execute_training_job(name: str, request: TrainingRunRequest) -> Dict[str, Any]:
+    return run_training_job(name, request.payload, request.overrides)
+
+
+@router.get("/backends", response_model=List[str])
+async def list_training_backends() -> List[str]:
+    return available_training_backends()
 
 
 __all__ = ["router"]
