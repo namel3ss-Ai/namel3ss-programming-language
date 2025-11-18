@@ -626,6 +626,87 @@ async def _default_rest_driver(connector: Dict[str, Any], context: Dict[str, Any
             else:
                 request_kwargs["content"] = str(body)
 
+    # Get connector config from runtime settings
+    connector_settings = _runtime_setting("connectors", {})
+    retry_max_attempts = connector_settings.get("retry_max_attempts", max_attempts)
+    retry_base_delay = connector_settings.get("retry_base_delay", 0.5)
+    retry_max_delay = connector_settings.get("retry_max_delay", 5.0)
+    
+    # Use configured retry settings if available and make_resilient_request is available
+    if make_resilient_request is not None and RetryConfig is not None:
+        retry_config = RetryConfig(
+            max_attempts=retry_max_attempts,
+            base_delay_seconds=retry_base_delay,
+            max_delay_seconds=retry_max_delay,
+        )
+        
+        async def _make_request_with_retry() -> Tuple[int, Any, Optional[int]]:
+            \"\"\"Make HTTP request with resilient retry wrapper.\"\"\"
+            async def _request_fn(client_instance: Any) -> Any:
+                response = await client_instance.request(method, endpoint, **request_kwargs)
+                response.raise_for_status()
+                return response
+            
+            async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
+                response = await make_resilient_request(
+                    _request_fn,
+                    retry_config,
+                    connector_obj.get("name") or driver_name,
+                    client,
+                )
+                status_code = getattr(response, "status_code", None)
+                raw_text = getattr(response, "text", None)
+                if raw_text is None and hasattr(response, "content"):
+                    content_bytes = getattr(response, "content")
+                    raw_text = content_bytes.decode("utf-8", "replace") if content_bytes else ""
+                if raw_text is not None and not raw_text.strip():
+                    data: Any = []
+                else:
+                    try:
+                        data = response.json()
+                    except Exception as exc:
+                        message = f"{type(exc).__name__}: {exc}"
+                        logger.error(
+                            "REST connector '%s' returned non-JSON payload",
+                            connector_obj.get("name"),
+                        )
+                        raise ValueError(message) from exc
+                return (retry_max_attempts, data, status_code)
+        
+        try:
+            attempts, data, last_status = await _make_request_with_retry()
+            result_data = data
+            if result_path:
+                result_data = _traverse_result_path(data, result_path)
+            rows = _normalize_connector_rows(result_data)
+            status_value = "ok" if rows else "empty"
+            logger.info(
+                "REST connector '%s' succeeded with status %s",
+                connector_obj.get("name"),
+                last_status,
+            )
+            return _finalize(
+                status_value,
+                result=result_data,
+                status_code=last_status,
+                attempts_value=attempts,
+            )
+        except Exception as exc:
+            error_message = f"{type(exc).__name__}: {exc}"
+            traceback_text = _trim_traceback()
+            last_status_code = None
+            if httpx is not None and isinstance(exc, httpx.HTTPStatusError):
+                last_status_code = getattr(exc.response, "status_code", None)
+            return _finalize(
+                "error",
+                error=error_message,
+                traceback_text=traceback_text,
+                status_code=last_status_code,
+                attempts_value=retry_max_attempts,
+                include_config=True,
+            )
+    
+    # Fallback to manual retry loop if resilient request is not available
     attempts = 0
     last_error: Optional[BaseException] = None
     last_status: Optional[int] = None
@@ -770,6 +851,13 @@ async def _default_graphql_driver(connector: Dict[str, Any], context: Dict[str, 
         retries = max(int(retries_value), 0) if retries_value is not None else 1
     except Exception:
         retries = 1
+        
+    # Get connector config from runtime settings
+    connector_settings = _runtime_setting("connectors", {})
+    retry_max_attempts = connector_settings.get("retry_max_attempts", retries)
+    retry_base_delay = connector_settings.get("retry_base_delay", 0.5)
+    retry_max_delay = connector_settings.get("retry_max_delay", 5.0)
+    
     client_kwargs: Dict[str, Any] = {}
     if httpx is not None:
         try:
@@ -778,51 +866,86 @@ async def _default_graphql_driver(connector: Dict[str, Any], context: Dict[str, 
             client_kwargs["timeout"] = timeout
     else:
         client_kwargs["timeout"] = timeout
+    
     attempts = 0
     payload: Dict[str, Any] = {}
     status = "error"
     last_error: Optional[Exception] = None
-    async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
+    
+    # Use resilient request if available
+    if make_resilient_request is not None and RetryConfig is not None:
+        retry_config = RetryConfig(
+            max_attempts=retry_max_attempts,
+            base_delay_seconds=retry_base_delay,
+            max_delay_seconds=retry_max_delay,
+        )
+        
         try:
-            while True:
-                attempts += 1
-                request_start = _now_ms()
-                try:
-                    response = await client.post(
-                        endpoint,
-                        json={"query": query, "variables": variables or {}},
-                        headers=headers if isinstance(headers, dict) else None,
-                    )
-                    response.raise_for_status()
-                    payload = response.json()
-                    logger.info(
-                        "GraphQL connector '%s' succeeded in %.2f ms",
-                        connector.get("name"),
-                        _now_ms() - request_start,
-                    )
-                    status = "ok"
-                    break
-                except ((httpx.HTTPError, httpx.TimeoutException) if httpx is not None else (Exception,)) as exc:
-                    logger.warning(
-                        "GraphQL connector '%s' attempt %d/%d failed: %s",
-                        connector.get("name"),
-                        attempts,
-                        retries,
-                        exc,
-                    )
-                    last_error = exc
-                    status = "retry_failed"
-                    if attempts >= retries:
-                        raise
-                except Exception as exc:
-                    logger.exception("Default GraphQL driver failed for endpoint '%s'", endpoint)
-                    last_error = exc
-                    status = "error"
-                    raise
+            async def _graphql_request(client_instance: Any) -> Any:
+                response = await client_instance.post(
+                    endpoint,
+                    json={"query": query, "variables": variables or {}},
+                    headers=headers if isinstance(headers, dict) else None,
+                )
+                response.raise_for_status()
+                return response.json()
+            
+            async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
+                payload = await make_resilient_request(
+                    _graphql_request,
+                    retry_config,
+                    connector.get("name") or driver_name,
+                    client,
+                )
+                attempts = retry_max_attempts
+                status = "ok"
         except Exception as exc:
-            logger.error("GraphQL connector '%s' exhausted retries", connector.get("name"))
+            logger.error("GraphQL connector '%s' failed after retries", connector.get("name"))
             last_error = exc
             status = "error"
+    else:
+        # Fallback to manual retry loop
+        async with _HTTPX_CLIENT_CLS(**client_kwargs) as client:
+            try:
+                while True:
+                    attempts += 1
+                    request_start = _now_ms()
+                    try:
+                        response = await client.post(
+                            endpoint,
+                            json={"query": query, "variables": variables or {}},
+                            headers=headers if isinstance(headers, dict) else None,
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
+                        logger.info(
+                            "GraphQL connector '%s' succeeded in %.2f ms",
+                            connector.get("name"),
+                            _now_ms() - request_start,
+                        )
+                        status = "ok"
+                        break
+                    except ((httpx.HTTPError, httpx.TimeoutException) if httpx is not None else (Exception,)) as exc:
+                        logger.warning(
+                            "GraphQL connector '%s' attempt %d/%d failed: %s",
+                            connector.get("name"),
+                            attempts,
+                            retries,
+                            exc,
+                        )
+                        last_error = exc
+                        status = "retry_failed"
+                        if attempts >= retries:
+                            raise
+                    except Exception as exc:
+                        logger.exception("Default GraphQL driver failed for endpoint '%s'", endpoint)
+                        last_error = exc
+                        status = "error"
+                        raise
+            except Exception as exc:
+                logger.error("GraphQL connector '%s' exhausted retries", connector.get("name"))
+                last_error = exc
+                status = "error"
     data = payload.get("data") if isinstance(payload, dict) else None
     rows_count = 0
     rows: List[Dict[str, Any]] = []

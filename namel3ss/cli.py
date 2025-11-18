@@ -22,7 +22,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, BaseException
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from . import __version__
 from .lang import LANGUAGE_VERSION as LANGUAGE_SPEC_VERSION
@@ -413,7 +413,9 @@ def _load_runtime_module(app: App, cache_key: str) -> Any:
     if runtime is not None:
         return runtime
     backend_dir = tempfile.mkdtemp(prefix="namel3ss_cli_backend_")
-    generate_backend(app, backend_dir, embed_insights=False, enable_realtime=False)
+    # Use default connector config for ephemeral runtime
+    connector_cfg = extract_connector_config(None, WorkspaceDefaults())
+    generate_backend(app, backend_dir, embed_insights=False, enable_realtime=False, connector_config=connector_cfg)
     _clear_generated_module_cache()
     if backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
@@ -510,12 +512,40 @@ def _print_experiment_result_text(result: Dict[str, Any]) -> None:
         print(json.dumps(result["notes"], indent=2))
 
 
+def _load_json_argument(
+    inline_value: Optional[str],
+    file_path: Optional[str],
+    label: str,
+) -> Dict[str, Any]:
+    """Load a JSON object from either an inline string or file path."""
+
+    if inline_value and file_path:
+        raise ValueError(f"Specify either --{label} or --{label}-file, not both.")
+    data: Optional[str] = inline_value
+    if file_path:
+        path = Path(file_path).expanduser()
+        try:
+            data = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"Unable to read {label} file '{file_path}': {exc}") from exc
+    if not data:
+        return {}
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON for {label}: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label.capitalize()} must be a JSON object")
+    return parsed
+
+
 def prepare_backend(
     source_path: Path,
     backend_dir: str,
     *,
     embed_insights: bool = False,
     enable_realtime: bool = False,
+    connector_config: Optional[Dict[str, Any]] = None,
 ) -> App:
     """Parse N3 file and generate backend scaffold.
     
@@ -528,6 +558,8 @@ def prepare_backend(
     embed_insights : bool, optional
         Whether to embed evaluated insight payloads into dataset endpoints
         generated for tables and charts. Default is ``False``.
+    connector_config : Optional[Dict[str, Any]], optional
+        Connector retry/concurrency settings extracted from config
         
     Returns
     -------
@@ -552,6 +584,7 @@ def prepare_backend(
         backend_dir,
         embed_insights=embed_insights,
         enable_realtime=enable_realtime,
+        connector_config=connector_config,
     )
     
     return app
@@ -584,6 +617,7 @@ def run_dev_server(
     frontend_out: Optional[str] = None,
     frontend_target: str = "static",
     env: Optional[Sequence[str]] = None,
+    connector_config: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Run a development server for a Namel3ss app.
     
@@ -606,6 +640,8 @@ def run_dev_server(
         Whether to enable hot reload
     embed_insights : bool, optional
         Forwarded to backend generation to control insight embedding.
+    connector_config : Optional[Dict[str, Any]], optional
+        Connector retry/concurrency settings extracted from config
     """
     # Check uvicorn availability first
     if not check_uvicorn_available():
@@ -636,6 +672,7 @@ def run_dev_server(
             str(backend_dir_path),
             embed_insights=embed_insights,
             enable_realtime=enable_realtime,
+            connector_config=connector_config,
         )
 
         generate_site(
@@ -755,11 +792,13 @@ def cmd_build(args: argparse.Namespace) -> None:
             print(f"✓ Frontend [{target}] generated in {frontend_dir}")
 
     if args.build_backend or args.backend_only:
+        connector_cfg = extract_connector_config(app_entry, defaults) if app_entry else extract_connector_config(None, defaults)
         generate_backend(
             app,
             str(backend_dir),
             embed_insights=embed_flag,
             enable_realtime=realtime_flag,
+            connector_config=connector_cfg,
         )
         print(f"✓ Backend scaffold generated in {backend_dir}")
         for line in _backend_summary_lines(app):
@@ -915,6 +954,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         try:
             for app_cfg in apps:
                 enable_rt = _effective_realtime(app_cfg, workspace)
+                connector_cfg = extract_connector_config(app_cfg, workspace.defaults)
                 session = DevAppSession(
                     name=app_cfg.name,
                     source=app_cfg.file,
@@ -925,6 +965,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     frontend_target=app_cfg.target,
                     enable_realtime=enable_rt,
                     env=effective_envs.get(app_cfg.name, []),
+                    connector_config=connector_cfg,
                 )
                 session.start()
                 sessions.append(session)
@@ -945,6 +986,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     app_cfg = apps[0]
     enable_rt = _effective_realtime(app_cfg, workspace)
+    connector_cfg = extract_connector_config(app_cfg, workspace.defaults)
     run_dev_server(
         app_cfg.file,
         backend_dir=str(app_cfg.backend_out),
@@ -956,6 +998,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         frontend_out=str(app_cfg.frontend_out),
         frontend_target=app_cfg.target,
         env=effective_envs.get(app_cfg.name, []),
+        connector_config=connector_cfg,
     )
     ctx.plugin_manager.emit_run(
         RunInvocation(apps=[app_cfg], dev_mode=False, enable_realtime=realtime_enabled),
@@ -1063,53 +1106,111 @@ def cmd_eval(args: argparse.Namespace) -> None:
 
 
 def cmd_train(args: argparse.Namespace) -> None:
-    """Handle the 'train' subcommand using user-provided hooks."""
+    """Inspect or execute declared training jobs via the generated runtime."""
 
     source_path = Path(args.file)
     app = _load_cli_app(source_path)
-    model_name = args.model
-    spec = _resolve_model_spec(app, model_name)
-    framework = spec.get("framework", "unknown")
-    metadata = spec.get("metadata", {})
-    trainer_hook: Optional[str] = metadata.get("trainer")
+    cache_key = str(source_path.resolve())
+    runtime = _load_runtime_module(app, cache_key)
 
-    if not trainer_hook:
-        print(json.dumps({
-            "status": "error",
-            "error": "trainer_not_configured",
-            "detail": f"No trainer hook configured for model '{model_name}'.",
-        }))
-        return
+    def _emit(payload: Dict[str, Any]) -> None:
+        if getattr(args, "json", False):
+            print(json.dumps(payload))
+        else:
+            print(json.dumps(payload, indent=2))
 
-    module_path, _, attr = trainer_hook.partition(":")
-    if not module_path or not attr:
-        print(json.dumps({
-            "status": "error",
-            "error": "trainer_invalid_hook",
-            "detail": f"Trainer hook '{trainer_hook}' is not importable.",
-        }))
+    def _error(code: str, detail: str) -> None:
+        _emit({"status": "error", "error": code, "detail": detail})
+
+    list_jobs = getattr(runtime, "list_training_jobs", None)
+    if not callable(list_jobs):
+        _error("training_not_supported", "This app does not declare any training jobs.")
         return
 
     try:
-        module = importlib.import_module(module_path)
-        trainer = getattr(module, attr)
-        if not callable(trainer):
-            raise TypeError(f"Trainer '{trainer_hook}' is not callable")
-        trainer(model_name, spec, args)
-    except Exception as exc:
-        print(json.dumps({
-            "status": "error",
-            "error": "trainer_failed",
-            "detail": str(exc),
-        }))
+        payload = _load_json_argument(getattr(args, "payload", None), getattr(args, "payload_file", None), "payload")
+        overrides = _load_json_argument(
+            getattr(args, "overrides", None), getattr(args, "overrides_file", None), "overrides"
+        )
+    except ValueError as exc:
+        _error("invalid_training_arguments", str(exc))
         return
 
-    print(f"Training hook completed for '{model_name}'")
-    print(json.dumps({
-        "status": "ok",
-        "model": model_name,
-        "detail": "Training hook completed.",
-    }))
+    jobs = sorted(str(name) for name in (list_jobs() or []))
+    available_backends_fn = getattr(runtime, "available_training_backends", None)
+    history_fn = getattr(runtime, "training_job_history", None)
+    resolve_plan = getattr(runtime, "resolve_training_job_plan", None)
+    run_job = getattr(runtime, "run_training_job", None)
+
+    if args.backends:
+        backends = available_backends_fn() if callable(available_backends_fn) else []
+        _emit({"status": "ok", "backends": backends})
+        return
+
+    if args.list:
+        _emit({"status": "ok", "jobs": jobs})
+        return
+
+    if not jobs:
+        _error("training_job_not_found", "No training jobs are defined in this app.")
+        return
+
+    job_name = getattr(args, "job", None)
+    if not job_name:
+        detail = "Provide --job to select a training job or use --list to see available options."
+        _error("training_job_required", detail)
+        return
+
+    if jobs and job_name not in jobs:
+        detail = f"Training job '{job_name}' was not found. Available jobs: {', '.join(jobs) or 'none'}."
+        _error("training_job_not_found", detail)
+        return
+
+    if args.history and args.plan:
+        _error("invalid_training_arguments", "--plan cannot be combined with --history.")
+        return
+
+    if args.history:
+        if not callable(history_fn):
+            _error("training_history_unavailable", "Training history is not available in this runtime.")
+            return
+        limit = getattr(args, "history_limit", 5)
+        limit = limit if isinstance(limit, int) and limit > 0 else 5
+        history = history_fn(job_name, limit=limit)
+        _emit({"status": "ok", "job": job_name, "history": history, "limit": limit})
+        return
+
+    if args.plan:
+        if not callable(resolve_plan):
+            _error("training_runtime_missing", "Training plan helpers are unavailable; regenerate the backend.")
+            return
+        try:
+            plan = resolve_plan(job_name, payload, overrides)
+        except ValueError as exc:
+            _error("training_job_not_found", str(exc))
+            return
+        except Exception as exc:
+            _error("training_plan_failed", _format_error_detail(exc))
+            return
+        _emit({"status": "ok", "job": job_name, "plan": plan})
+        return
+
+    if not callable(run_job):
+        _error("training_runtime_missing", "Training execution helpers are unavailable; regenerate the backend.")
+        return
+
+    try:
+        result = run_job(job_name, payload, overrides)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        _error("training_backend_failed", _format_error_detail(exc))
+        return
+
+    if not isinstance(result, dict):
+        _error("training_backend_invalid", "Training runtime returned an invalid response.")
+        return
+
+    result.setdefault("job", job_name)
+    _emit(result)
 
 
 def cmd_deploy(args: argparse.Namespace) -> None:
@@ -1387,13 +1488,59 @@ def main(argv: Optional[list] = None) -> None:
 
     train_parser = subparsers.add_parser(
         'train',
-        help='Run model training hooks'
+        help='Inspect or run declared training jobs'
     )
     train_parser.add_argument('file', help='Path to the .n3 source file')
     train_parser.add_argument(
-        '--model',
-        required=True,
-        help='Name of the model to train (must exist in the DSL or model registry)'
+        '--job',
+        help='Name of the training job to inspect or run'
+    )
+    train_parser.add_argument(
+        '--list',
+        action='store_true',
+        help='List available training jobs and exit'
+    )
+    train_parser.add_argument(
+        '--backends',
+        action='store_true',
+        help='List registered training backends and exit'
+    )
+    train_parser.add_argument(
+        '--plan',
+        action='store_true',
+        help='Resolve the training plan instead of executing it'
+    )
+    train_parser.add_argument(
+        '--history',
+        action='store_true',
+        help='Show recent execution history for the selected job'
+    )
+    train_parser.add_argument(
+        '--history-limit',
+        type=int,
+        default=5,
+        help='Number of history entries to display with --history (default: 5)'
+    )
+    train_parser.add_argument(
+        '--payload',
+        help='Inline JSON payload to provide as training inputs'
+    )
+    train_parser.add_argument(
+        '--payload-file',
+        help='Path to a JSON file containing the training payload'
+    )
+    train_parser.add_argument(
+        '--overrides',
+        help='Inline JSON overrides for hyperparameters or resource hints'
+    )
+    train_parser.add_argument(
+        '--overrides-file',
+        help='Path to a JSON file containing override values'
+    )
+    train_parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Emit compact JSON output (default pretty prints)'
     )
     train_parser.set_defaults(func=cmd_train)
 

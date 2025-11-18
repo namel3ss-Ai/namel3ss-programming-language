@@ -25,6 +25,7 @@ from .routers import (
     _render_observability_router_module,
     _render_pages_router_module,
     _render_routers_package,
+    _render_training_router_module,
 )
 from .runtime import _render_runtime_module
 from .schemas import _render_schemas_module
@@ -37,8 +38,23 @@ def generate_backend(
     out_dir: Path,
     embed_insights: bool = False,
     enable_realtime: bool = False,
+    connector_config: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Generate the backend scaffold for ``app`` into ``out_dir``."""
+    """Generate the backend scaffold for ``app`` into ``out_dir``.
+    
+    Parameters
+    ----------
+    app : App
+        The parsed application
+    out_dir : Path
+        Output directory for backend
+    embed_insights : bool
+        Whether to embed insight evaluations
+    enable_realtime : bool
+        Whether to enable websocket support
+    connector_config : Optional[Dict[str, Any]]
+        Runtime connector configuration (retry/concurrency settings)
+    """
 
     state = build_backend_state(app)
     out_path = Path(out_dir)
@@ -71,7 +87,7 @@ def generate_backend(
         _render_generated_package(), encoding="utf-8"
     )
     (generated_dir / "runtime.py").write_text(
-        _render_runtime_module(state, embed_insights, enable_realtime), encoding="utf-8"
+        _render_runtime_module(state, embed_insights, enable_realtime, connector_config), encoding="utf-8"
     )
     (helpers_dir / "__init__.py").write_text(
         _render_helpers_package(), encoding="utf-8"
@@ -94,6 +110,9 @@ def generate_backend(
     )
     (routers_dir / "frames.py").write_text(
         _render_frames_router_module(), encoding="utf-8"
+    )
+    (routers_dir / "training.py").write_text(
+        _render_training_router_module(), encoding="utf-8"
     )
     (routers_dir / "pages.py").write_text(
         _render_pages_router_module(state), encoding="utf-8"

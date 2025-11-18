@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BaseException, Callable, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from .codegen import generate_backend, generate_site
 from .loader import load_program
@@ -106,6 +106,7 @@ class DevAppSession:
         enable_realtime: bool,
         env: Sequence[str],
         watch: bool = True,
+        connector_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.name = name
         self.source = source
@@ -117,6 +118,7 @@ class DevAppSession:
         self.enable_realtime = enable_realtime
         self.env = list(env)
         self.watch = watch
+        self.connector_config = connector_config
         self._process: Optional[subprocess.Popen[str]] = None
         self._watcher: Optional[PollingWatcher] = None
         self._status = DevServerStatus(app_name=name, last_build_ok=False)
@@ -200,6 +202,7 @@ class DevAppSession:
                 str(self.backend_out),
                 embed_insights=False,
                 enable_realtime=self.enable_realtime,
+                connector_config=self.connector_config,
             )
             generate_site(
                 app,

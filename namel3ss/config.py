@@ -26,6 +26,10 @@ class WorkspaceDefaults:
     frontend_port: Optional[int] = None
     enable_realtime: bool = False
     env: List[str] = field(default_factory=list)
+    connector_retry_max_attempts: int = 3
+    connector_retry_base_delay: float = 0.5
+    connector_retry_max_delay: float = 5.0
+    connector_concurrency_limit: int = 10
 
 
 @dataclass
@@ -41,6 +45,10 @@ class AppConfig:
     target: str = "static"
     enable_realtime: Optional[bool] = None
     env: List[str] = field(default_factory=list)
+    connector_retry_max_attempts: Optional[int] = None
+    connector_retry_base_delay: Optional[float] = None
+    connector_retry_max_delay: Optional[float] = None
+    connector_concurrency_limit: Optional[int] = None
 
     def merged_env(self, inherited: Sequence[str]) -> List[str]:
         if not inherited:
@@ -99,6 +107,10 @@ class WorkspaceConfig:
                 target=self.defaults.target,
                 enable_realtime=self.defaults.enable_realtime,
                 env=list(self.defaults.env),
+                connector_retry_max_attempts=self.defaults.connector_retry_max_attempts,
+                connector_retry_base_delay=self.defaults.connector_retry_base_delay,
+                connector_retry_max_delay=self.defaults.connector_retry_max_delay,
+                connector_concurrency_limit=self.defaults.connector_concurrency_limit,
             )
 
     def select(self, names: Optional[Sequence[str]]) -> List[AppConfig]:
@@ -165,6 +177,13 @@ def _parse_apps(  # noqa: C901 - clarity preferred over deep factoring
             env = [env_values]
         else:
             env = []
+        
+        # Parse per-app connector overrides
+        retry_max_attempts = raw.get("connector_retry_max_attempts")
+        retry_base_delay = raw.get("connector_retry_base_delay")
+        retry_max_delay = raw.get("connector_retry_max_delay")
+        concurrency_limit = raw.get("connector_concurrency_limit")
+        
         apps[name] = AppConfig(
             name=name,
             file=file_path,
@@ -175,6 +194,10 @@ def _parse_apps(  # noqa: C901 - clarity preferred over deep factoring
             target=target,
             enable_realtime=enable_realtime,
             env=env,
+            connector_retry_max_attempts=int(retry_max_attempts) if retry_max_attempts is not None else None,
+            connector_retry_base_delay=float(retry_base_delay) if retry_base_delay is not None else None,
+            connector_retry_max_delay=float(retry_max_delay) if retry_max_delay is not None else None,
+            connector_concurrency_limit=int(concurrency_limit) if concurrency_limit is not None else None,
         )
     return apps
 
@@ -201,6 +224,13 @@ def _parse_defaults(data: Dict[str, Any], root: Path) -> WorkspaceDefaults:
         env = [env_values]
     else:
         env = []
+    
+    # Parse connector retry/concurrency settings
+    retry_max_attempts = int(defaults_section.get("connector_retry_max_attempts", WorkspaceDefaults.connector_retry_max_attempts))
+    retry_base_delay = float(defaults_section.get("connector_retry_base_delay", WorkspaceDefaults.connector_retry_base_delay))
+    retry_max_delay = float(defaults_section.get("connector_retry_max_delay", WorkspaceDefaults.connector_retry_max_delay))
+    concurrency_limit = int(defaults_section.get("connector_concurrency_limit", WorkspaceDefaults.connector_concurrency_limit))
+    
     return WorkspaceDefaults(
         backend_out=backend_out,
         frontend_out=frontend_out,
@@ -210,6 +240,10 @@ def _parse_defaults(data: Dict[str, Any], root: Path) -> WorkspaceDefaults:
         frontend_port=frontend_port,
         enable_realtime=enable_realtime,
         env=env,
+        connector_retry_max_attempts=retry_max_attempts,
+        connector_retry_base_delay=retry_base_delay,
+        connector_retry_max_delay=retry_max_delay,
+        connector_concurrency_limit=concurrency_limit,
     )
 
 
@@ -350,3 +384,13 @@ def env_strings_from_config(entries: Iterable[str]) -> List[str]:
         value = os.path.expandvars(entry)
         resolved.append(value)
     return resolved
+
+
+def extract_connector_config(app_cfg: AppConfig, defaults: WorkspaceDefaults) -> Dict[str, Any]:
+    \"\"\"Extract connector runtime configuration from AppConfig with defaults fallback.\"\"\"
+    return {
+        \"retry_max_attempts\": app_cfg.connector_retry_max_attempts if app_cfg.connector_retry_max_attempts is not None else defaults.connector_retry_max_attempts,
+        \"retry_base_delay\": app_cfg.connector_retry_base_delay if app_cfg.connector_retry_base_delay is not None else defaults.connector_retry_base_delay,
+        \"retry_max_delay\": app_cfg.connector_retry_max_delay if app_cfg.connector_retry_max_delay is not None else defaults.connector_retry_max_delay,
+        \"concurrency_limit\": app_cfg.connector_concurrency_limit if app_cfg.connector_concurrency_limit is not None else defaults.connector_concurrency_limit,
+    }

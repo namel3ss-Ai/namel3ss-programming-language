@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List, Optional
 
 
-def render_runtime_header(enable_realtime: bool) -> str:
+def render_runtime_header(enable_realtime: bool, connector_config: Optional[Dict[str, Any]] = None) -> str:
     """Produce import and constant definitions for the generated runtime module."""
     lines: List[str] = [
         '"""Generated runtime primitives for Namel3ss (N3)."""',
@@ -87,6 +87,16 @@ def render_runtime_header(enable_realtime: bool) -> str:
             "from sqlalchemy.ext.asyncio import AsyncSession",
             "from pathlib import Path",
             "from namel3ss.plugins.registry import get_plugin, PluginRegistryError",
+            "from namel3ss.ml.training.backends import (",
+            "    registered_training_backends as _registered_training_backends,",
+            "    resolve_training_backend as _resolve_training_backend_impl,",
+            "    resolve_training_plan as _resolve_training_plan_impl,",
+            ")",
+            "try:",
+            "    from namel3ss.ml.connectors.base import RetryConfig, make_resilient_request",
+            "except ImportError:",
+            "    RetryConfig = None  # type: ignore",
+            "    make_resilient_request = None  # type: ignore",
             "",
             "from namel3ss.plugins.base import PLUGIN_CATEGORY_EVALUATOR",
             "",
@@ -133,6 +143,25 @@ def render_runtime_header(enable_realtime: bool) -> str:
             "RUNTIME_SETTINGS: Dict[str, Any] = {}",
             "CACHE_CONFIG: Dict[str, Any] = {}",
             "STREAM_CONFIG: Dict[str, Any] = {}",
+        ]
+    )
+    
+    # Inject connector configuration if provided
+    if connector_config:
+        retry_max = connector_config.get("retry_max_attempts", 3)
+        retry_base = connector_config.get("retry_base_delay", 0.5)
+        retry_max_delay = connector_config.get("retry_max_delay", 5.0)
+        concurrency = connector_config.get("concurrency_limit", 10)
+        lines.extend([
+            f"RUNTIME_SETTINGS['connectors'] = {{",
+            f"    'retry_max_attempts': {retry_max},",
+            f"    'retry_base_delay': {retry_base},",
+            f"    'retry_max_delay': {retry_max_delay},",
+            f"    'concurrency_limit': {concurrency},",
+            f"}}",
+        ])
+    
+    lines.extend([
             "ASYNC_RUNTIME_ENABLED: bool = os.getenv('NAMEL3SS_RUNTIME_ASYNC', '0') in {'1', 'true', 'True'}",
             "DEFAULT_CACHE_MAX_ENTRIES: int = 256",
             "DEFAULT_CACHE_TTL: Optional[int] = None",

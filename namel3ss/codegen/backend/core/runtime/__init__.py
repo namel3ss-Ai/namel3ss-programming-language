@@ -21,13 +21,14 @@ def _render_runtime_module(
     state: BackendState,
     embed_insights: bool,
     enable_realtime: bool,
+    connector_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Render the runtime module by stitching together all required blocks."""
     parts: List[str] = []
     page_handler_entries: List[str] = []
     configured_model_registry = load_model_registry() or get_default_model_registry()
 
-    parts.append(render_runtime_header(enable_realtime))
+    parts.append(render_runtime_header(enable_realtime, connector_config))
     parts.append(render_context_registry_block())
     parts.append(render_broadcast_block(enable_realtime))
     parts.append(
