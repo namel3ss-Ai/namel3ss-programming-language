@@ -503,6 +503,7 @@ def _encode_frame_column(column: FrameColumn, env_keys: Set[str]) -> Dict[str, A
 		"dtype": column.dtype,
 		"nullable": column.nullable,
 		"description": column.description,
+		"role": column.role,
 		"default": _encode_value(column.default, env_keys),
 		"expression": _expression_to_source(column.expression),
 		"expression_expr": _expression_to_runtime(column.expression),
@@ -1365,6 +1366,14 @@ def _encode_experiment(experiment: Experiment, env_keys: Set[str]) -> Dict[str, 
 	metadata_value = _encode_value(experiment.metadata, env_keys)
 	if not isinstance(metadata_value, dict):
 		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	data_config: Optional[Dict[str, Any]] = None
+	if isinstance(metadata_value, dict):
+		data_block = metadata_value.pop("data", metadata_value.pop("dataset", None))
+		if data_block is not None:
+			try:
+				data_config = _encode_experiment_data_config(data_block)
+			except ValueError as exc:
+				raise ValueError(f"Experiment '{experiment.name}' data configuration is invalid: {exc}") from exc
 	return {
 		"name": experiment.name,
 		"slug": _slugify_identifier(experiment.name),
@@ -1372,7 +1381,92 @@ def _encode_experiment(experiment: Experiment, env_keys: Set[str]) -> Dict[str, 
 		"variants": variants_payload,
 		"metrics": metrics_payload,
 		"metadata": metadata_value,
+		"data_config": data_config,
 	}
+
+
+def _encode_experiment_data_config(raw: Any) -> Dict[str, Any]:
+	if raw is None:
+		return {}
+	if isinstance(raw, str):
+		return {"frame": raw}
+	if not isinstance(raw, dict):
+		raise ValueError("data config must be provided as a mapping or string frame name")
+	config: Dict[str, Any] = {}
+	frame_name = raw.get("frame") or raw.get("name")
+	if frame_name:
+		config["frame"] = str(frame_name)
+	pipeline_value = raw.get("pipeline") or raw.get("frame_pipeline")
+	if pipeline_value is not None:
+		config["pipeline"] = pipeline_value
+	features = _coerce_column_name_list(raw.get("features") or raw.get("feature_columns"))
+	if features:
+		config["features"] = features
+	target_value = raw.get("target") or raw.get("label")
+	if isinstance(target_value, dict):
+		target_value = target_value.get("name")
+	if target_value:
+		config["target"] = str(target_value)
+	time_value = raw.get("time") or raw.get("time_column") or raw.get("timestamp")
+	if isinstance(time_value, dict):
+		time_value = time_value.get("name")
+	if time_value:
+		config["time_column"] = str(time_value)
+	group_columns = _coerce_column_name_list(
+		raw.get("groups") or raw.get("group_columns") or raw.get("ids") or raw.get("identifiers")
+	)
+	if group_columns:
+		config["group_columns"] = group_columns
+	weight_value = raw.get("weight") or raw.get("weight_column") or raw.get("sample_weight")
+	if isinstance(weight_value, dict):
+		weight_value = weight_value.get("name")
+	if weight_value:
+		config["weight_column"] = str(weight_value)
+	split_override = raw.get("splits") or raw.get("split")
+	if isinstance(split_override, dict):
+		normalized_splits = _normalize_split_mapping(split_override)
+		if normalized_splits:
+			config["splits"] = normalized_splits
+	if not config.get("frame") and not config.get("pipeline"):
+		raise ValueError("data config requires at least a 'frame' or 'pipeline' entry")
+	return config
+
+
+def _coerce_column_name_list(value: Any) -> List[str]:
+	if not value:
+		return []
+	if isinstance(value, str):
+		parts = [segment.strip() for segment in value.split(",") if segment.strip()]
+		return parts or [value.strip()]
+	if isinstance(value, dict):
+		if "name" in value:
+			return [str(value["name"])]
+		value = value.get("columns") or value.get("names")
+	if isinstance(value, (list, tuple, set)):
+		names: List[str] = []
+		for item in value:
+			if isinstance(item, str):
+				names.append(item)
+			elif isinstance(item, dict) and item.get("name"):
+				names.append(str(item["name"]))
+		return names
+	return []
+
+
+def _normalize_split_mapping(raw: Dict[str, Any]) -> Dict[str, float]:
+	splits: Dict[str, float] = {}
+	for key, value in raw.items():
+		name = str(key).strip()
+		if not name:
+			continue
+		try:
+			number = float(value)
+		except (TypeError, ValueError):
+			continue
+		if number <= 0:
+			continue
+		splits[name] = number
+	return splits
 
 
 def _encode_crud_resource(resource: CrudResource, env_keys: Set[str]) -> Dict[str, Any]:

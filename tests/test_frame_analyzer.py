@@ -17,9 +17,12 @@ from namel3ss.ast import (
     NameRef,
 )
 from namel3ss.frames import FrameExpressionAnalyzer, FrameTypeError
+from namel3ss.types import N3FrameType
 
 
-def _build_analyzer() -> FrameExpressionAnalyzer:
+def _build_analyzer_with_frames(
+    extra_frames: list[Frame] | None = None,
+) -> tuple[FrameExpressionAnalyzer, Frame, Frame]:
     users = Frame(
         name="users",
         columns=[
@@ -36,7 +39,16 @@ def _build_analyzer() -> FrameExpressionAnalyzer:
             FrameColumn(name="region_name", dtype="string"),
         ],
     )
-    return FrameExpressionAnalyzer([users, regions])
+    frames = [users, regions]
+    if extra_frames:
+        frames.extend(extra_frames)
+    analyzer = FrameExpressionAnalyzer(frames)
+    return analyzer, users, regions
+
+
+def _build_analyzer(extra_frames: list[Frame] | None = None) -> FrameExpressionAnalyzer:
+    analyzer, _, _ = _build_analyzer_with_frames(extra_frames=extra_frames)
+    return analyzer
 
 
 def test_analyzer_selects_columns() -> None:
@@ -96,3 +108,58 @@ def test_filter_expression_is_validated() -> None:
     predicate = BinaryOp(left=NameRef(name="missing"), op="==", right=Literal(value=True))
     with pytest.raises(FrameTypeError):
         analyzer.analyze(FrameFilter(source=FrameRef("users"), predicate=predicate))
+
+
+def test_filter_type_mismatch_raises() -> None:
+    analyzer = _build_analyzer()
+    predicate = BinaryOp(left=NameRef(name="country"), op="==", right=Literal(value=True))
+    with pytest.raises(FrameTypeError) as excinfo:
+        analyzer.analyze(FrameFilter(source=FrameRef("users"), predicate=predicate))
+    assert "filter" in str(excinfo.value).lower()
+
+
+def test_aggregation_type_validation() -> None:
+    analyzer = _build_analyzer()
+    invalid_sum = CallExpression(function=NameRef(name="sum"), arguments=[NameRef(name="country")])
+    expr = FrameSummarise(
+        source=FrameGroupBy(source=FrameRef("users"), columns=["country"]),
+        aggregations={"total": invalid_sum},
+    )
+    with pytest.raises(FrameTypeError) as excinfo:
+        analyzer.analyze(expr)
+    assert "aggregation 'total'" in str(excinfo.value).lower()
+
+
+def test_join_type_mismatch_detected() -> None:
+    numeric_regions = Frame(
+        name="regions_numeric",
+        columns=[
+            FrameColumn(name="country", dtype="int"),
+        ],
+    )
+    analyzer = _build_analyzer([numeric_regions])
+    expr = FrameJoin(
+        left=FrameRef("users"),
+        right="regions_numeric",
+        on=["country"],
+        how="inner",
+    )
+    with pytest.raises(FrameTypeError) as excinfo:
+        analyzer.analyze(expr)
+    assert "join" in str(excinfo.value).lower()
+
+
+def test_frame_definition_produces_n3_type() -> None:
+    _, users, _ = _build_analyzer_with_frames()
+    assert isinstance(users.type_info, N3FrameType)
+    assert [name for name, _ in users.type_info.describe()] == ["id", "country", "revenue", "active"]
+    assert users.type_info.columns["id"].dtype == "int"
+
+
+def test_frame_type_propagates_through_select() -> None:
+    analyzer = _build_analyzer()
+    expr = FrameSelect(source=FrameRef("users"), columns=["country", "id"])
+    plan = analyzer.analyze(expr)
+    assert isinstance(plan.schema, N3FrameType)
+    assert plan.schema.order == ["country", "id"]
+    assert plan.schema.columns["country"].dtype == "string"

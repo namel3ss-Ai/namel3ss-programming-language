@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, TYPE_CHECKING
 
 from .base import Expression
+
+if TYPE_CHECKING:  # pragma: no cover
+    from namel3ss.types import N3FrameType
 @dataclass
 class FrameSourceDef:
     """Describes how to load data for a frame."""
@@ -165,6 +168,7 @@ class Frame:
     key: List[str] = field(default_factory=list)
     splits: Dict[str, float] = field(default_factory=dict)
     source_config: Optional[FrameSourceDef] = None
+    type_info: Optional["N3FrameType"] = None
 
 
 __all__ = [

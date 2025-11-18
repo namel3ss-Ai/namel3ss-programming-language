@@ -9,8 +9,11 @@ from namel3ss.codegen.backend.core.runtime.frames import (
     MAX_FRAME_LIMIT as _MAX_FRAME_LIMIT,
     N3Frame as _N3Frame,
     FramePipelineExecutionError as _FramePipelineExecutionError,
+    FrameSourceLoadError as _FrameSourceLoadError,
     build_pipeline_frame_spec as _build_pipeline_frame_spec,
     execute_frame_pipeline_plan as _execute_frame_pipeline_plan,
+    load_frame_file_source as _load_frame_file_source,
+    load_frame_sql_source as _load_frame_sql_source,
     project_frame_rows as _project_frame_rows,
 )
 
@@ -295,6 +298,25 @@ async def _load_frame_source_rows(
     context: Dict[str, Any],
     visited: Set[str],
 ) -> List[Dict[str, Any]]:
+    source_config = frame_spec.get("source_config")
+    if isinstance(source_config, dict):
+        try:
+            return await _load_frame_source_from_config(
+                frame_key,
+                source_config,
+                session,
+                context,
+            )
+        except _FrameSourceLoadError as exc:
+            _record_runtime_error(
+                context,
+                code="frame_source_failed",
+                message=str(exc),
+                scope=frame_key,
+                source="frame",
+                detail=str(exc),
+            )
+            return []
     source_kind = str(frame_spec.get("source_type") or "dataset").lower()
     source_name = frame_spec.get("source") or frame_spec.get("name") or frame_key
     if source_kind == "dataset":
@@ -340,6 +362,29 @@ async def _load_frame_source_rows(
         detail=source_kind,
     )
     return []
+
+
+async def _load_frame_source_from_config(
+    frame_key: str,
+    source_config: Dict[str, Any],
+    session: Optional[AsyncSession],
+    context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    kind = str(source_config.get("kind") or source_config.get("type") or "file").lower()
+    if kind == "file":
+        return _load_frame_file_source(
+            source_config,
+            context=context,
+            resolve_placeholders=_resolve_placeholders,
+        )
+    if kind == "sql":
+        return await _load_frame_sql_source(
+            source_config,
+            session,
+            context=context,
+            resolve_placeholders=_resolve_placeholders,
+        )
+    raise _FrameSourceLoadError(f"Unsupported frame source kind '{kind}' for '{frame_key}'.")
 
 
 async def _evaluate_frame_pipeline(
