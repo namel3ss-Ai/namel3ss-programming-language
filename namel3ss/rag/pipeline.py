@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 
 from .embeddings import get_embedding_provider
 from .backends import get_vector_backend, ScoredDocument
+from .rerankers import get_reranker, BaseReranker
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,10 @@ class RagPipelineRuntime:
             query_encoder: Embedding model name for query encoding
             index_backend: Vector backend instance
             top_k: Number of documents to retrieve
-            reranker: Optional reranker model name
+            reranker: Optional reranker model name or None to disable reranking
             distance_metric: Distance metric ("cosine", "euclidean", "dot")
             filters: Metadata filters for retrieval
-            config: Additional configuration
+            config: Additional configuration including optional 'reranker_config' key
         """
         self.name = name
         self.query_encoder = query_encoder
@@ -75,6 +76,24 @@ class RagPipelineRuntime:
         
         # Initialize embedding provider
         self.embedding_provider = get_embedding_provider(query_encoder)
+        
+        # Initialize reranker if specified
+        self._reranker_instance: Optional[BaseReranker] = None
+        if self.reranker:
+            try:
+                reranker_config = self.config.get("reranker_config", {})
+                self._reranker_instance = get_reranker(self.reranker, reranker_config)
+                logger.info(
+                    f"RAG pipeline '{self.name}': Initialized reranker '{self.reranker}' "
+                    f"(model: {self._reranker_instance.get_model_name()})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"RAG pipeline '{self.name}': Failed to initialize reranker '{self.reranker}': {e}. "
+                    f"Reranking will be disabled."
+                )
+                self.reranker = None
+                self._reranker_instance = None
     
     async def execute_query(
         self,
@@ -141,7 +160,8 @@ class RagPipelineRuntime:
             raise
         
         # Step 3: Optional reranking
-        if self.reranker:
+        rerank_time = 0.0
+        if self.reranker and self._reranker_instance:
             rerank_start = time.time()
             try:
                 documents = await self._rerank_documents(query, documents)
@@ -155,8 +175,18 @@ class RagPipelineRuntime:
                     f"RAG pipeline '{self.name}': Reranking failed, "
                     f"using original ranking: {e}"
                 )
+                # Continue with original ranking - don't fail the whole query
         
         total_time = time.time() - start_time
+        
+        # Build result metadata
+        timings = {
+            "embedding_ms": round(embed_time * 1000, 2),
+            "search_ms": round(search_time * 1000, 2),
+            "total_ms": round(total_time * 1000, 2),
+        }
+        if rerank_time > 0:
+            timings["rerank_ms"] = round(rerank_time * 1000, 2)
         
         # Build result
         result = RagResult(
@@ -168,13 +198,10 @@ class RagPipelineRuntime:
                 "top_k": k,
                 "retrieved_count": len(documents),
                 "query_encoder": self.query_encoder,
+                "reranker": self.reranker,
                 "distance_metric": self.distance_metric,
                 "filters": merged_filters,
-                "timings": {
-                    "embedding_ms": round(embed_time * 1000, 2),
-                    "search_ms": round(search_time * 1000, 2),
-                    "total_ms": round(total_time * 1000, 2),
-                },
+                "timings": timings,
             },
         )
         
@@ -186,21 +213,48 @@ class RagPipelineRuntime:
         documents: List[ScoredDocument],
     ) -> List[ScoredDocument]:
         """
-        Rerank documents using reranker model.
+        Rerank documents using configured reranker model.
         
-        This is a placeholder for reranker integration.
-        Real implementations could use:
-        - Cross-encoder models (sentence-transformers)
-        - Cohere Rerank API
-        - Custom reranking logic
+        This method delegates to the initialized reranker instance.
+        If reranking fails, it logs the error and returns original documents.
         
-        For now, returns documents unchanged.
+        Args:
+            query: Query string
+            documents: Candidate documents to rerank
+        
+        Returns:
+            Reranked documents (or original documents on failure)
         """
-        # TODO: Implement reranking when reranker models are added
-        logger.warning(
-            f"Reranker '{self.reranker}' specified but reranking not yet implemented"
-        )
-        return documents
+        if not self._reranker_instance:
+            logger.warning(
+                f"RAG pipeline '{self.name}': _rerank_documents called but no reranker instance available"
+            )
+            return documents
+        
+        if not documents:
+            return documents
+        
+        try:
+            # Call the reranker - it handles batching, caching, etc.
+            reranked = await self._reranker_instance.rerank(
+                query=query,
+                documents=documents,
+                top_k=self.top_k,  # Maintain top_k from config
+            )
+            
+            logger.debug(
+                f"RAG pipeline '{self.name}': Successfully reranked {len(documents)} -> {len(reranked)} documents"
+            )
+            
+            return reranked
+            
+        except Exception as e:
+            logger.error(
+                f"RAG pipeline '{self.name}': Reranking failed: {e}",
+                exc_info=True
+            )
+            # Return original documents to allow pipeline to continue
+            return documents
 
 
 @dataclass
