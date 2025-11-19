@@ -11,6 +11,7 @@ pyproject.toml
 ./namel3ss/devserver.py
 ./namel3ss/errors.py
 ./namel3ss/loader.py
+./namel3ss/logic_validator.py
 ./namel3ss/resolver.py
 ./namel3ss/resolver_symbolic.py
 ./namel3ss/agents/__init__.py
@@ -29,6 +30,7 @@ pyproject.toml
 ./namel3ss/ast/expressions.py
 ./namel3ss/ast/frames.py
 ./namel3ss/ast/insights.py
+./namel3ss/ast/logic.py
 ./namel3ss/ast/models.py
 ./namel3ss/ast/modules.py
 ./namel3ss/ast/pages.py
@@ -46,6 +48,7 @@ pyproject.toml
 ./namel3ss/codegen/backend/core/deploy.py
 ./namel3ss/codegen/backend/core/generator.py
 ./namel3ss/codegen/backend/core/packages.py
+./namel3ss/codegen/backend/core/query_router.py
 ./namel3ss/codegen/backend/core/routers.py
 ./namel3ss/codegen/backend/core/schemas.py
 ./namel3ss/codegen/backend/core/sql_compiler.py
@@ -59,9 +62,14 @@ pyproject.toml
 ./namel3ss/codegen/backend/core/runtime/header.py
 ./namel3ss/codegen/backend/core/runtime/insights.py
 ./namel3ss/codegen/backend/core/runtime/llm_init.py
+./namel3ss/codegen/backend/core/runtime/logic_adapters.py
+./namel3ss/codegen/backend/core/runtime/logic_engine.py
+./namel3ss/codegen/backend/core/runtime/memory.py
+./namel3ss/codegen/backend/core/runtime/memory_functions.py
 ./namel3ss/codegen/backend/core/runtime/pages.py
 ./namel3ss/codegen/backend/core/runtime/pattern_matching.py
 ./namel3ss/codegen/backend/core/runtime/prompt_init.py
+./namel3ss/codegen/backend/core/runtime/query_compiler.py
 ./namel3ss/codegen/backend/core/runtime/realtime.py
 ./namel3ss/codegen/backend/core/runtime/registries.py
 ./namel3ss/codegen/backend/core/runtime/rule_engine.py
@@ -151,6 +159,7 @@ pyproject.toml
 ./namel3ss/ml/tools/http.py
 ./namel3ss/ml/training/__init__.py
 ./namel3ss/ml/training/backends.py
+./namel3ss/ml/training/production_backends.py
 ./namel3ss/observability/__init__.py
 ./namel3ss/observability/logging.py
 ./namel3ss/observability/metrics.py
@@ -167,6 +176,7 @@ pyproject.toml
 ./namel3ss/parser/expressions.py
 ./namel3ss/parser/frames.py
 ./namel3ss/parser/insights.py
+./namel3ss/parser/logic.py
 ./namel3ss/parser/models.py
 ./namel3ss/parser/pages.py
 ./namel3ss/parser/program.py
@@ -199,6 +209,7 @@ pyproject.toml
 ./namel3ss/rag/chunking.py
 ./namel3ss/rag/embeddings.py
 ./namel3ss/rag/pipeline.py
+./namel3ss/rag/rerankers.py
 ./namel3ss/rag/backends/__init__.py
 ./namel3ss/rag/backends/base.py
 ./namel3ss/rag/backends/pgvector.py
@@ -267,6 +278,7 @@ namel3ss/codegen/backend/core/database.py
 namel3ss/codegen/backend/core/deploy.py
 namel3ss/codegen/backend/core/generator.py
 namel3ss/codegen/backend/core/packages.py
+namel3ss/codegen/backend/core/query_router.py
 namel3ss/codegen/backend/core/routers.py
 namel3ss/codegen/backend/core/schemas.py
 namel3ss/codegen/backend/core/sql_compiler.py
@@ -280,9 +292,14 @@ namel3ss/codegen/backend/core/runtime/frames.py
 namel3ss/codegen/backend/core/runtime/header.py
 namel3ss/codegen/backend/core/runtime/insights.py
 namel3ss/codegen/backend/core/runtime/llm_init.py
+namel3ss/codegen/backend/core/runtime/logic_adapters.py
+namel3ss/codegen/backend/core/runtime/logic_engine.py
+namel3ss/codegen/backend/core/runtime/memory.py
+namel3ss/codegen/backend/core/runtime/memory_functions.py
 namel3ss/codegen/backend/core/runtime/pages.py
 namel3ss/codegen/backend/core/runtime/pattern_matching.py
 namel3ss/codegen/backend/core/runtime/prompt_init.py
+namel3ss/codegen/backend/core/runtime/query_compiler.py
 namel3ss/codegen/backend/core/runtime/realtime.py
 namel3ss/codegen/backend/core/runtime/registries.py
 namel3ss/codegen/backend/core/runtime/rule_engine.py
@@ -444,12 +461,15 @@ tests/test_agent_parsing.py
 tests/test_agent_runtime.py
 tests/test_agent_typechecking.py
 tests/test_ai_grammar_integration.py
+tests/test_backend_integration.py
 tests/test_backend_security.py
 tests/test_cli.py
 tests/test_codegen.py
 tests/test_connector_drivers.py
 tests/test_dataset_sql_compiler.py
 tests/test_effects.py
+tests/test_end_to_end_symbolic.py
+tests/test_error_messages.py
 tests/test_errors.py
 tests/test_experiment_frames_runtime.py
 tests/test_frame_analyzer.py
@@ -458,11 +478,16 @@ tests/test_frames_runtime.py
 tests/test_frontend_delegation.py
 tests/test_graph_executor.py
 tests/test_graph_integration.py
+tests/test_language_integration.py
 tests/test_language_version.py
 tests/test_language_version_resolver.py
 tests/test_llm_connectors.py
 tests/test_loader.py
+tests/test_logic_backtracking.py
+tests/test_logic_integration.py
+tests/test_logic_unification.py
 tests/test_memory_runtime.py
+tests/test_memory_system.py
 tests/test_ml_hooks.py
 tests/test_model_registry.py
 tests/test_packaging.py
@@ -473,6 +498,7 @@ tests/test_provider_integration.py
 tests/test_providers.py
 tests/test_rag_runtime.py
 tests/test_react_vite_generator.py
+tests/test_rerankers.py
 tests/test_resolver.py
 tests/test_resolver_eval_safety.py
 tests/test_runtime_evaluators.py
@@ -489,5 +515,7 @@ tests/test_structured_prompts_validation.py
 tests/test_structured_prompts_validator.py
 tests/test_symbolic_expressions.py
 tests/test_symbolic_integration.py
+tests/test_training_ast.py
+tests/test_training_integration.py
 tests/test_type_checker.py
 tests/test_workflow_runtime.py

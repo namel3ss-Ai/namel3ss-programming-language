@@ -4,13 +4,21 @@ import re
 from typing import Any, Dict, Optional
 
 from .base import BasePrompt, PromptError, PromptResult
+from namel3ss.templates import get_default_engine, CompiledTemplate, TemplateCompilationError, TemplateRenderError
 
 
 class TemplatePrompt(BasePrompt):
     """
-    Prompt that uses string.format-style template substitution.
+    Prompt that uses Jinja2 template engine for secure variable substitution.
     
-    Supports {variable} placeholders and applies defaults for missing values.
+    Supports:
+    - Variables: {{ variable }}
+    - Conditionals: {% if condition %} ... {% endif %}
+    - Loops: {% for item in items %} ... {% endfor %}
+    - Filters: {{ value|filter_name }}
+    - Nested objects: {{ user.profile.name }}
+    
+    Templates are compiled once for validation and reused for rendering.
     """
     
     def __init__(
@@ -27,7 +35,7 @@ class TemplatePrompt(BasePrompt):
         
         Args:
             name: Prompt identifier
-            template: Template string with {variable} placeholders
+            template: Jinja2 template string
             model: Target LLM model name
             args: Argument specifications with defaults
             **config: Additional configuration
@@ -40,15 +48,22 @@ class TemplatePrompt(BasePrompt):
             **config,
         )
         
-        # Extract variable names from template
-        self._template_vars = self._extract_variables(template)
-    
-    def _extract_variables(self, template: str) -> set:
-        """Extract variable names from template string."""
-        # Find all {variable} patterns
-        pattern = r'\{([^}]+)\}'
-        matches = re.findall(pattern, template)
-        return set(matches)
+        # Get template engine
+        self._engine = get_default_engine()
+        
+        # Compile template at initialization for early validation
+        try:
+            self._compiled_template = self._engine.compile(
+                source=template,
+                name=name,
+                validate=True,
+            )
+        except (TemplateCompilationError, TemplateRenderError) as e:
+            raise PromptError(
+                f"Failed to compile template: {e}",
+                prompt_name=name,
+                original_error=e,
+            )
     
     def render(self, **variables: Any) -> PromptResult:
         """
@@ -61,7 +76,7 @@ class TemplatePrompt(BasePrompt):
             PromptResult with rendered text
             
         Raises:
-            PromptError: If required variables missing
+            PromptError: If required variables missing or rendering fails
         """
         try:
             # Apply defaults from args
@@ -76,22 +91,25 @@ class TemplatePrompt(BasePrompt):
             # Then override with provided variables
             final_vars.update(variables)
             
-            # Validate we have all required variables
-            missing = []
-            for var_name in self._template_vars:
-                if var_name not in final_vars:
-                    # Check if it's required
-                    if self.args and var_name in self.args:
+            # Validate required variables
+            missing = self._engine.validate_variables(
+                self._compiled_template,
+                final_vars,
+            )
+            
+            # Check against arg specs for additional validation
+            # Only mark as required if not in a conditional block
+            if self.args:
+                for var_name in self._compiled_template.required_vars:
+                    if var_name in self.args:
                         arg_spec = self.args[var_name]
                         if isinstance(arg_spec, dict):
                             required = arg_spec.get("required", True)
-                            if required:
-                                missing.append(var_name)
-                        else:
-                            missing.append(var_name)
-                    else:
-                        # No arg spec, assume required
-                        missing.append(var_name)
+                            has_default = "default" in arg_spec
+                            # Only required if explicitly marked and no default
+                            if required and not has_default and var_name not in final_vars:
+                                if var_name not in missing:
+                                    missing.append(var_name)
             
             if missing:
                 raise PromptError(
@@ -100,8 +118,8 @@ class TemplatePrompt(BasePrompt):
                     missing_vars=missing,
                 )
             
-            # Render template
-            rendered = self.template.format(**final_vars)
+            # Render template using Jinja2 engine
+            rendered = self._compiled_template.render(final_vars)
             
             return PromptResult(
                 rendered=rendered,
@@ -109,12 +127,22 @@ class TemplatePrompt(BasePrompt):
                 metadata={
                     "model": self.model,
                     "template": self.template,
+                    "engine": "jinja2",
                 },
             )
         
-        except KeyError as e:
+        except PromptError:
+            # Re-raise PromptError as-is (don't wrap)
+            raise
+        except TemplateRenderError as e:
             raise PromptError(
-                f"Missing variable in template: {e}",
+                f"Template rendering failed: {e}",
+                prompt_name=self.name,
+                original_error=e,
+            )
+        except Exception as e:
+            raise PromptError(
+                f"Failed to render prompt: {e}",
                 prompt_name=self.name,
                 original_error=e,
             )
@@ -127,19 +155,5 @@ class TemplatePrompt(BasePrompt):
     
     def get_required_variables(self) -> set:
         """Return set of required variable names."""
-        if not self.args:
-            return self._template_vars
-        
-        required = set()
-        for var_name in self._template_vars:
-            if var_name in self.args:
-                arg_spec = self.args[var_name]
-                if isinstance(arg_spec, dict):
-                    if arg_spec.get("required", True) and "default" not in arg_spec:
-                        required.add(var_name)
-                else:
-                    required.add(var_name)
-            else:
-                required.add(var_name)
-        
-        return required
+        return self._compiled_template.required_vars
+
