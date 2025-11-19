@@ -1423,5 +1423,5 @@ class AIParserMixin(ParserBase):
             if any(token in lowered for token in _AI_MODEL_BLOCK_HINTS):
                 saw_ai_hint = True
         return saw_ai_hint
-_MEMORY_SCOPES = {"session", "page", "conversation", "global"}
-_MEMORY_KINDS = {"list", "conversation", "key_value", "vector", "buffer"}
+_MEMORY_SCOPES = {"session", "page", "conversation", "global", "user", "thread"}
+_MEMORY_KINDS = {"list", "conversation", "key_value", "vector", "buffer", "kv"}

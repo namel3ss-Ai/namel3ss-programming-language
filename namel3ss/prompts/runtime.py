@@ -3,16 +3,20 @@ Runtime support for structured prompts with typed args and output schemas.
 
 This module provides the PromptProgram abstraction for executing prompts
 with argument validation, template rendering, and structured output handling.
+Supports memory integration for stateful LLM interactions.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from namel3ss.ast import Prompt, PromptArgument, OutputSchema, OutputField, OutputFieldType
 from namel3ss.errors import N3Error
+
+if TYPE_CHECKING:
+    from namel3ss.codegen.backend.core.runtime.memory import MemoryRegistry
 
 
 class PromptProgramError(N3Error):
@@ -30,6 +34,7 @@ class PromptProgram:
     - Template rendering with placeholders
     - Output schema generation for LLM providers
     - Integration with validation layer
+    - Memory access for stateful interactions
     
     Example:
         program = PromptProgram(prompt_definition)
@@ -38,16 +43,18 @@ class PromptProgram:
     """
     
     definition: Prompt
+    memory_registry: Optional['MemoryRegistry'] = None
+    scope_context: Optional[Dict[str, str]] = None
     
-    def render_prompt(self, args: Dict[str, Any]) -> str:
+    async def render_prompt(self, args: Dict[str, Any]) -> str:
         """
-        Render the prompt template with validated arguments.
+        Render the prompt template with validated arguments and memory context.
         
         Args:
             args: Dictionary of argument values
             
         Returns:
-            Rendered prompt string
+            Rendered prompt string with memory references resolved
             
         Raises:
             PromptProgramError: If arguments are invalid or missing
@@ -55,8 +62,12 @@ class PromptProgram:
         # Validate and apply defaults
         validated_args = self._validate_and_apply_defaults(args)
         
-        # Render template
+        # Resolve memory references in template
         template = self.definition.template
+        
+        # Find and resolve memory placeholders: {memory.name}
+        if self.memory_registry and '{memory.' in template:
+            template = await self._resolve_memory_placeholders(template)
         
         try:
             # Simple placeholder substitution: {arg_name}
@@ -71,6 +82,163 @@ class PromptProgram:
         except Exception as e:
             raise PromptProgramError(
                 f"Failed to render prompt '{self.definition.name}': {e}"
+            ) from e
+    
+    async def _resolve_memory_placeholders(self, template: str) -> str:
+        """
+        Resolve memory references in template: {memory.conversation_history}
+        
+        Args:
+            template: Template string with memory placeholders
+            
+        Returns:
+            Template with memory placeholders replaced by actual content
+        """
+        # Pattern: {memory.name} or {memory.name:limit}
+        pattern = r'\{memory\.([a-zA-Z_][a-zA-Z0-9_]*)(?::(\d+))?\}'
+        
+        import re
+        matches = list(re.finditer(pattern, template))
+        
+        if not matches:
+            return template
+        
+        # Replace from end to start to preserve indices
+        for match in reversed(matches):
+            memory_name = match.group(1)
+            limit_str = match.group(2)
+            limit = int(limit_str) if limit_str else None
+            
+            try:
+                handle = self.memory_registry.get(
+                    memory_name,
+                    scope_context=self.scope_context
+                )
+                content = await handle.read(limit=limit, reverse=False)
+                replacement = self._memory_content_to_string(content)
+            except Exception as e:
+                # Log warning but don't fail the render
+                import logging
+                logging.warning(
+                    f"Failed to resolve memory '{memory_name}' in prompt: {e}"
+                )
+                replacement = f"[memory:{memory_name}:unavailable]"
+            
+            template = template[:match.start()] + replacement + template[match.end():]
+        
+        return template
+    
+    def _memory_content_to_string(self, content: Any) -> str:
+        """
+        Convert memory content to string for template inclusion.
+        
+        Args:
+            content: Memory content (list, dict, or scalar)
+            
+        Returns:
+            Formatted string representation
+        """
+        if content is None:
+            return ""
+        
+        if isinstance(content, list):
+            # Format list items as numbered entries
+            if not content:
+                return ""
+            
+            lines = []
+            for i, item in enumerate(content, 1):
+                if isinstance(item, dict):
+                    # Assume conversation format: {role, content}
+                    role = item.get('role', 'unknown')
+                    text = item.get('content', str(item))
+                    lines.append(f"{i}. [{role}] {text}")
+                else:
+                    lines.append(f"{i}. {item}")
+            
+            return "\n".join(lines)
+        
+        elif isinstance(content, dict):
+            # Format dict as key: value pairs
+            lines = [f"{k}: {v}" for k, v in content.items()]
+            return "\n".join(lines)
+        
+        else:
+            return str(content)
+    
+    async def read_memory(self, name: str, *, limit: Optional[int] = None) -> Any:
+        """
+        Read from a memory store.
+        
+        Args:
+            name: Memory name
+            limit: Optional limit on items returned
+            
+        Returns:
+            Memory contents
+            
+        Raises:
+            PromptProgramError: If memory registry not available
+        """
+        if not self.memory_registry:
+            raise PromptProgramError(
+                f"Cannot read memory '{name}': memory registry not available"
+            )
+        
+        try:
+            handle = self.memory_registry.get(name, scope_context=self.scope_context)
+            return await handle.read(limit=limit)
+        except Exception as e:
+            raise PromptProgramError(
+                f"Failed to read memory '{name}': {e}"
+            ) from e
+    
+    async def write_memory(self, name: str, value: Any) -> None:
+        """
+        Write to a memory store.
+        
+        Args:
+            name: Memory name
+            value: Value to write
+            
+        Raises:
+            PromptProgramError: If memory registry not available
+        """
+        if not self.memory_registry:
+            raise PromptProgramError(
+                f"Cannot write memory '{name}': memory registry not available"
+            )
+        
+        try:
+            handle = self.memory_registry.get(name, scope_context=self.scope_context)
+            await handle.write(value)
+        except Exception as e:
+            raise PromptProgramError(
+                f"Failed to write memory '{name}': {e}"
+            ) from e
+    
+    async def append_memory(self, name: str, item: Any) -> None:
+        """
+        Append item to a list-type memory store.
+        
+        Args:
+            name: Memory name
+            item: Item to append
+            
+        Raises:
+            PromptProgramError: If memory registry not available
+        """
+        if not self.memory_registry:
+            raise PromptProgramError(
+                f"Cannot append to memory '{name}': memory registry not available"
+            )
+        
+        try:
+            handle = self.memory_registry.get(name, scope_context=self.scope_context)
+            await handle.append(item)
+        except Exception as e:
+            raise PromptProgramError(
+                f"Failed to append to memory '{name}': {e}"
             ) from e
     
     def _validate_and_apply_defaults(self, args: Dict[str, Any]) -> Dict[str, Any]:
