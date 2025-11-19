@@ -835,6 +835,76 @@ def _execute_workflow_step(
                 context=context,
                 source=f"python:{step_label}",
             )
+    elif kind == "graph":
+        # Execute multi-agent graph
+        graphs_registry = context.get("graphs") if isinstance(context.get("graphs"), dict) else {}
+        agents_registry = context.get("agents") if isinstance(context.get("agents"), dict) else {}
+        
+        # Get LLM and tool registries - these are the actual instantiated objects
+        llms_registry = {}
+        llm_reg = context.get("llms") if isinstance(context.get("llms"), dict) else {}
+        for llm_name, llm_instance in llm_reg.items():
+            llms_registry[llm_name] = llm_instance
+        
+        tools_registry = {}
+        tool_reg = context.get("tools") if isinstance(context.get("tools"), dict) else {}
+        for tool_name, tool_instance in tool_reg.items():
+            tools_registry[tool_name] = tool_instance
+        
+        graph_input = working
+        if isinstance(resolved_options.get("input"), str):
+            graph_input = resolved_options["input"]
+        elif resolved_options.get("input") is not None:
+            graph_input = resolved_options["input"]
+        
+        graph_context = dict(resolved_options.get("context", {}))
+        if memory_payload:
+            graph_context.setdefault("memory", {}).update(memory_payload)
+        
+        entry["inputs"] = {"input": graph_input, "context": graph_context}
+        
+        try:
+            from namel3ss.agents.factory import run_graph_from_state
+            
+            response = run_graph_from_state(
+                target,
+                graphs_registry,
+                agents_registry,
+                llms_registry,
+                tools_registry,
+                graph_input,
+                context=graph_context,
+            )
+            entry["output"] = response
+            entry["status"] = response.get("status", "partial")
+            step_status = response.get("status")
+            
+            if step_status == "success":
+                current_value = response.get("final_response")
+                step_result = current_value
+                if write_memory:
+                    _write_memory_entries(
+                        memory_state,
+                        write_memory,
+                        current_value,
+                        context=context,
+                        source=f"graph:{step_label}",
+                    )
+            elif step_status == "error":
+                step_result = response
+                entry["status"] = "error"
+        except Exception as exc:
+            message = str(exc)
+            entry["output"] = {"error": message}
+            entry["status"] = "error"
+            step_result = entry["output"]
+            _record_runtime_error(
+                context,
+                code="graph_step_error",
+                message=f"Graph step '{step_label}' failed in chain '{chain_name}'",
+                scope=f"chain:{chain_name}",
+                detail=message,
+            )
     else:
         entry["output"] = {"error": f"Unsupported step kind '{kind}'"}
         entry["status"] = "error"
@@ -1315,6 +1385,114 @@ def _project_prompt_output(
     return values, errors
 
 
+def _call_llm_via_registry(
+    name: str,
+    prompt_text: str,
+    args: Dict[str, Any],
+    config: Dict[str, Any],
+    start_time: float,
+) -> Optional[Dict[str, Any]]:
+    """
+    Try to call an LLM using the new BaseLLM interface from _LLM_INSTANCES.
+    
+    Returns response dict if successful, None if LLM not found in registry.
+    """
+    # Check if _LLM_INSTANCES is defined (only exists if app has LLM blocks)
+    if '_LLM_INSTANCES' not in globals():
+        return None
+    
+    # Check if LLM instance exists
+    llm_instance = _LLM_INSTANCES.get(name)
+    if llm_instance is None:
+        return None
+    
+    try:
+        from namel3ss.llm import ChatMessage
+        
+        # Determine mode (chat vs completion)
+        mode = str(config.get("mode") or "chat").lower()
+        
+        # Build messages for chat mode
+        if mode == "chat":
+            messages = []
+            
+            # Add system message if present
+            system_prompt = config.get("system") or config.get("system_prompt")
+            if system_prompt:
+                messages.append(ChatMessage(role="system", content=str(system_prompt)))
+            
+            # Add extra messages from config
+            extra_messages = config.get("messages")
+            if isinstance(extra_messages, list):
+                for msg in extra_messages:
+                    if isinstance(msg, dict):
+                        role = str(msg.get("role", "user"))
+                        content = str(msg.get("content", ""))
+                        messages.append(ChatMessage(role=role, content=content))
+            
+            # Add user prompt
+            user_role = str(config.get("user_role") or "user")
+            messages.append(ChatMessage(role=user_role, content=prompt_text))
+            
+            # Call LLM with chat interface
+            llm_response = llm_instance.generate_chat(messages, **args)
+        else:
+            # Completion mode
+            llm_response = llm_instance.generate(prompt_text, **args)
+        
+        # Convert LLMResponse to our standard format
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        
+        result_payload = {
+            "text": llm_response.text,
+            "raw": llm_response.raw,
+        }
+        
+        metadata = {
+            "elapsed_ms": elapsed_ms,
+            "provider": llm_response.metadata.get("provider", llm_instance.get_provider_name()),
+        }
+        
+        # Add usage info if available
+        if llm_response.usage:
+            metadata["usage"] = llm_response.usage
+            result_payload["usage"] = llm_response.usage
+        
+        if llm_response.finish_reason:
+            metadata["finish_reason"] = llm_response.finish_reason
+        
+        return {
+            "status": "ok",
+            "provider": llm_instance.get_provider_name(),
+            "model": llm_response.model,
+            "inputs": args,
+            "result": result_payload,
+            "metadata": metadata,
+        }
+        
+    except Exception as exc:
+        # Return error response
+        import traceback
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        tb_text = ""
+        try:
+            tb_text = traceback.format_exc(limit=5).strip()
+        except Exception:
+            tb_text = ""
+        if tb_text and len(tb_text) > 3000:
+            tb_text = tb_text[:3000]
+        
+        return {
+            "status": "error",
+            "provider": llm_instance.get_provider_name() if llm_instance else "unknown",
+            "model": getattr(llm_instance, "model", "unknown"),
+            "inputs": args,
+            "error": f"{type(exc).__name__}: {exc}",
+            "metadata": {"elapsed_ms": elapsed_ms},
+            "traceback": tb_text,
+        }
+
+
 def call_llm_connector(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
@@ -1326,7 +1504,29 @@ def call_llm_connector(
     import urllib.parse
 
     start_time = time.time()
+    
+    # Try new LLM interface first
+    args = dict(payload or {})
+    prompt_value = args.get("prompt") or args.get("input")
+    prompt_text = _stringify_prompt_value(name, prompt_value) if prompt_value is not None else ""
+    
+    # Attempt to use new BaseLLM interface
     spec = AI_CONNECTORS.get(name, {})
+    context_stub = {
+        "env": {key: os.getenv(key) for key in ENV_KEYS},
+        "vars": {},
+        "app": APP,
+    }
+    config_raw = spec.get("config", {})
+    config_resolved = _resolve_placeholders(config_raw, context_stub)
+    if not isinstance(config_resolved, dict):
+        config_resolved = config_raw if isinstance(config_raw, dict) else {}
+    
+    llm_response = _call_llm_via_registry(name, prompt_text, args, config_resolved, start_time)
+    if llm_response is not None:
+        return llm_response
+    
+    # Fall back to old implementation
     args = dict(payload or {})
     context_stub = {
         "env": {key: os.getenv(key) for key in ENV_KEYS},

@@ -9,6 +9,9 @@ from namel3ss.ml import get_default_model_registry, load_model_registry
 from namel3ss.codegen.backend.state import BackendState
 from .context import render_context_registry_block
 from .header import render_runtime_header
+from .llm_init import render_llm_initialization_block
+from .tool_init import render_tool_initialization_block
+from .prompt_init import render_prompt_initialization_block
 from .pages import _page_handlers_block, _page_to_dict, _render_page_function
 from .realtime import render_broadcast_block
 from .registries import render_registries_block
@@ -39,6 +42,9 @@ def _render_runtime_module(
             enable_realtime=enable_realtime,
         )
     )
+    parts.append(render_llm_initialization_block(state))
+    parts.append(render_tool_initialization_block(state))
+    parts.append(render_prompt_initialization_block(state))
     parts.extend(collect_runtime_sections())
 
     for page in state.pages:

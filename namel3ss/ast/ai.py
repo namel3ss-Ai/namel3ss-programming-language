@@ -74,6 +74,7 @@ class Prompt:
     template: str
     input_fields: List[PromptField] = field(default_factory=list)
     output_fields: List[PromptField] = field(default_factory=list)
+    args: List['PromptArgument'] = field(default_factory=list)  # New: typed arguments for parameterized prompts
     parameters: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     description: Optional[str] = None
@@ -199,6 +200,88 @@ class TuningJob:
 
 
 
+@dataclass
+class LLMDefinition:
+    """
+    First-class LLM block defining a language model with provider and configuration.
+    
+    Example DSL syntax:
+        llm chat_gpt_4o {
+            provider: openai
+            model: gpt-4o
+            temperature: 0.7
+            max_tokens: 2048
+        }
+    """
+    name: str
+    provider: str  # openai, anthropic, vertex, azure_openai, local
+    model: str
+    temperature: float = 0.7
+    max_tokens: int = 1024
+    top_p: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    config: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ToolDefinition:
+    """
+    First-class tool block defining an external tool with typed input/output schemas.
+    
+    Example DSL syntax:
+        tool get_weather {
+            type: http
+            endpoint: https://api.weather.com/v1/current
+            method: GET
+            input_schema: {
+                location: string,
+                units: string
+            }
+            output_schema: {
+                temperature: number,
+                conditions: string
+            }
+            timeout: 10.0
+        }
+    """
+    name: str
+    type: str = "http"  # http, python, database, vector_search (extensible)
+    endpoint: Optional[str] = None
+    method: str = "POST"
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    output_schema: Dict[str, Any] = field(default_factory=dict)
+    headers: Dict[str, str] = field(default_factory=dict)
+    timeout: float = 30.0
+    config: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class PromptArgument:
+    """
+    Typed argument for parameterized prompt templates.
+    
+    Example DSL syntax:
+        prompt summarize {
+            args: {
+                text: string,
+                max_length: number = 100
+            }
+            template: "Summarize the following text in {max_length} words: {text}"
+        }
+    """
+    name: str
+    arg_type: str  # string, number, boolean, object, array
+    required: bool = True
+    default: Any = None
+    description: Optional[str] = None
+    location: Optional[SourceLocation] = None
+
+
 __all__ = [
     "Connector",
     "AIModel",
@@ -206,12 +289,15 @@ __all__ = [
     "Memory",
     "PromptField",
     "Prompt",
+    "PromptArgument",
     "ChainStep",
     "StepEvaluationConfig",
     "WorkflowIfBlock",
     "WorkflowForBlock",
     "WorkflowWhileBlock",
     "Chain",
+    "LLMDefinition",
+    "ToolDefinition",
     "TrainingComputeSpec",
     "TrainingJob",
     "HyperparamSpec",

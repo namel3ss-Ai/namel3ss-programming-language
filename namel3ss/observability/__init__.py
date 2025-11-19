@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .logging import get_logger, log_retry_event
-from .metrics import emit_metric, get_metric, register_metric_listener
+from .metrics import emit_metric, get_metric, register_metric_listener, record_metric
 
 __all__ = [
     "get_logger",
@@ -11,4 +11,5 @@ __all__ = [
     "emit_metric",
     "get_metric",
     "register_metric_listener",
+    "record_metric",
 ]

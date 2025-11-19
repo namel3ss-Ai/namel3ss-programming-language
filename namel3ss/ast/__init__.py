@@ -103,6 +103,8 @@ from .ai import (
 from .modules import ImportedName, Import, ModuleSpec
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
 from .eval import Evaluator, Metric, Guardrail
+from .rag import IndexDefinition, RagPipelineDefinition
+from .agents import AgentDefinition, GraphDefinition, GraphEdge, MemoryConfig
 from .program import Module, Program
 from .pages import (
     Action,
@@ -260,6 +262,12 @@ __all__ = [
     "Metric",
     "Guardrail",
     "ExperimentMetric",
+    "IndexDefinition",
+    "RagPipelineDefinition",
+    "AgentDefinition",
+    "GraphDefinition",
+    "GraphEdge",
+    "MemoryConfig",
     "CrudResource",
     "Module",
     "Program",

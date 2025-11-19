@@ -115,6 +115,13 @@ from ...ast import (
 	WindowOp,
 	CrudResource,
 )
+from ...ast.agents import (
+	AgentDefinition,
+	GraphDefinition,
+	GraphEdge,
+	MemoryConfig,
+)
+from ...ast.rag import IndexDefinition, RagPipelineDefinition
 from ...effects import EffectAnalyzer
 from ...frames import FrameExpressionAnalyzer, FrameTypeError
 
@@ -161,12 +168,18 @@ class BackendState:
 	connectors: Dict[str, Dict[str, Any]]
 	ai_connectors: Dict[str, Dict[str, Any]]
 	ai_models: Dict[str, Dict[str, Any]]
+	llms: Dict[str, Dict[str, Any]]  # First-class LLM definitions
+	tools: Dict[str, Dict[str, Any]]  # First-class Tool definitions
+	indices: Dict[str, Dict[str, Any]]  # RAG index definitions
+	rag_pipelines: Dict[str, Dict[str, Any]]  # RAG pipeline definitions
 	memories: Dict[str, Dict[str, Any]]
 	prompts: Dict[str, Dict[str, Any]]
 	insights: Dict[str, Dict[str, Any]]
 	models: Dict[str, Dict[str, Any]]
 	templates: Dict[str, Dict[str, Any]]
 	chains: Dict[str, Dict[str, Any]]
+	agents: Dict[str, Dict[str, Any]]  # Agent definitions
+	graphs: Dict[str, Dict[str, Any]]  # Multi-agent graph definitions
 	experiments: Dict[str, Dict[str, Any]]
 	training_jobs: Dict[str, Dict[str, Any]]
 	tuning_jobs: Dict[str, Dict[str, Any]]
@@ -214,6 +227,27 @@ def build_backend_state(app: App) -> BackendState:
 		for model in app.ai_models:
 			ai_models[model.name] = _encode_ai_model(model, env_keys)
 
+
+	# First-class LLM blocks
+		llms: Dict[str, Dict[str, Any]] = {}
+		for llm in app.llms:
+			llms[llm.name] = _encode_llm(llm, env_keys)
+
+		# First-class Tool blocks
+		tools: Dict[str, Dict[str, Any]] = {}
+		for tool in app.tools:
+			tools[tool.name] = _encode_tool(tool, env_keys)
+
+		# RAG indices
+		indices: Dict[str, Dict[str, Any]] = {}
+		for index in app.indices:
+			indices[index.name] = _encode_index(index, env_keys)
+
+		# RAG pipelines
+		rag_pipelines: Dict[str, Dict[str, Any]] = {}
+		for pipeline in app.rag_pipelines:
+			rag_pipelines[pipeline.name] = _encode_rag_pipeline(pipeline, env_keys)
+
 		memories: Dict[str, Dict[str, Any]] = {}
 		for memory in app.memories:
 			memories[memory.name] = _encode_memory(memory, env_keys)
@@ -223,7 +257,8 @@ def build_backend_state(app: App) -> BackendState:
 		prompts: Dict[str, Dict[str, Any]] = {}
 		for prompt in app.prompts:
 			model_name = prompt.model
-			if model_name not in ai_models:
+			# Allow prompts without models or with models that reference either ai_models or llms
+			if model_name and model_name not in ai_models and model_name not in llms:
 				raise ValueError(f"Prompt '{prompt.name}' references undefined model '{model_name}'")
 			prompts[prompt.name] = _encode_prompt(prompt, env_keys)
 			prompt_lookup[prompt.name] = prompt
@@ -243,6 +278,16 @@ def build_backend_state(app: App) -> BackendState:
 		chains: Dict[str, Dict[str, Any]] = {}
 		for chain in app.chains:
 			chains[chain.name] = _encode_chain(chain, env_keys, memory_names)
+
+		# Agent definitions
+		agents: Dict[str, Dict[str, Any]] = {}
+		for agent in app.agents:
+			agents[agent.name] = _encode_agent(agent, env_keys)
+
+		# Multi-agent graph definitions
+		graphs: Dict[str, Dict[str, Any]] = {}
+		for graph in app.graphs:
+			graphs[graph.name] = _encode_graph(graph, env_keys)
 
 		experiments: Dict[str, Dict[str, Any]] = {}
 		for experiment in app.experiments:
@@ -293,11 +338,17 @@ def build_backend_state(app: App) -> BackendState:
 			ai_connectors=ai_connectors,
 			memories=memories,
 			ai_models=ai_models,
+			llms=llms,
+			tools=tools,
+			indices=indices,
+			rag_pipelines=rag_pipelines,
 			prompts=prompts,
 			insights=insights,
 			models=models,
 			templates=templates,
 			chains=chains,
+			agents=agents,
+			graphs=graphs,
 			experiments=experiments,
 			training_jobs=training_jobs,
 			tuning_jobs=tuning_jobs,
@@ -1279,6 +1330,127 @@ def _encode_prompt_field(field: PromptField, env_keys: Set[str]) -> Dict[str, An
 	return payload
 
 
+def _encode_llm(llm: "LLMDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a first-class LLM definition for the backend runtime."""
+	config_value = _encode_value(llm.config, env_keys)
+	if not isinstance(config_value, dict):
+		config_value = {"value": config_value} if config_value is not None else {}
+	metadata_value = _encode_value(llm.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	payload: Dict[str, Any] = {
+		"name": llm.name,
+		"provider": llm.provider,
+		"model": llm.model,
+		"temperature": llm.temperature,
+		"max_tokens": llm.max_tokens,
+		"config": config_value,
+		"metadata": metadata_value,
+	}
+	if llm.top_p is not None:
+		payload["top_p"] = llm.top_p
+	if llm.frequency_penalty is not None:
+		payload["frequency_penalty"] = llm.frequency_penalty
+	if llm.presence_penalty is not None:
+		payload["presence_penalty"] = llm.presence_penalty
+	return payload
+
+
+def _encode_tool(tool: "ToolDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a first-class Tool definition for the backend runtime."""
+	input_schema_value = _encode_value(tool.input_schema, env_keys)
+	if not isinstance(input_schema_value, dict):
+		input_schema_value = {"value": input_schema_value} if input_schema_value is not None else {}
+	output_schema_value = _encode_value(tool.output_schema, env_keys)
+	if not isinstance(output_schema_value, dict):
+		output_schema_value = {"value": output_schema_value} if output_schema_value is not None else {}
+	headers_value = _encode_value(tool.headers, env_keys)
+	if not isinstance(headers_value, dict):
+		headers_value = {"value": headers_value} if headers_value is not None else {}
+	config_value = _encode_value(tool.config, env_keys)
+	if not isinstance(config_value, dict):
+		config_value = {"value": config_value} if config_value is not None else {}
+	metadata_value = _encode_value(tool.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	payload: Dict[str, Any] = {
+		"name": tool.name,
+		"type": tool.type,
+		"method": tool.method,
+		"input_schema": input_schema_value,
+		"output_schema": output_schema_value,
+		"headers": headers_value,
+		"timeout": tool.timeout,
+		"config": config_value,
+		"metadata": metadata_value,
+	}
+	if tool.endpoint:
+		payload["endpoint"] = tool.endpoint
+	return payload
+
+
+def _encode_index(index: "IndexDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a RAG index definition for the backend runtime."""
+	config_value = _encode_value(index.config, env_keys)
+	if not isinstance(config_value, dict):
+		config_value = {"value": config_value} if config_value is not None else {}
+	metadata_value = _encode_value(index.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	
+	payload: Dict[str, Any] = {
+		"name": index.name,
+		"source_dataset": index.source_dataset,
+		"embedding_model": index.embedding_model,
+		"chunk_size": index.chunk_size,
+		"overlap": index.overlap,
+		"backend": index.backend,
+		"config": config_value,
+		"metadata": metadata_value,
+	}
+	
+	if index.namespace is not None:
+		payload["namespace"] = index.namespace
+	if index.collection is not None:
+		payload["collection"] = index.collection
+	if index.table_name is not None:
+		payload["table_name"] = index.table_name
+	if index.metadata_fields is not None:
+		payload["metadata_fields"] = index.metadata_fields
+	
+	return payload
+
+
+def _encode_rag_pipeline(pipeline: "RagPipelineDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a RAG pipeline definition for the backend runtime."""
+	config_value = _encode_value(pipeline.config, env_keys)
+	if not isinstance(config_value, dict):
+		config_value = {"value": config_value} if config_value is not None else {}
+	metadata_value = _encode_value(pipeline.metadata, env_keys)
+	if not isinstance(metadata_value, dict):
+		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+	filters_value = _encode_value(pipeline.filters, env_keys)
+	if not isinstance(filters_value, dict):
+		filters_value = {"value": filters_value} if filters_value is not None else {}
+	
+	payload: Dict[str, Any] = {
+		"name": pipeline.name,
+		"query_encoder": pipeline.query_encoder,
+		"index": pipeline.index,
+		"top_k": pipeline.top_k,
+		"distance_metric": pipeline.distance_metric,
+		"config": config_value,
+		"metadata": metadata_value,
+	}
+	
+	if pipeline.reranker is not None:
+		payload["reranker"] = pipeline.reranker
+	if pipeline.filters is not None:
+		payload["filters"] = filters_value
+	
+	return payload
+
+
 def _encode_chain(chain: Chain, env_keys: Set[str], memory_names: Set[str]) -> Dict[str, Any]:
 	encoded_steps = [
 		_encode_workflow_node(node, env_keys, memory_names, chain.name) for node in chain.steps
@@ -1851,14 +2023,52 @@ def _collect_template_markers(value: Any, env_keys: Set[str]) -> None:
 			if token.startswith("$"):
 				env_keys.add(token[1:])
 				continue
-			if ":" in token:
-				scope, _, path = token.partition(":")
-				parts = [segment for segment in path.split(".") if segment]
-				if scope == "env" and parts:
-					env_keys.add(parts[0])
-	elif isinstance(value, dict):
-		for item in value.values():
-			_collect_template_markers(item, env_keys)
-	elif isinstance(value, list):
-		for item in value:
-			_collect_template_markers(item, env_keys)
+
+
+def _encode_agent(agent: AgentDefinition, env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode an AgentDefinition into a dict for backend state."""
+	memory_config = None
+	if agent.memory_config:
+		memory_config = {
+			"policy": agent.memory_config.policy,
+			"max_items": agent.memory_config.max_items,
+			"window_size": agent.memory_config.window_size,
+			"config": dict(agent.memory_config.config) if agent.memory_config.config else {},
+		}
+	
+	return {
+		"name": agent.name,
+		"llm_name": agent.llm_name,
+		"tool_names": list(agent.tool_names) if agent.tool_names else [],
+		"memory_config": memory_config,
+		"goal": agent.goal,
+		"system_prompt": agent.system_prompt,
+		"max_turns": agent.max_turns,
+		"temperature": agent.temperature,
+		"config": dict(agent.config) if agent.config else {},
+	}
+
+
+def _encode_graph(graph: GraphDefinition, env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a GraphDefinition into a dict for backend state."""
+	edges = []
+	for edge in graph.edges:
+		edge_dict = {
+			"from_agent": edge.from_agent,
+			"to_agent": edge.to_agent,
+			"condition": _expression_to_source(edge.condition) if edge.condition else None,
+		}
+		edges.append(edge_dict)
+	
+	return {
+		"name": graph.name,
+		"start_agent": graph.start_agent,
+		"edges": edges,
+		"termination_agents": list(graph.termination_agents) if graph.termination_agents else [],
+		"termination_condition": (
+			_expression_to_source(graph.termination_condition) 
+			if graph.termination_condition else None
+		),
+		"max_hops": graph.max_hops,
+		"timeout_ms": graph.timeout_ms,
+	}

@@ -15,7 +15,11 @@ from .ai import (
     Template,
     TrainingJob,
     TuningJob,
+    LLMDefinition,
+    ToolDefinition,
 )
+from .rag import IndexDefinition, RagPipelineDefinition
+from .agents import AgentDefinition, GraphDefinition
 from .experiments import Experiment
 from .datasets import Dataset, RefreshPolicy
 from .frames import Frame
@@ -49,6 +53,8 @@ class App:
     models: List[Model] = field(default_factory=list)
     connectors: List[Connector] = field(default_factory=list)
     ai_models: List[AIModel] = field(default_factory=list)
+    llms: List[LLMDefinition] = field(default_factory=list)  # First-class LLM definitions
+    tools: List[ToolDefinition] = field(default_factory=list)  # First-class tool definitions
     prompts: List[Prompt] = field(default_factory=list)
     memories: List[Memory] = field(default_factory=list)
     templates: List[Template] = field(default_factory=list)
@@ -60,6 +66,10 @@ class App:
     guardrails: List[Guardrail] = field(default_factory=list)
     training_jobs: List[TrainingJob] = field(default_factory=list)
     tuning_jobs: List[TuningJob] = field(default_factory=list)
+    indices: List[IndexDefinition] = field(default_factory=list)  # RAG retrieval indices
+    rag_pipelines: List[RagPipelineDefinition] = field(default_factory=list)  # RAG pipeline definitions
+    agents: List[AgentDefinition] = field(default_factory=list)  # Agent definitions
+    graphs: List[GraphDefinition] = field(default_factory=list)  # Multi-agent graph definitions
 
 
 __all__ = [

@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional, Sequence
 
 from namel3ss.ast import (
     Action,
+    AgentDefinition,
     App,
     AttributeRef,
     BinaryOp,
@@ -15,6 +16,7 @@ from namel3ss.ast import (
     Dataset,
     ForLoop,
     Frame,
+    GraphDefinition,
     IfBlock,
     Literal,
     Module,
@@ -111,8 +113,21 @@ class AppTypeChecker:
         self._register_datasets(app.datasets)
         self._register_frames(app.frames)
         self._register_prompts(app.prompts)
+        self._register_llms(app.llms)
+        self._register_tools(app.tools)
+        self._register_indices(app.indices)
+        self._register_rag_pipelines(app.rag_pipelines)
+        self._register_agents(app.agents)
+        self._register_graphs(app.graphs)
         self._check_datasets(app.datasets)
         self._check_frames(app.frames)
+        self._check_llms(app.llms)
+        self._check_tools(app.tools)
+        self._check_prompts_enhanced(app.prompts)
+        self._check_indices(app.indices)
+        self._check_rag_pipelines(app.rag_pipelines)
+        self._check_agents(app.agents)
+        self._check_graphs(app.graphs)
         self._check_app_variables(app)
         self._check_pages(app.pages)
 
@@ -134,6 +149,50 @@ class AppTypeChecker:
             inputs = {field.name: self._type_from_prompt_field(field) for field in prompt.input_fields}
             outputs = {field.name: self._type_from_prompt_field(field) for field in prompt.output_fields}
             self.env.prompts[prompt.name] = PromptIOTypes(inputs=inputs, outputs=outputs)
+
+    def _register_llms(self, llms) -> None:
+        """Register LLM definitions in the type environment."""
+        # Store LLM names for validation
+        if not hasattr(self.env, 'llms'):
+            self.env.llms = {}
+        for llm in llms:
+            self.env.llms[llm.name] = llm
+
+    def _register_tools(self, tools) -> None:
+        """Register tool definitions in the type environment."""
+        # Store tool names and schemas for validation
+        if not hasattr(self.env, 'tools'):
+            self.env.tools = {}
+        for tool in tools:
+            self.env.tools[tool.name] = tool
+
+    def _register_indices(self, indices) -> None:
+        """Register index definitions in the type environment."""
+        if not hasattr(self.env, 'indices'):
+            self.env.indices = {}
+        for index in indices:
+            self.env.indices[index.name] = index
+
+    def _register_rag_pipelines(self, rag_pipelines) -> None:
+        """Register RAG pipeline definitions in the type environment."""
+        if not hasattr(self.env, 'rag_pipelines'):
+            self.env.rag_pipelines = {}
+        for pipeline in rag_pipelines:
+            self.env.rag_pipelines[pipeline.name] = pipeline
+
+    def _register_agents(self, agents: Sequence[AgentDefinition]) -> None:
+        """Register agent definitions in the type environment."""
+        if not hasattr(self.env, 'agents'):
+            self.env.agents = {}
+        for agent in agents:
+            self.env.agents[agent.name] = agent
+
+    def _register_graphs(self, graphs: Sequence[GraphDefinition]) -> None:
+        """Register graph definitions in the type environment."""
+        if not hasattr(self.env, 'graphs'):
+            self.env.graphs = {}
+        for graph in graphs:
+            self.env.graphs[graph.name] = graph
 
     def _frame_from_dataset(self, dataset: Dataset) -> FrameTypeRef:
         columns = dataset.schema or []
@@ -266,6 +325,245 @@ class AppTypeChecker:
             if frame.source_type == "dataset" and frame.source:
                 if frame.source not in self.env.datasets:
                     self._raise(f"Frame '{frame.name}' references unknown dataset '{frame.source}'.")
+
+    def _check_llms(self, llms) -> None:
+        """Validate LLM definitions."""
+        valid_providers = {'openai', 'anthropic', 'vertex', 'azure_openai', 'local'}
+        for llm in llms:
+            if llm.provider not in valid_providers:
+                self._raise(f"LLM '{llm.name}' has invalid provider '{llm.provider}'. "
+                           f"Must be one of: {', '.join(valid_providers)}")
+            
+            # Validate numeric parameters
+            if llm.temperature < 0 or llm.temperature > 2:
+                self._raise(f"LLM '{llm.name}' temperature must be between 0 and 2")
+            
+            if llm.max_tokens < 1:
+                self._raise(f"LLM '{llm.name}' max_tokens must be positive")
+            
+            if llm.top_p is not None and (llm.top_p < 0 or llm.top_p > 1):
+                self._raise(f"LLM '{llm.name}' top_p must be between 0 and 1")
+            
+            if llm.frequency_penalty is not None and (llm.frequency_penalty < -2 or llm.frequency_penalty > 2):
+                self._raise(f"LLM '{llm.name}' frequency_penalty must be between -2 and 2")
+            
+            if llm.presence_penalty is not None and (llm.presence_penalty < -2 or llm.presence_penalty > 2):
+                self._raise(f"LLM '{llm.name}' presence_penalty must be between -2 and 2")
+
+    def _check_tools(self, tools) -> None:
+        """Validate tool definitions."""
+        valid_types = {'http', 'python', 'database', 'vector_search'}
+        valid_methods = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH'}
+        
+        for tool in tools:
+            if tool.type not in valid_types:
+                self._raise(f"Tool '{tool.name}' has invalid type '{tool.type}'. "
+                           f"Must be one of: {', '.join(valid_types)}")
+            
+            if tool.type == 'http':
+                if not tool.endpoint:
+                    self._raise(f"HTTP tool '{tool.name}' must have an endpoint")
+                
+                if tool.method.upper() not in valid_methods:
+                    self._raise(f"Tool '{tool.name}' has invalid HTTP method '{tool.method}'. "
+                               f"Must be one of: {', '.join(valid_methods)}")
+            
+            if tool.timeout <= 0:
+                self._raise(f"Tool '{tool.name}' timeout must be positive")
+
+    def _check_prompts_enhanced(self, prompts) -> None:
+        """Validate enhanced prompt definitions with typed args."""
+        for prompt in prompts:
+            # Validate model reference
+            if prompt.model and hasattr(self.env, 'llms'):
+                if prompt.model not in self.env.llms:
+                    # Model might be a legacy AIModel reference
+                    pass  # Skip for now, would need to check ai_models
+            
+            # Validate args types
+            valid_arg_types = {'string', 'number', 'boolean', 'object', 'array'}
+            for arg in prompt.args:
+                if arg.arg_type not in valid_arg_types:
+                    self._raise(f"Prompt '{prompt.name}' arg '{arg.name}' has invalid type '{arg.arg_type}'. "
+                               f"Must be one of: {', '.join(valid_arg_types)}")
+                
+                # Check that required args don't have defaults
+                if arg.required and arg.default is not None:
+                    self._raise(f"Prompt '{prompt.name}' arg '{arg.name}' cannot be required and have a default")
+
+    def _check_agents(self, agents: Sequence[AgentDefinition]) -> None:
+        """Validate agent definitions."""
+        valid_memory_policies = {'conversation_window', 'full_history', 'summary', 'none'}
+        
+        for agent in agents:
+            # Validate LLM reference
+            if agent.llm_name not in self.env.llms:
+                self._raise(
+                    f"Agent '{agent.name}' references unknown LLM '{agent.llm_name}'",
+                    hint=f"Available LLMs: {', '.join(sorted(self.env.llms.keys()))}"
+                )
+            
+            # Validate tool references
+            for tool_name in agent.tool_names:
+                if tool_name not in self.env.tools:
+                    self._raise(
+                        f"Agent '{agent.name}' references unknown tool '{tool_name}'",
+                        hint=f"Available tools: {', '.join(sorted(self.env.tools.keys()))}"
+                    )
+            
+            # Validate memory config
+            if agent.memory_config:
+                policy = agent.memory_config.policy
+                if policy not in valid_memory_policies:
+                    self._raise(
+                        f"Agent '{agent.name}' has invalid memory policy '{policy}'",
+                        hint=f"Valid policies: {', '.join(valid_memory_policies)}"
+                    )
+                
+                if agent.memory_config.max_items is not None and agent.memory_config.max_items < 1:
+                    self._raise(f"Agent '{agent.name}' memory max_items must be positive")
+                
+                if agent.memory_config.window_size is not None and agent.memory_config.window_size < 1:
+                    self._raise(f"Agent '{agent.name}' memory window_size must be positive")
+            
+            # Validate numeric parameters
+            if agent.max_turns is not None and agent.max_turns < 1:
+                self._raise(f"Agent '{agent.name}' max_turns must be positive")
+            
+            if agent.temperature is not None:
+                if agent.temperature < 0 or agent.temperature > 2:
+                    self._raise(f"Agent '{agent.name}' temperature must be between 0 and 2")
+
+    def _check_graphs(self, graphs: Sequence[GraphDefinition]) -> None:
+        """Validate graph definitions."""
+        for graph in graphs:
+            # Validate start agent exists
+            if graph.start_agent not in self.env.agents:
+                self._raise(
+                    f"Graph '{graph.name}' references unknown start agent '{graph.start_agent}'",
+                    hint=f"Available agents: {', '.join(sorted(self.env.agents.keys()))}"
+                )
+            
+            # Validate termination agents exist
+            for agent_name in graph.termination_agents:
+                if agent_name not in self.env.agents:
+                    self._raise(
+                        f"Graph '{graph.name}' references unknown termination agent '{agent_name}'",
+                        hint=f"Available agents: {', '.join(sorted(self.env.agents.keys()))}"
+                    )
+            
+            # Validate all edge agents exist
+            for edge in graph.edges:
+                if edge.from_agent not in self.env.agents:
+                    self._raise(
+                        f"Graph '{graph.name}' edge references unknown from_agent '{edge.from_agent}'",
+                        hint=f"Available agents: {', '.join(sorted(self.env.agents.keys()))}"
+                    )
+                
+                if edge.to_agent not in self.env.agents:
+                    self._raise(
+                        f"Graph '{graph.name}' edge references unknown to_agent '{edge.to_agent}'",
+                        hint=f"Available agents: {', '.join(sorted(self.env.agents.keys()))}"
+                    )
+            
+            # Validate numeric parameters
+            if graph.max_hops is not None and graph.max_hops < 1:
+                self._raise(f"Graph '{graph.name}' max_hops must be positive")
+            
+            if graph.timeout_ms is not None and graph.timeout_ms < 1:
+                self._raise(f"Graph '{graph.name}' timeout_ms must be positive")
+            
+            # Validate graph structure (reachability)
+            self._check_graph_reachability(graph)
+
+    def _check_graph_reachability(self, graph: GraphDefinition) -> None:
+        """Validate that all agents in graph are reachable from start."""
+        # Build adjacency list
+        adjacency = {}
+        all_agents = {graph.start_agent}
+        
+        for edge in graph.edges:
+            all_agents.add(edge.from_agent)
+            all_agents.add(edge.to_agent)
+            if edge.from_agent not in adjacency:
+                adjacency[edge.from_agent] = []
+            adjacency[edge.from_agent].append(edge.to_agent)
+        
+        # Add termination agents
+        for agent in graph.termination_agents:
+            all_agents.add(agent)
+        
+        # BFS from start to find reachable agents
+        reachable = {graph.start_agent}
+        queue = [graph.start_agent]
+        
+        while queue:
+            current = queue.pop(0)
+            if current in adjacency:
+                for neighbor in adjacency[current]:
+                    if neighbor not in reachable:
+                        reachable.add(neighbor)
+                        queue.append(neighbor)
+        
+        # Check if any agents are unreachable
+        unreachable = all_agents - reachable
+        if unreachable:
+            self._raise(
+                f"Graph '{graph.name}' has unreachable agents: {', '.join(sorted(unreachable))}",
+                hint="Ensure all agents are connected via edges from the start agent"
+            )
+
+    def _check_indices(self, indices) -> None:
+        """Validate index definitions."""
+        valid_backends = {'pgvector', 'postgres', 'qdrant', 'weaviate', 'chroma'}
+        
+        for index in indices:
+            # Validate source_dataset exists
+            if index.source_dataset not in self.env.datasets:
+                self._raise(f"Index '{index.name}' references unknown dataset '{index.source_dataset}'")
+            
+            # Validate backend
+            if index.backend not in valid_backends:
+                self._raise(f"Index '{index.name}' has invalid backend '{index.backend}'. "
+                           f"Must be one of: {', '.join(valid_backends)}")
+            
+            # Validate chunk_size and overlap
+            if index.chunk_size < 1:
+                self._raise(f"Index '{index.name}' chunk_size must be positive")
+            
+            if index.overlap < 0:
+                self._raise(f"Index '{index.name}' overlap must be non-negative")
+            
+            if index.overlap >= index.chunk_size:
+                self._raise(f"Index '{index.name}' overlap ({index.overlap}) must be less than chunk_size ({index.chunk_size})")
+            
+            # Validate embedding_model is a valid model name
+            # For now, just check it's not empty
+            if not index.embedding_model or not index.embedding_model.strip():
+                self._raise(f"Index '{index.name}' must specify an embedding_model")
+
+    def _check_rag_pipelines(self, rag_pipelines) -> None:
+        """Validate RAG pipeline definitions."""
+        valid_distance_metrics = {'cosine', 'euclidean', 'l2', 'dot', 'inner'}
+        
+        for pipeline in rag_pipelines:
+            # Validate index reference
+            if hasattr(self.env, 'indices'):
+                if pipeline.index not in self.env.indices:
+                    self._raise(f"RAG pipeline '{pipeline.name}' references unknown index '{pipeline.index}'")
+            
+            # Validate top_k
+            if pipeline.top_k < 1:
+                self._raise(f"RAG pipeline '{pipeline.name}' top_k must be positive")
+            
+            # Validate distance_metric
+            if pipeline.distance_metric not in valid_distance_metrics:
+                self._raise(f"RAG pipeline '{pipeline.name}' has invalid distance_metric '{pipeline.distance_metric}'. "
+                           f"Must be one of: {', '.join(valid_distance_metrics)}")
+            
+            # Validate query_encoder is not empty
+            if not pipeline.query_encoder or not pipeline.query_encoder.strip():
+                self._raise(f"RAG pipeline '{pipeline.name}' must specify a query_encoder")
 
     # ------------------------------------------------------------------
     # Page-level checks

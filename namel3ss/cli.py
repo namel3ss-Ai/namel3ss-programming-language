@@ -1598,6 +1598,30 @@ def main(argv: Optional[list] = None) -> None:
     )
     lsp_parser.set_defaults(func=cmd_lsp)
     
+    # RAG index building command
+    build_index_parser = subparsers.add_parser(
+        'build-index',
+        help='Build a RAG vector index from a dataset'
+    )
+    build_index_parser.add_argument(
+        'source',
+        help='Path to the .n3 source file'
+    )
+    build_index_parser.add_argument(
+        'index',
+        help='Name of the index to build'
+    )
+    build_index_parser.add_argument(
+        '--dataset',
+        help='Override the source dataset name'
+    )
+    build_index_parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Print detailed progress information'
+    )
+    build_index_parser.set_defaults(func=lambda args: __import__('namel3ss.cli_rag', fromlist=['cmd_build_index']).cmd_build_index(args))
+    
     args = parser.parse_args(argv)
 
     runtime_workspace = Path(args.workspace).resolve() if getattr(args, 'workspace', None) else workspace_root

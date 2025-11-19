@@ -41,3 +41,16 @@ def get_metric(name: str) -> Callable[[float, Optional[Dict[str, str]]], None]:
         emit_metric(name, values={"value": value}, labels=labels)
 
     return _emitter
+
+
+def record_metric(name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
+    """Record a single metric value with optional tags.
+    
+    This is a convenience function that wraps emit_metric for simple use cases.
+    
+    Args:
+        name: Metric name
+        value: Numeric value to record
+        tags: Optional dictionary of string tags/labels
+    """
+    emit_metric(name, values={"value": value}, labels=tags)

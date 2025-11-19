@@ -312,6 +312,11 @@ def build_context(page_slug: Optional[str]) -> Dict[str, Any]:
     context.setdefault("prompts", AI_PROMPTS)
     context.setdefault("templates", AI_TEMPLATES)
     context.setdefault("chains", AI_CHAINS)
+    context.setdefault("agents", AGENT_DEFS)
+    context.setdefault("graphs", AGENT_GRAPHS)
+    # Add LLM instances if they exist (from first-class LLM blocks)
+    if '_LLM_INSTANCES' in globals():
+        context.setdefault("llms", _LLM_INSTANCES)
     context.setdefault("experiments", AI_EXPERIMENTS)
     context.setdefault("training_jobs", TRAINING_JOBS)
     context.setdefault("tuning_jobs", TUNING_JOBS)

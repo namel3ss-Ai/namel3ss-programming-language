@@ -67,6 +67,9 @@ from namel3ss.ast import (
     ShowText,
     Theme,
 )
+from namel3ss.ast.ai import LLMDefinition, ToolDefinition, PromptArgument, Prompt
+from namel3ss.ast.rag import IndexDefinition, RagPipelineDefinition
+from namel3ss.ast.agents import AgentDefinition, GraphDefinition, GraphEdge, MemoryConfig
 from namel3ss.ast.pages import ElifBlock, ForLoop, IfBlock
 from namel3ss.ast.program import Module
 from namel3ss.ast.modules import Import, ImportedName
@@ -77,6 +80,13 @@ from namel3ss.parser.expressions import ExpressionParserMixin
 _DATASET_HEADER_RE = re.compile(r'^dataset\s+"([^"]+)"\s+from\s+(\w+)\s+([A-Za-z0-9_"\.]+)\s*:\s*$')
 _FRAME_HEADER_RE = re.compile(r'^frame\s+"([^"]+)"(?:\s+from\s+(\w+)\s+([A-Za-z0-9_"\.]+))?\s*:\s*$')
 _PAGE_HEADER_RE = re.compile(r'^page\s+"([^"]+)"\s+at\s+"([^"]+)"\s*:\s*$')
+_LLM_HEADER_RE = re.compile(r'^llm\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_TOOL_HEADER_RE = re.compile(r'^tool\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_PROMPT_HEADER_RE = re.compile(r'^prompt\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_INDEX_HEADER_RE = re.compile(r'^index\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_RAG_PIPELINE_HEADER_RE = re.compile(r'^rag_pipeline\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_AGENT_HEADER_RE = re.compile(r'^agent\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$')
+_GRAPH_HEADER_RE = re.compile(r'^graph\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$')
 _APP_HEADER_RE = re.compile(
     r'^app\s+"([^"]+)"(?:\s+connects\s+to\s+[A-Za-z_][A-Za-z0-9_]*\s+"([^"]+)")?\s*\.?$'
 )
@@ -187,6 +197,27 @@ class _GrammarModuleParser:
                 continue
             if stripped.startswith('page '):
                 self._parse_page(line)
+                continue
+            if stripped.startswith('llm '):
+                self._parse_llm(line)
+                continue
+            if stripped.startswith('tool '):
+                self._parse_tool(line)
+                continue
+            if stripped.startswith('prompt '):
+                self._parse_prompt(line)
+                continue
+            if stripped.startswith('index '):
+                self._parse_index(line)
+                continue
+            if stripped.startswith('rag_pipeline '):
+                self._parse_rag_pipeline(line)
+                continue
+            if stripped.startswith('agent '):
+                self._parse_agent(line)
+                continue
+            if stripped.startswith('graph '):
+                self._parse_graph(line)
                 continue
             self._unsupported(line, f"top-level statement '{stripped.split()[0]}'")
 
@@ -518,6 +549,632 @@ class _GrammarModuleParser:
             self._advance()
         return entries
 
+    # ------------------------------------------------------------------
+    # LLM, Tool, and Prompt block parsing
+    # ------------------------------------------------------------------
+    def _parse_llm(self, line: _Line) -> None:
+        """
+        Parse an LLM definition block.
+        
+        Grammar:
+            llm <name>:
+                provider: <openai|anthropic|vertex|azure_openai|local>
+                model: <model_name>
+                temperature: <float>
+                max_tokens: <int>
+                top_p: <float>
+                frequency_penalty: <float>
+                presence_penalty: <float>
+        """
+        match = _LLM_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "llm declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties
+        properties = self._parse_kv_block(base_indent)
+        
+        # Extract required fields
+        provider = properties.get('provider')
+        model = properties.get('model')
+        if not provider or not model:
+            raise self._error("llm block requires 'provider' and 'model' fields", line)
+        
+        # Validate provider
+        valid_providers = {'openai', 'anthropic', 'vertex', 'azure_openai', 'local'}
+        if provider not in valid_providers:
+            raise self._error(f"Invalid provider '{provider}'. Must be one of: {', '.join(valid_providers)}", line)
+        
+        # Extract optional fields
+        temperature = float(properties.get('temperature', 0.7))
+        max_tokens = int(properties.get('max_tokens', 1024))
+        top_p = float(properties['top_p']) if 'top_p' in properties else None
+        frequency_penalty = float(properties['frequency_penalty']) if 'frequency_penalty' in properties else None
+        presence_penalty = float(properties['presence_penalty']) if 'presence_penalty' in properties else None
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'provider', 'model', 'temperature', 'max_tokens', 'top_p', 
+                               'frequency_penalty', 'presence_penalty'}}
+        
+        llm = LLMDefinition(
+            name=name,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.llms.append(llm)
+
+    def _parse_tool(self, line: _Line) -> None:
+        """
+        Parse a tool definition block.
+        
+        Grammar:
+            tool <name>:
+                type: <http|python|database|vector_search>
+                endpoint: <url>
+                method: <GET|POST|PUT|DELETE>
+                input_schema: {...}
+                output_schema: {...}
+                headers: {...}
+                timeout: <float>
+        """
+        match = _TOOL_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "tool declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties
+        properties = self._parse_kv_block(base_indent)
+        
+        # Extract fields
+        tool_type = properties.get('type', 'http')
+        endpoint = properties.get('endpoint')
+        method = properties.get('method', 'POST')
+        
+        # Parse schemas if present (simple dict parsing for now)
+        input_schema = self._parse_schema_field(properties.get('input_schema', {}))
+        output_schema = self._parse_schema_field(properties.get('output_schema', {}))
+        headers = self._parse_schema_field(properties.get('headers', {}))
+        
+        timeout = float(properties.get('timeout', 30.0))
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'type', 'endpoint', 'method', 'input_schema', 'output_schema', 
+                               'headers', 'timeout'}}
+        
+        tool = ToolDefinition(
+            name=name,
+            type=tool_type,
+            endpoint=endpoint,
+            method=method,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            headers=headers,
+            timeout=timeout,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.tools.append(tool)
+
+    def _parse_prompt(self, line: _Line) -> None:
+        """
+        Parse a prompt definition block with typed arguments.
+        
+        Grammar:
+            prompt <name>:
+                args:
+                    <arg_name>: <type> [= <default>]
+                    ...
+                template: <string>
+                model: <llm_name>
+        """
+        match = _PROMPT_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "prompt declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties
+        properties = self._parse_kv_block(base_indent)
+        
+        # Extract required fields
+        template = properties.get('template')
+        model = properties.get('model')
+        if not template:
+            raise self._error("prompt block requires 'template' field", line)
+        
+        # Strip quotes from template string
+        if template.startswith('"') and template.endswith('"'):
+            template = template[1:-1]
+        elif template.startswith("'") and template.endswith("'"):
+            template = template[1:-1]
+        
+        # Parse args if present
+        args: List[PromptArgument] = []
+        if 'args' in properties:
+            args_value = properties['args']
+            if isinstance(args_value, dict):
+                for arg_name, arg_spec in args_value.items():
+                    # Parse "type = default" or just "type"
+                    arg_type = 'string'
+                    default = None
+                    required = True
+                    
+                    if isinstance(arg_spec, str):
+                        if '=' in arg_spec:
+                            parts = arg_spec.split('=', 1)
+                            arg_type = parts[0].strip()
+                            default = parts[1].strip()
+                            required = False
+                        else:
+                            arg_type = arg_spec.strip()
+                    
+                    args.append(PromptArgument(
+                        name=arg_name,
+                        arg_type=arg_type,
+                        required=required,
+                        default=default,
+                    ))
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'template', 'model', 'args'}}
+        
+        prompt = Prompt(
+            name=name,
+            model=model or '',
+            template=template,
+            args=args,
+            parameters=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.prompts.append(prompt)
+
+    def _parse_index(self, line: _Line) -> None:
+        """
+        Parse an index definition block.
+        
+        Grammar:
+            index <name>:
+                source_dataset: <dataset_name>
+                embedding_model: <model_name>
+                chunk_size: <int>
+                overlap: <int>
+                backend: <pgvector|qdrant|weaviate>
+                namespace: <string>
+                collection: <string>
+                table_name: <string>
+                metadata_fields: [<field1>, <field2>, ...]
+        """
+        match = _INDEX_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "index declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties
+        properties = self._parse_kv_block(base_indent)
+        
+        # Extract required fields
+        source_dataset = properties.get('source_dataset')
+        embedding_model = properties.get('embedding_model')
+        if not source_dataset or not embedding_model:
+            raise self._error("index block requires 'source_dataset' and 'embedding_model' fields", line)
+        
+        # Extract optional fields with defaults
+        chunk_size = int(properties.get('chunk_size', 512))
+        overlap = int(properties.get('overlap', 64))
+        backend = properties.get('backend', 'pgvector')
+        namespace = properties.get('namespace')
+        collection = properties.get('collection')
+        table_name = properties.get('table_name')
+        
+        # Parse metadata_fields if present (can be list or comma-separated string)
+        metadata_fields = None
+        if 'metadata_fields' in properties:
+            mf = properties['metadata_fields']
+            if isinstance(mf, list):
+                metadata_fields = mf
+            elif isinstance(mf, str):
+                # Parse string like "[field1, field2]" or "field1, field2"
+                mf = mf.strip()
+                if mf.startswith('[') and mf.endswith(']'):
+                    mf = mf[1:-1]
+                metadata_fields = [f.strip() for f in mf.split(',') if f.strip()]
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'source_dataset', 'embedding_model', 'chunk_size', 'overlap', 
+                               'backend', 'namespace', 'collection', 'table_name', 'metadata_fields'}}
+        
+        index = IndexDefinition(
+            name=name,
+            source_dataset=source_dataset,
+            embedding_model=embedding_model,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            backend=backend,
+            namespace=namespace,
+            collection=collection,
+            table_name=table_name,
+            metadata_fields=metadata_fields,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.indices.append(index)
+
+    def _parse_rag_pipeline(self, line: _Line) -> None:
+        """
+        Parse a RAG pipeline definition block.
+        
+        Grammar:
+            rag_pipeline <name>:
+                query_encoder: <embedding_model_name>
+                index: <index_name>
+                top_k: <int>
+                reranker: <reranker_model_name>
+                distance_metric: <cosine|euclidean|dot>
+                filters: {<key>: <value>, ...}
+        """
+        match = _RAG_PIPELINE_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "rag_pipeline declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties
+        properties = self._parse_kv_block(base_indent)
+        
+        # Extract required fields
+        query_encoder = properties.get('query_encoder')
+        index = properties.get('index')
+        if not query_encoder or not index:
+            raise self._error("rag_pipeline block requires 'query_encoder' and 'index' fields", line)
+        
+        # Extract optional fields with defaults
+        top_k = int(properties.get('top_k', 5))
+        reranker = properties.get('reranker')
+        distance_metric = properties.get('distance_metric', 'cosine')
+        
+        # Parse filters if present
+        filters = None
+        if 'filters' in properties:
+            f = properties['filters']
+            if isinstance(f, dict):
+                filters = f
+            elif isinstance(f, str):
+                # Try to parse as dict-like string
+                import json
+                try:
+                    filters = json.loads(f)
+                except json.JSONDecodeError:
+                    pass
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'query_encoder', 'index', 'top_k', 'reranker', 
+                               'distance_metric', 'filters'}}
+        
+        rag_pipeline = RagPipelineDefinition(
+            name=name,
+            query_encoder=query_encoder,
+            index=index,
+            top_k=top_k,
+            reranker=reranker,
+            distance_metric=distance_metric,
+            filters=filters,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.rag_pipelines.append(rag_pipeline)
+
+    def _parse_agent(self, line: _Line) -> None:
+        """
+        Parse an agent definition block.
+        
+        Grammar:
+            agent <name> {
+                llm: <llm_name>
+                tools: [<tool1>, <tool2>, ...]
+                memory: "<policy>" or {config}
+                goal: "<description>"
+                system_prompt: "<prompt>"  # optional
+                max_turns: <int>  # optional
+                temperature: <float>  # optional
+            }
+        """
+        match = _AGENT_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "agent declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties within braces
+        properties = self._parse_kv_block_braces(base_indent)
+        
+        # Extract required fields
+        llm_name = properties.get('llm')
+        if not llm_name:
+            raise self._error("agent block requires 'llm' field", line)
+        
+        # Parse tools list
+        tools_raw = properties.get('tools', '[]')
+        tool_names = self._parse_list_field(tools_raw)
+        
+        # Parse memory config
+        memory_raw = properties.get('memory')
+        memory_config = None
+        if memory_raw:
+            if isinstance(memory_raw, str):
+                # Simple string policy like "conversation" or "none"
+                memory_config = memory_raw
+            elif isinstance(memory_raw, dict):
+                memory_config = MemoryConfig(**memory_raw)
+        
+        goal = properties.get('goal', '')
+        system_prompt = properties.get('system_prompt')
+        max_turns = int(properties['max_turns']) if 'max_turns' in properties else None
+        max_tokens = int(properties['max_tokens']) if 'max_tokens' in properties else None
+        temperature = float(properties['temperature']) if 'temperature' in properties else None
+        top_p = float(properties['top_p']) if 'top_p' in properties else None
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'llm', 'tools', 'memory', 'goal', 'system_prompt', 
+                               'max_turns', 'max_tokens', 'temperature', 'top_p'}}
+        
+        agent = AgentDefinition(
+            name=name,
+            llm_name=llm_name,
+            tool_names=tool_names,
+            memory_config=memory_config,
+            goal=goal,
+            system_prompt=system_prompt,
+            max_turns=max_turns,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.agents.append(agent)
+
+    def _parse_graph(self, line: _Line) -> None:
+        """
+        Parse a graph definition block.
+        
+        Grammar:
+            graph <name> {
+                start: <agent_name>
+                edges: [
+                    { from: <agent1>, to: <agent2>, when: "<condition>" },
+                    ...
+                ]
+                termination: <agent_name> or [<agent1>, <agent2>]
+                max_hops: <int>  # optional
+                timeout_ms: <int>  # optional
+            }
+        """
+        match = _GRAPH_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "graph declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties within braces
+        properties = self._parse_kv_block_braces(base_indent)
+        
+        # Extract required fields
+        start_agent = properties.get('start')
+        if not start_agent:
+            raise self._error("graph block requires 'start' field", line)
+        
+        # Parse edges list
+        edges_raw = properties.get('edges', '[]')
+        edges = self._parse_graph_edges(edges_raw)
+        
+        # Parse termination (can be single agent or list)
+        termination_raw = properties.get('termination')
+        termination_agents = []
+        termination_condition = None
+        if termination_raw:
+            if isinstance(termination_raw, str):
+                # Check if it's a condition expression or agent name
+                if termination_raw.startswith('"') or '==' in termination_raw or 'and' in termination_raw:
+                    termination_condition = termination_raw.strip('"')
+                else:
+                    termination_agents = [termination_raw]
+            elif isinstance(termination_raw, list):
+                termination_agents = termination_raw
+        
+        max_hops = int(properties['max_hops']) if 'max_hops' in properties else None
+        timeout_ms = int(properties['timeout_ms']) if 'timeout_ms' in properties else None
+        timeout_s = float(properties['timeout_s']) if 'timeout_s' in properties else None
+        
+        # Build config from remaining properties
+        config = {k: v for k, v in properties.items() 
+                  if k not in {'start', 'edges', 'termination', 'max_hops', 'timeout_ms', 'timeout_s'}}
+        
+        graph = GraphDefinition(
+            name=name,
+            start_agent=start_agent,
+            edges=edges,
+            termination_agents=termination_agents,
+            termination_condition=termination_condition,
+            max_hops=max_hops,
+            timeout_ms=timeout_ms,
+            timeout_s=timeout_s,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.graphs.append(graph)
+
+    def _parse_kv_block_braces(self, parent_indent: int) -> dict[str, any]:
+        """Parse a key-value block enclosed in braces."""
+        entries: dict[str, any] = {}
+        depth = 1  # Start with one open brace
+        
+        while True:
+            line = self._peek()
+            if line is None:
+                break
+            stripped = line.text.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Check for closing brace
+            if stripped == '}':
+                depth -= 1
+                self._advance()
+                if depth == 0:
+                    break
+                continue
+            
+            # Parse key-value pair
+            match = re.match(r'^([A-Za-z0-9_\-\s]+):\s*(.*)$', stripped)
+            if match:
+                key = match.group(1).strip()
+                value = match.group(2).strip()
+                
+                # Check if value is a multi-line list
+                if value.startswith('[') and not value.endswith(']'):
+                    # Collect multi-line list (this will advance past all list lines)
+                    entries[key] = self._collect_multiline_list()
+                    continue  # Skip the normal advance at the end
+                # Parse value (handle lists, strings, numbers)
+                elif value.startswith('['):
+                    # Single-line list
+                    entries[key] = self._parse_list_value(value)
+                elif value.startswith('"') and value.endswith('"'):
+                    entries[key] = value[1:-1]
+                elif value.replace('.', '').replace('-', '').isdigit():
+                    entries[key] = float(value) if '.' in value else int(value)
+                elif value == '':
+                    # Empty value, might be multi-line, skip for now
+                    pass
+                else:
+                    entries[key] = value
+            
+            self._advance()
+        
+        return entries
+
+    def _collect_multiline_list(self) -> str:
+        """Collect a multi-line list value into a single string."""
+        lines = []
+        bracket_depth = 1  # Already saw opening [
+        
+        self._advance()  # Move past the key: [ line
+        
+        while True:
+            line = self._peek()
+            if line is None:
+                break
+            
+            stripped = line.text.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            lines.append(stripped)
+            
+            # Track bracket depth
+            bracket_depth += stripped.count('[')
+            bracket_depth -= stripped.count(']')
+            
+            self._advance()
+            
+            if bracket_depth == 0:
+                break
+        
+        return '[' + ' '.join(lines) + ']'
+
+    def _parse_list_field(self, value) -> List[str]:
+        """Parse a list field like [item1, item2, item3]."""
+        # If already a list, return it
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, str):
+            return []
+        if not value.startswith('['):
+            return []
+        value = value.strip()[1:-1]  # Remove [ ]
+        if not value:
+            return []
+        items = [item.strip().strip('"').strip("'") for item in value.split(',')]
+        return [item for item in items if item]
+
+    def _parse_list_value(self, value: str) -> List[any]:
+        """Parse a list value, potentially spanning multiple lines."""
+        # Simple implementation - in production would need full bracket matching
+        return self._parse_list_field(value)
+
+    def _parse_graph_edges(self, edges_raw: str) -> List[GraphEdge]:
+        """Parse graph edges from list of edge dictionaries."""
+        if not edges_raw or edges_raw == '[]':
+            return []
+        
+        # Simple parser for edge dictionaries
+        # In production, would use proper JSON/dict parsing
+        edges = []
+        
+        # Extract individual edge blocks
+        edge_pattern = re.findall(r'\{([^}]+)\}', edges_raw)
+        for edge_str in edge_pattern:
+            edge_dict = {}
+            # Parse key-value pairs within edge
+            pairs = re.findall(r'([A-Za-z_]+):\s*["\']?([^,"\']+)["\']?', edge_str)
+            for key, value in pairs:
+                edge_dict[key.strip()] = value.strip()
+            
+            if 'from' in edge_dict and 'to' in edge_dict:
+                edges.append(GraphEdge(
+                    from_agent=edge_dict['from'],
+                    to_agent=edge_dict['to'],
+                    condition=edge_dict.get('when', 'default'),
+                ))
+        
+        return edges
+
+    def _parse_schema_field(self, value):
+        """Helper to parse schema fields (dict or string)."""
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            # Simple string-to-dict conversion for now
+            # In production, this would use proper JSON/dict parsing
+            return {'_raw': value}
+        return {}
+
+    # ------------------------------------------------------------------
+    # Helper utilities
+    # ------------------------------------------------------------------
     def _ensure_app(self, line: _Line) -> None:
         if self._app is None:
             fallback_name = self._module_name or self._module_name_override

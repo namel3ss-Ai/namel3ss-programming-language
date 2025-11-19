@@ -34,6 +34,8 @@ EXPORT_ATTRS: Tuple[str, ...] = (
     "guardrails",
     "training_jobs",
     "tuning_jobs",
+    "indices",
+    "rag_pipelines",
 )
 
 EXPORT_LABELS: Dict[str, str] = {
@@ -48,6 +50,17 @@ EXPORT_LABELS: Dict[str, str] = {
     "prompts": "prompt",
     "memories": "memory",
     "templates": "template",
+    "chains": "chain",
+    "experiments": "experiment",
+    "crud_resources": "crud resource",
+    "evaluators": "evaluator",
+    "metrics": "metric",
+    "guardrails": "guardrail",
+    "training_jobs": "training job",
+    "tuning_jobs": "tuning job",
+    "indices": "index",
+    "rag_pipelines": "rag_pipeline",
+}
     "chains": "chain",
     "experiments": "experiment",
     "crud_resources": "CRUD resource",
