@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import os
 import re
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -13,7 +14,20 @@ __all__ = [
     "SandboxedExpressionEvaluator",
     "evaluate_sandboxed_expression",
     "evaluate_expression_tree",
+    "get_expr_max_depth",
+    "get_expr_max_steps",
 ]
+
+
+# Runtime configuration for symbolic expressions
+def get_expr_max_depth() -> int:
+    """Get maximum recursion depth for symbolic expressions."""
+    return int(os.environ.get("NAMEL3SS_EXPR_MAX_DEPTH", "100"))
+
+
+def get_expr_max_steps() -> int:
+    """Get maximum evaluation steps for symbolic expressions."""
+    return int(os.environ.get("NAMEL3SS_EXPR_MAX_STEPS", "10000"))
 
 
 _SAFE_DICT_METHODS: Set[str] = {"get", "items", "values", "keys"}
@@ -357,6 +371,20 @@ class _ExpressionSpecEvaluator:
     def evaluate(self, spec: Any) -> Any:
         if spec is None:
             return None
+        
+        # Check if this is a symbolic expression AST node
+        if hasattr(spec, '__class__') and hasattr(spec.__class__, '__module__'):
+            if 'namel3ss.ast.expressions' in spec.__class__.__module__:
+                # This is a symbolic expression node - use symbolic evaluator
+                from namel3ss.evaluator.symbolic import SymbolicEvaluator
+                evaluator = SymbolicEvaluator(
+                    max_depth=get_expr_max_depth(),
+                    max_steps=get_expr_max_steps()
+                )
+                # Merge scope and context for symbolic evaluator
+                env = {**self._scope, **self._context}
+                return evaluator.eval(spec, env)
+        
         if isinstance(spec, dict):
             spec_type = spec.get("type")
             if spec_type == "literal":

@@ -22,4 +22,3 @@ def test_error_format_handles_missing_location() -> None:
     formatted = err.format()
     assert formatted.startswith("Unexpected token")
     assert "(" not in formatted
-*** End Patch

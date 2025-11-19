@@ -16,8 +16,14 @@ from .pages import _page_handlers_block, _page_to_dict, _render_page_function
 from .realtime import render_broadcast_block
 from .registries import render_registries_block
 from .sections import collect_runtime_sections
+from .symbolic_evaluator import evaluate_expression_tree
 
-__all__ = ["_render_runtime_module", "_render_page_function", "_page_to_dict"]
+__all__ = [
+    "_render_runtime_module", 
+    "_render_page_function", 
+    "_page_to_dict",
+    "evaluate_expression_tree"
+]
 
 
 def _render_runtime_module(

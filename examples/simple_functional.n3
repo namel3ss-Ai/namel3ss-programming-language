@@ -1,0 +1,42 @@
+// Simple Symbolic Expression Example
+// Demonstrates basic functional programming in N3
+
+app "Functional Demo".
+
+// Dataset with functional filter
+dataset "active_users" from postgres users:
+  filter by: fn(user) => user.active == true and user.last_login_days < 30
+
+// Simple helper functions
+fn double(x) => x * 2
+
+fn is_even(x) => x % 2 == 0
+
+fn greet(name) => "Hello, " + name + "!"
+
+// Pattern matching
+fn describe_list(lst) =>
+  match lst {
+    case [] => "empty list"
+    case [x] => "single item: " + str(x)
+    case [x, y] => "two items"
+    case [first, ...rest] => "multiple items, first: " + str(first)
+  }
+
+// Page using expressions
+page "Home" at "/":
+  show text:
+    title: "Welcome"
+    content: fn() =>
+      let users = dataset("active_users") in
+      let count = length(users) in
+      "Active users: " + str(count)
+  
+  show table:
+    title: "User List"
+    source: dataset("active_users")
+    transform: fn(users) =>
+      map(fn(u) => {
+        ...u,
+        greeting: greet(u.name)
+      }, users)

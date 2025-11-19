@@ -5,7 +5,7 @@ from namel3ss.ast import (
     Prompt, PromptArgument, OutputSchema, OutputField, OutputFieldType, EnumType
 )
 from namel3ss.resolver import _validate_structured_prompt
-from namel3ss.errors import N3ValidationError
+from namel3ss.errors import N3SemanticError as N3ValidationError
 
 
 class TestArgumentValidation:

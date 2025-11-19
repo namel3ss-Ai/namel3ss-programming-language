@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from namel3ss.ast import App, Module
-from namel3ss.lang.grammar import parse_module
+# Lazy import to avoid circular dependency - parse_module imported at usage time
 from .base import N3SyntaxError
 
 
@@ -16,6 +16,8 @@ class Parser:
         self.source_path = path
 
     def parse(self) -> Module:
+        # Import here to avoid circular dependency
+        from namel3ss.lang.grammar import parse_module
         return parse_module(self._source, path=self.source_path, module_name=self._module_name)
 
     def parse_app(self) -> App:

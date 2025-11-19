@@ -159,8 +159,14 @@ class TrainingJob:
     model: str
     dataset: str
     objective: str
+    target: Optional[str] = None
+    features: List[str] = field(default_factory=list)
+    framework: Optional[str] = None
     hyperparameters: Dict[str, HyperparameterValue] = field(default_factory=dict)
     compute: TrainingComputeSpec = field(default_factory=TrainingComputeSpec)
+    split: Dict[str, float] = field(default_factory=dict)
+    validation_split: Optional[float] = None
+    early_stopping: Optional[EarlyStoppingSpec] = None
     output_registry: Optional[str] = None
     metrics: List[str] = field(default_factory=list)
     description: Optional[str] = None

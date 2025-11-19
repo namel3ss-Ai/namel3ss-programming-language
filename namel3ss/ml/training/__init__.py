@@ -14,6 +14,9 @@ from .backends import (
     resolve_training_plan,
 )
 
+# Import production backends to register them
+from . import production_backends  # noqa: F401
+
 __all__ = [
     "TrainingBackend",
     "TrainingPlan",

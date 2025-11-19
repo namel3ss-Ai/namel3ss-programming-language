@@ -51,6 +51,69 @@ async def fetch_dataset_rows(
     cache_state = "disabled"
 
     if not dataset:
+        # Attempt to query the key as a table name directly
+        logger.info("Dataset '%s' not found in registry; attempting to query as table", key)
+        try:
+            # Import required for SQL queries
+            from sqlalchemy import text
+            
+            # Build a simple SELECT query for the table
+            query_text = f"SELECT * FROM {key}"
+            query = text(query_text)
+            
+            # Execute the query using the provided session
+            if hasattr(session, 'execute'):
+                result = await session.execute(query)
+                rows = [dict(row._mapping) for row in result.fetchall()]
+                
+                # Log success
+                duration_ms = max((time.perf_counter() - started) * 1000.0, 0.0)
+                if record_event is not None:
+                    record_event(
+                        context,
+                        event="dataset.fetch",
+                        level="info",
+                        message=f"Table '{key}' queried successfully as fallback",
+                        data={
+                            "dataset": dataset_name,
+                            "key": key,
+                            "status": "table_fallback",
+                            "rows": len(rows),
+                            "cache": cache_state,
+                        },
+                    )
+                if record_metric is not None:
+                    tags = {"dataset": dataset_name, "status": "table_fallback", "cache": cache_state}
+                    record_metric(
+                        context,
+                        name="dataset.fetch.duration",
+                        value=duration_ms,
+                        unit="milliseconds",
+                        tags=tags,
+                        scope=dataset_name,
+                    )
+                    record_metric(
+                        context,
+                        name="dataset.fetch.rows",
+                        value=len(rows),
+                        unit="count",
+                        tags=tags,
+                        scope=dataset_name,
+                    )
+                return rows
+        except Exception as exc:
+            logger.warning("Failed to query table '%s' as fallback: %s", key, exc)
+            if record_error is not None:
+                record_error(
+                    context,
+                    code="table_fallback_failed",
+                    message=f"Table '{key}' could not be queried as fallback.",
+                    scope=key,
+                    source="dataset",
+                    detail=str(exc),
+                )
+        
+        # If table fallback fails, log as missing and return empty
         if record_error is not None:
             record_error(
                 context,
@@ -279,9 +342,6 @@ async def execute_sql(
     if run_in_threadpool is None:
         raise RuntimeError("Threadpool executor is required for generic SQL sessions")
     return await run_in_threadpool(executor, query)
-
-
-from sqlalchemy import text  # noqa: E402  # Local import keeps optional dependency lazy
 
 
 async def load_dataset_source(

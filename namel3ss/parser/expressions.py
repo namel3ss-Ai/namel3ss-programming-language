@@ -33,8 +33,31 @@ class ExpressionParserMixin(ParserBase):
     _FRAME_DSL_METHODS = {"filter", "select", "order_by", "group_by", "summarise", "join"}
 
     def _parse_expression(self, text: str) -> Expression:
-        """Parse an expression from text using recursive descent with precedence."""
-        self._expr_text = text.strip()
+        """Parse an expression from text using recursive descent with precedence.
+        
+        If the expression contains symbolic constructs (fn, match, let, if, query),
+        delegate to the symbolic expression parser. Otherwise use the legacy parser
+        for backward compatibility.
+        """
+        stripped = text.strip()
+        
+        # Check if this expression uses symbolic constructs
+        symbolic_keywords = ['fn', 'match', 'let', 'if', 'query', 'rule', '=>', '~']
+        uses_symbolic = any(kw in stripped for kw in symbolic_keywords)
+        
+        if uses_symbolic:
+            # Use symbolic expression parser
+            from namel3ss.parser.symbolic import SymbolicExpressionParser
+            from namel3ss.ast.expressions import Expression as SymbolicExpression
+            
+            parser = SymbolicExpressionParser(stripped, path=getattr(self, '_path', ''))
+            try:
+                return parser.parse_extended_expression()
+            except Exception as e:
+                raise self._error(f"Failed to parse symbolic expression: {e}", self.pos, text)
+        
+        # Use legacy expression parser for backward compatibility
+        self._expr_text = stripped
         self._expr_pos = 0
         result = self._parse_logical_or()
         self._expr_skip_whitespace()

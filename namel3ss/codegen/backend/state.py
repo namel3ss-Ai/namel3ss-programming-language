@@ -846,7 +846,7 @@ def _encode_statement_dict(
 
 def _encode_page(index: int, page: Page, env_keys: Set[str], prompt_lookup: Dict[str, Prompt]) -> PageSpec:
 	slug = _slugify_page_name(page.name)
-	api_path = _page_api_path(page.route)
+	api_path = f"/api/pages/{slug}"
 	components: List[PageComponent] = []
 	for statement in page.statements:
 		component = _encode_statement(statement, env_keys, prompt_lookup)
@@ -1164,10 +1164,16 @@ def _encode_training_job(job: TrainingJob, env_keys: Set[str]) -> Dict[str, Any]
 		"model": job.model,
 		"dataset": job.dataset,
 		"objective": job.objective,
+		"target": job.target,
+		"features": list(job.features or []),
+		"framework": job.framework,
 		"hyperparameters": {
 			key: _encode_value(value, env_keys) for key, value in (job.hyperparameters or {}).items()
 		},
 		"compute": _encode_training_compute_spec(compute_spec, env_keys),
+		"split": dict(job.split or {}),
+		"validation_split": job.validation_split,
+		"early_stopping": _encode_early_stopping_spec(job.early_stopping, env_keys),
 		"output_registry": job.output_registry,
 		"metrics": list(job.metrics or []),
 		"description": job.description,

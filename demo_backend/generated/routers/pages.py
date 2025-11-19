@@ -18,12 +18,12 @@ from ..schemas import ChartResponse, TableResponse
 
 router = APIRouter()
 
-@router.get('/api/pages/root', response_model=Dict[str, Any], tags=['pages'])
+@router.get('/api/pages/home', response_model=Dict[str, Any], tags=['pages'])
 async def page_home_0_view(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     payload = await runtime.page_home_0(session)
     return payload
 
-@router.get('/api/pages/root' + '/charts/1', response_model=ChartResponse, tags=['pages'])
+@router.get('/api/pages/home' + '/charts/1', response_model=ChartResponse, tags=['pages'])
 async def home_chart_1(session: AsyncSession = Depends(get_session)) -> ChartResponse:
     context = runtime.build_context('home')
     dataset = runtime.DATASETS.get('monthly_sales')
@@ -60,7 +60,7 @@ async def home_chart_1(session: AsyncSession = Depends(get_session)) -> ChartRes
         await runtime.broadcast_component_update('home', 'chart', 1, response, meta={'chart_type': 'line', 'source': 'monthly_sales'})
     return response
 
-@router.get('/api/pages/root' + '/tables/2', response_model=TableResponse, tags=['pages'])
+@router.get('/api/pages/home' + '/tables/2', response_model=TableResponse, tags=['pages'])
 async def home_table_2(session: AsyncSession = Depends(get_session)) -> TableResponse:
     context = runtime.build_context('home')
     dataset = runtime.DATASETS.get('orders')

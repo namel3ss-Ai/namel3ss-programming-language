@@ -1,7 +1,7 @@
 """Tests for structured prompt parsing."""
 
 import pytest
-from namel3ss.parser.ai import AIParser
+from namel3ss.parser.ai import AIParserMixin
 from namel3ss.ast import Prompt, PromptArgument, OutputSchema, OutputField, OutputFieldType
 
 

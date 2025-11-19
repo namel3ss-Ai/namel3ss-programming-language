@@ -29,6 +29,8 @@ from .pages import PageStatement, VariableAssignment
 from .crud import CrudResource
 from .eval import Evaluator, Metric, Guardrail, EvalSuiteDefinition
 from .policy import PolicyDefinition
+from .expressions import FunctionDef, RuleDef
+from .logic import KnowledgeModule, LogicQuery
 
 
 @dataclass
@@ -73,6 +75,10 @@ class App:
     agents: List[AgentDefinition] = field(default_factory=list)  # Agent definitions
     graphs: List[GraphDefinition] = field(default_factory=list)  # Multi-agent graph definitions
     policies: List[PolicyDefinition] = field(default_factory=list)  # Safety policies
+    functions: List[FunctionDef] = field(default_factory=list)  # User-defined functions
+    rules: List[RuleDef] = field(default_factory=list)  # Logic programming rules
+    knowledge_modules: List[KnowledgeModule] = field(default_factory=list)  # Knowledge bases (facts + rules)
+    queries: List[LogicQuery] = field(default_factory=list)  # Logic queries
 
 
 __all__ = [

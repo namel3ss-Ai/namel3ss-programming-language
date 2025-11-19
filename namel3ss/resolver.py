@@ -12,6 +12,7 @@ from namel3ss.lang import LANGUAGE_VERSION, SUPPORTED_LANGUAGE_VERSIONS
 from namel3ss.types import check_app
 from namel3ss.ast.modules import Import
 from namel3ss.errors import N3ResolutionError
+from namel3ss.ast.expressions import FunctionDef, RuleDef
 
 
 EXPORT_ATTRS: Tuple[str, ...] = (
@@ -38,6 +39,8 @@ EXPORT_ATTRS: Tuple[str, ...] = (
     "indices",
     "rag_pipelines",
     "policies",
+    "functions",
+    "rules",
 )
 
 EXPORT_LABELS: Dict[str, str] = {
@@ -64,6 +67,8 @@ EXPORT_LABELS: Dict[str, str] = {
     "indices": "index",
     "rag_pipelines": "rag_pipeline",
     "policies": "policy",
+    "functions": "function",
+    "rules": "rule",
 }
 
 
@@ -155,6 +160,7 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
     _validate_evaluations(resolved_modules)
     _validate_eval_suites(resolved_modules)
     _validate_training_artifacts(resolved_modules)
+    _validate_symbolic_expressions(resolved_modules)
     merged_app = _merge_apps(resolved_modules, root)
     check_app(merged_app, path=root.module.path)
     return ResolvedProgram(modules=resolved_modules, root=root, app=merged_app, language_version=language_version)
@@ -393,6 +399,35 @@ def _validate_training_artifacts(resolved_modules: Dict[str, ResolvedModule]) ->
 
     def _has_dataset(name: str) -> bool:
         return name in dataset_owners or name in frame_owners
+    
+    def _get_dataset_fields(dataset_name: str) -> Set[str]:
+        """Extract field names from a dataset or frame schema."""
+        fields: Set[str] = set()
+        
+        # Check in datasets
+        for resolved in resolved_modules.values():
+            datasets = resolved.exports.exports_by_kind.get("datasets", {})
+            if dataset_name in datasets:
+                dataset = datasets[dataset_name]
+                # Extract from schema fields
+                if hasattr(dataset, 'schema') and dataset.schema:
+                    fields.update(field.name for field in dataset.schema if hasattr(field, 'name'))
+                # Extract from features
+                if hasattr(dataset, 'features') and dataset.features:
+                    fields.update(feature.name for feature in dataset.features if hasattr(feature, 'name'))
+                return fields
+        
+        # Check in frames
+        for resolved in resolved_modules.values():
+            frames = resolved.exports.exports_by_kind.get("frames", {})
+            if dataset_name in frames:
+                frame = frames[dataset_name]
+                # Extract from columns
+                if hasattr(frame, 'columns') and frame.columns:
+                    fields.update(col.name for col in frame.columns if hasattr(col, 'name'))
+                return fields
+        
+        return fields
 
     for module_name, resolved in resolved_modules.items():
         training_jobs = resolved.exports.exports_by_kind.get("training_jobs", {})
@@ -405,11 +440,30 @@ def _validate_training_artifacts(resolved_modules: Dict[str, ResolvedModule]) ->
                 raise ModuleResolutionError(
                     f"Training job '{job.name}' in module '{module_name}' references unknown dataset or frame '{job.dataset}'"
                 )
+            
+            # Validate target and features against dataset schema
+            if job.dataset and (job.target or job.features):
+                dataset_fields = _get_dataset_fields(job.dataset)
+                if dataset_fields:  # Only validate if schema is available
+                    if job.target and job.target not in dataset_fields:
+                        raise ModuleResolutionError(
+                            f"Training job '{job.name}' in module '{module_name}' specifies target field '{job.target}' "
+                            f"which is not in dataset '{job.dataset}' schema. Available fields: {sorted(dataset_fields)}"
+                        )
+                    for feature in job.features or []:
+                        if feature not in dataset_fields:
+                            raise ModuleResolutionError(
+                                f"Training job '{job.name}' in module '{module_name}' specifies feature '{feature}' "
+                                f"which is not in dataset '{job.dataset}' schema. Available fields: {sorted(dataset_fields)}"
+                            )
+            
             for metric_name in job.metrics or []:
                 if metric_name not in metric_owners:
-                    raise ModuleResolutionError(
-                        f"Training job '{job.name}' in module '{module_name}' references unknown metric '{metric_name}'"
-                    )
+                    # Allow built-in metric names without validation
+                    if not metric_name.lower() in {'accuracy', 'precision', 'recall', 'f1', 'auc', 'loss', 'mse', 'mae', 'rmse', 'r2'}:
+                        raise ModuleResolutionError(
+                            f"Training job '{job.name}' in module '{module_name}' references unknown metric '{metric_name}'"
+                        )
 
         tuning_jobs = resolved.exports.exports_by_kind.get("tuning_jobs", {})
         for job in tuning_jobs.values():
@@ -634,6 +688,40 @@ def _validate_template_placeholders(template: str, args: list, prompt_name: str,
     # unused = arg_names - placeholders
     # if unused:
     #     # Could log a warning here
+
+
+def _validate_symbolic_expressions(resolved_modules: Dict[str, ResolvedModule]) -> None:
+    """Validate symbolic expressions (functions and rules) across all modules."""
+    try:
+        from namel3ss.resolver_symbolic import validate_symbolic_expressions
+    except ImportError:
+        # If resolver_symbolic isn't available, skip validation
+        return
+    
+    # Collect all functions and rules from all modules
+    all_functions: List[FunctionDef] = []
+    all_rules: List[RuleDef] = []
+    
+    for resolved in resolved_modules.values():
+        if not resolved.exports.app:
+            continue
+        
+        app = resolved.exports.app
+        
+        # Collect functions and rules from App fields
+        all_functions.extend(app.functions)
+        all_rules.extend(app.rules)
+        
+        # Also extract from app body (for backward compatibility)
+        for item in app.body:
+            if isinstance(item, FunctionDef):
+                all_functions.append(item)
+            elif isinstance(item, RuleDef):
+                all_rules.append(item)
+    
+    # Validate collected expressions
+    if all_functions or all_rules:
+        validate_symbolic_expressions(all_functions, all_rules)
 
 
 def _iter_chain_steps(nodes: List[Any]) -> List[ChainStep]:

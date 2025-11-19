@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Callable
 
 from namel3ss.ast import (
     App,
@@ -67,7 +67,23 @@ from namel3ss.ast import (
     ShowText,
     Theme,
 )
-from namel3ss.ast.ai import LLMDefinition, ToolDefinition, PromptArgument, Prompt, OutputSchema, OutputField, OutputFieldType, Chain, ChainStep
+from namel3ss.ast.ai import (
+    LLMDefinition, 
+    ToolDefinition, 
+    PromptArgument, 
+    Prompt, 
+    OutputSchema, 
+    OutputField, 
+    OutputFieldType, 
+    Chain, 
+    ChainStep,
+    Connector,
+    Template,
+    Memory,
+    AIModel,
+    TrainingJob,
+    TuningJob,
+)
 from namel3ss.ast.rag import IndexDefinition, RagPipelineDefinition
 from namel3ss.ast.agents import AgentDefinition, GraphDefinition, GraphEdge, MemoryConfig
 from namel3ss.ast.policy import PolicyDefinition
@@ -76,6 +92,9 @@ from namel3ss.ast.program import Module
 from namel3ss.ast.modules import Import, ImportedName
 from namel3ss.parser.base import N3SyntaxError, ParserBase
 from namel3ss.parser.expressions import ExpressionParserMixin
+# Import AIParserMixin from specific module to avoid circular import
+from namel3ss.parser.ai import AIParserMixin as _AIParserMixin
+from namel3ss.parser.logic import LogicParserMixin as _LogicParserMixin
 
 
 _DATASET_HEADER_RE = re.compile(r'^dataset\s+"([^"]+)"\s+from\s+(\w+)\s+([A-Za-z0-9_"\.]+)\s*:\s*$')
@@ -135,12 +154,18 @@ class _Line:
     number: int
 
 
-class _GrammarModuleParser:
-    """Recursive-descent parser that follows the EBNF outlined above."""
+class _GrammarModuleParser(_LogicParserMixin, _AIParserMixin):
+    """Recursive-descent parser that follows the EBNF outlined above.
+    
+    Inherits from LogicParserMixin and AIParserMixin to support full DSL parsing including
+    knowledge bases, logic queries, structured prompts, AI models, training jobs, etc.
+    """
 
     def __init__(self, source: str, *, path: str = "", module_name: Optional[str] = None) -> None:
+        # Grammar-specific state
         self._source = source
-        self._lines = source.splitlines()
+        self._lines_raw = source.splitlines()
+        self._lines = [_Line(text=text, number=i + 1) for i, text in enumerate(self._lines_raw)]
         self._path = path
         self._cursor = 0
         self._app: Optional[App] = None
@@ -152,13 +177,36 @@ class _GrammarModuleParser:
         self._extra_nodes: List[object] = []
         self._expression_helper = _ExpressionHelper()
         self._directives_locked = False
+        self._in_ai_block = False
+        
+        # Initialize ParserBase infrastructure required by AIParserMixin
+        # AIParserMixin expects self.lines to be raw strings, not _Line objects
+        ParserBase.__init__(self, source, path=path)
+        self.lines = self._lines_raw  # AIParserMixin needs raw strings
+        self.pos = 0
+
+    # ------------------------------------------------------------------
+    # Synchronization helpers for AIParserMixin integration
+    # ------------------------------------------------------------------
+    def _sync_cursor_to_pos(self) -> None:
+        """Sync _cursor from pos after AIParserMixin operations."""
+        self._cursor = self.pos
+
+    def _sync_pos_to_cursor(self) -> None:
+        """Sync pos to _cursor before calling AIParserMixin methods."""
+        self.pos = self._cursor
+    
+    def _advance(self) -> None:
+        """Override to keep cursor and pos in sync."""
+        self._cursor += 1
+        self.pos = self._cursor
 
     # ------------------------------------------------------------------
     # High-level driver
     # ------------------------------------------------------------------
     def parse(self) -> Module:
         while self._cursor < len(self._lines):
-            line = self._peek()
+            line = self._peek_line()
             if line is None:
                 break
             stripped = line.text.strip()
@@ -186,7 +234,7 @@ class _GrammarModuleParser:
                 self._parse_language_version(line)
                 continue
             self._directives_locked = True
-            if stripped.startswith('app '):
+            if stripped.startswith('app ') or stripped == 'app:':
                 self._parse_app(line)
                 continue
             if stripped.startswith('theme'):
@@ -208,10 +256,28 @@ class _GrammarModuleParser:
                 self._parse_tool(line)
                 continue
             if stripped.startswith('prompt '):
-                self._parse_prompt(line)
+                self._parse_prompt_wrapper(line)
                 continue
             if stripped.startswith('define chain '):
-                self._parse_chain(line)
+                self._parse_chain_wrapper(line)
+                continue
+            if stripped.startswith('connector '):
+                self._parse_connector_wrapper(line)
+                continue
+            if stripped.startswith('define template '):
+                self._parse_template_wrapper(line)
+                continue
+            if stripped.startswith('memory '):
+                self._parse_memory_wrapper(line)
+                continue
+            if stripped.startswith('model ') or stripped.startswith('ai model '):
+                self._parse_ai_model_wrapper(line)
+                continue
+            if stripped.startswith('training '):
+                self._parse_training_job_wrapper(line)
+                continue
+            if stripped.startswith('tuning '):
+                self._parse_tuning_job_wrapper(line)
                 continue
             if stripped.startswith('index '):
                 self._parse_index(line)
@@ -222,16 +288,39 @@ class _GrammarModuleParser:
             if stripped.startswith('agent '):
                 self._parse_agent(line)
                 continue
+            if stripped.startswith('knowledge '):
+                self._parse_knowledge_wrapper(line)
+                continue
+            if stripped.startswith('query '):
+                self._parse_query_wrapper(line)
+                continue
             if stripped.startswith('graph '):
                 self._parse_graph(line)
                 continue
             if stripped.startswith('policy '):
                 self._parse_policy(line)
                 continue
+            if stripped.startswith('fn '):
+                self._parse_function_def(line)
+                continue
+            if stripped.startswith('rule '):
+                self._parse_rule_def(line)
+                continue
             self._unsupported(line, f"top-level statement '{stripped.split()[0]}'")
 
         body: List[object] = []
         if self._app is not None:
+            # Collect knowledge modules and queries from extra nodes
+            from namel3ss.ast import KnowledgeModule, LogicQuery
+            knowledge_modules = [n for n in self._extra_nodes if isinstance(n, KnowledgeModule)]
+            queries = [n for n in self._extra_nodes if isinstance(n, LogicQuery)]
+            
+            # Populate App fields
+            if knowledge_modules:
+                self._app.knowledge_modules = knowledge_modules
+            if queries:
+                self._app.queries = queries
+            
             body.append(self._app)
         body.extend(self._extra_nodes)
         return Module(
@@ -309,9 +398,56 @@ class _GrammarModuleParser:
     # Top-level declarations
     # ------------------------------------------------------------------
     def _parse_app(self, line: _Line) -> None:
-        match = _APP_HEADER_RE.match(line.text.strip())
+        stripped = line.text.strip()
+        
+        # Handle "app:" syntax (name in body)
+        if stripped == 'app:':
+            if self._app is not None and self._explicit_app_declared:
+                raise self._error('Only one app declaration is allowed', line)
+            
+            base_indent = self._indent(line.text)
+            self._advance()
+            
+            # Parse name from body
+            name = None
+            database = None
+            while True:
+                nxt = self._peek_line()
+                if nxt is None:
+                    break
+                indent = self._indent(nxt.text)
+                nxt_stripped = nxt.text.strip()
+                
+                if nxt_stripped and indent <= base_indent:
+                    break
+                
+                if not nxt_stripped or nxt_stripped.startswith('#'):
+                    self._advance()
+                    continue
+                
+                # Parse name: value
+                if ':' in nxt_stripped:
+                    key, _, value = nxt_stripped.partition(':')
+                    key = key.strip()
+                    value = value.strip()
+                    if key == 'name':
+                        name = value.strip('"').strip("'")
+                    elif key == 'database':
+                        database = value.strip('"').strip("'")
+                
+                self._advance()
+            
+            if not name:
+                name = 'app'  # Default name
+            
+            self._app = App(name=name, database=database)
+            self._explicit_app_declared = True
+            return
+        
+        # Handle "app Name" syntax
+        match = _APP_HEADER_RE.match(stripped)
         if not match:
-            raise self._error('Expected: app "Name" [connects to postgres "ALIAS"].', line)
+            raise self._error('Expected: app "Name" [connects to postgres "ALIAS"] or app:', line)
         name = match.group(1)
         database = match.group(2)
         if self._app is not None and self._explicit_app_declared:
@@ -344,7 +480,7 @@ class _GrammarModuleParser:
         self._advance()
         operations = []
         while True:
-            next_line = self._peek()
+            next_line = self._peek_line()
             if next_line is None:
                 break
             stripped = next_line.text.strip()
@@ -384,7 +520,7 @@ class _GrammarModuleParser:
         columns: List[FrameColumn] = []
         description: Optional[str] = None
         while True:
-            next_line = self._peek()
+            next_line = self._peek_line()
             if next_line is None:
                 break
             stripped = next_line.text.strip()
@@ -430,7 +566,7 @@ class _GrammarModuleParser:
     def _parse_page_statements(self, parent_indent: int) -> List[PageStatement]:
         statements: List[PageStatement] = []
         while True:
-            line = self._peek()
+            line = self._peek_line()
             if line is None:
                 break
             stripped = line.text.strip()
@@ -496,7 +632,7 @@ class _GrammarModuleParser:
         elifs: List[ElifBlock] = []
         else_body: Optional[List[PageStatement]] = None
         while True:
-            next_line = self._peek()
+            next_line = self._peek_line()
             if next_line is None:
                 break
             stripped = next_line.text.strip()
@@ -537,9 +673,12 @@ class _GrammarModuleParser:
     # Generic helpers
     # ------------------------------------------------------------------
     def _parse_kv_block(self, parent_indent: int) -> dict[str, str]:
+        if self._in_ai_block:
+            # Delegate to ParserBase implementation when AIParserMixin is driving parsing.
+            return ParserBase._parse_kv_block(self, parent_indent)
         entries: dict[str, str] = {}
         while True:
-            line = self._peek()
+            line = self._peek_line()
             if line is None:
                 break
             stripped = line.text.strip()
@@ -694,7 +833,113 @@ class _GrammarModuleParser:
         self._ensure_app(line)
         self._app.tools.append(tool)
 
-    def _parse_prompt(self, line: _Line) -> None:
+    def _run_ai_block_parser(
+        self,
+        line: _Line,
+        parser_fn: Callable[["_GrammarModuleParser", str, int, int], object],
+    ) -> object:
+        """
+        Bridge helper that synchronizes the legacy AIParserMixin cursor handling.
+
+        We peek the grammar line, advance past the header so AIParserMixin starts
+        on the first body line, and sync both cursor systems before and after
+        invoking the mixin parser.
+        """
+        base_indent = self._indent(line.text)
+        self._advance()
+        self._sync_pos_to_cursor()
+        previous_flag = self._in_ai_block
+        self._in_ai_block = True
+        try:
+            return parser_fn(self, line.text, line.number, base_indent)
+        finally:
+            self._in_ai_block = previous_flag
+            self._sync_cursor_to_pos()
+
+    # ========== AI Parser Wrappers ==========
+    # These methods bridge between Grammar's _Line interface and AIParserMixin's (str, int, int) interface
+
+    def _parse_connector_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse connector blocks using AIParserMixin."""
+        connector = self._run_ai_block_parser(line, _AIParserMixin._parse_connector)
+        if connector:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(connector)
+
+    def _parse_template_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse template definitions using AIParserMixin."""
+        template = self._run_ai_block_parser(line, _AIParserMixin._parse_template)
+        if template:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(template)
+
+    def _parse_chain_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse chain blocks using AIParserMixin."""
+        chain = self._run_ai_block_parser(line, _AIParserMixin._parse_chain)
+        if chain:
+            self._ensure_app(line)
+            self._app.chains.append(chain)
+
+    def _parse_memory_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse memory configurations using AIParserMixin."""
+        memory = self._run_ai_block_parser(line, _AIParserMixin._parse_memory)
+        if memory:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(memory)
+
+    def _parse_ai_model_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse AI model blocks using AIParserMixin."""
+        model = self._run_ai_block_parser(line, _AIParserMixin._parse_ai_model)
+        if model:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(model)
+
+    def _parse_prompt_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse structured prompts using AIParserMixin."""
+        prompt = self._run_ai_block_parser(line, _AIParserMixin._parse_prompt)
+        if prompt:
+            self._ensure_app(line)
+            self._app.prompts.append(prompt)
+
+    def _parse_training_job_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse training job definitions using AIParserMixin."""
+        training_job = self._run_ai_block_parser(line, _AIParserMixin._parse_training_job)
+        if training_job:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(training_job)
+
+    def _parse_tuning_job_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse tuning job definitions using AIParserMixin."""
+        tuning_job = self._run_ai_block_parser(line, _AIParserMixin._parse_tuning_job)
+        if tuning_job:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(tuning_job)
+
+    def _parse_knowledge_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse knowledge module definitions using LogicParserMixin."""
+        knowledge_module = self._run_ai_block_parser(line, _LogicParserMixin._parse_knowledge_module)
+        if knowledge_module:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(knowledge_module)
+
+    def _parse_query_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse query definitions using LogicParserMixin."""
+        query = self._run_ai_block_parser(line, _LogicParserMixin._parse_query)
+        if query:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(query)
+
+    # ========== Legacy Prompt Parser (Deprecated - Use AIParserMixin) ==========
+
+    def _parse_prompt_legacy(self, line: _Line) -> None:
         """
         Parse a prompt definition block with typed arguments and output schema.
         
@@ -725,7 +970,7 @@ class _GrammarModuleParser:
         
         # Parse block content
         while True:
-            nxt = self._peek()
+            nxt = self._peek_line()
             if nxt is None:
                 break
             indent = self._indent(nxt.text)
@@ -785,7 +1030,7 @@ class _GrammarModuleParser:
         args: List[PromptArgument] = []
         
         while True:
-            nxt = self._peek()
+            nxt = self._peek_line()
             if nxt is None:
                 break
             
@@ -841,7 +1086,7 @@ class _GrammarModuleParser:
         fields: List[OutputField] = []
         
         while True:
-            nxt = self._peek()
+            nxt = self._peek_line()
             if nxt is None:
                 break
             
@@ -882,8 +1127,12 @@ class _GrammarModuleParser:
         
         return OutputSchema(fields=fields)
 
-    def _parse_output_field_type(self, type_spec: str) -> OutputFieldType:
-        """Parse a type specification like 'string', 'enum(\"a\", \"b\")', 'list[string]', 'object {...}'."""
+    def _parse_output_field_type(self, type_spec: str, line_no: int = None, line: str = None) -> OutputFieldType:
+        """
+        Parse a type specification like 'string', 'enum(\"a\", \"b\")', 'list[string]', 'object {...}'.
+        
+        Args compatible with both Grammar (1 arg) and AIParserMixin (3 args) call patterns.
+        """
         type_spec = type_spec.strip()
         
         # Handle enum: enum(\"val1\", \"val2\", ...)
@@ -943,7 +1192,7 @@ class _GrammarModuleParser:
                     lines = [content]
                     
                     while True:
-                        nxt = self._peek()
+                        nxt = self._peek_line()
                         if nxt is None:
                             break
                         line_text = nxt.text.rstrip()
@@ -968,7 +1217,7 @@ class _GrammarModuleParser:
         # Otherwise, expect a multiline block
         lines = []
         while True:
-            nxt = self._peek()
+            nxt = self._peek_line()
             if nxt is None:
                 break
             
@@ -989,8 +1238,10 @@ class _GrammarModuleParser:
         
         return '\n'.join(lines)
 
-    def _parse_chain(self, line: _Line) -> None:
+    def _parse_chain_legacy(self, line: _Line) -> None:
         """
+        Legacy chain parser (Deprecated - Use AIParserMixin version)
+        
         Parse a chain definition.
         
         Grammar:
@@ -1022,7 +1273,7 @@ class _GrammarModuleParser:
         
         # Parse block content
         while True:
-            nxt = self._peek()
+            nxt = self._peek_line()
             if nxt is None:
                 break
             indent = self._indent(nxt.text)
@@ -1470,7 +1721,7 @@ class _GrammarModuleParser:
         depth = 1  # Start with one open brace
         
         while True:
-            line = self._peek()
+            line = self._peek_line()
             if line is None:
                 break
             stripped = line.text.strip()
@@ -1524,7 +1775,7 @@ class _GrammarModuleParser:
         self._advance()  # Move past the key: [ line
         
         while True:
-            line = self._peek()
+            line = self._peek_line()
             if line is None:
                 break
             
@@ -1612,28 +1863,59 @@ class _GrammarModuleParser:
             fallback = fallback_name.split('.')[-1] if fallback_name else 'app'
             self._app = App(name=fallback)
 
-    def _peek(self) -> Optional[_Line]:
-        while self._cursor < len(self._lines):
-            line = self._lines[self._cursor]
-            number = self._cursor + 1
-            return _Line(text=line, number=number)
+    def _peek_line(self) -> Optional[_Line]:
+        """Return the current line as a _Line object for Grammar parsing."""
+        if self._cursor < len(self._lines):
+            return self._lines[self._cursor]
         return None
-
-    def _advance(self) -> None:
-        self._cursor += 1
 
     @staticmethod
     def _indent(text: str) -> int:
+        """
+        Compute indent for either a raw string or a _Line wrapper.
+
+        AIParserMixin sometimes passes _Line objects back into the grammar
+        helpers, so we normalize here to avoid type errors.
+        """
+        if isinstance(text, _Line):
+            text = text.text
         return len(text) - len(text.lstrip(' '))
 
-    def _error(self, message: str, line: _Line) -> N3SyntaxError:
-        return N3SyntaxError(
-            f"Syntax error: {message}",
-            path=self._path or None,
-            line=line.number,
-            code="SYNTAX_GRAMMAR",
-            hint=line.text.strip() or None,
-        )
+    def _error(self, message: str, line_or_line_no=None, line_text: str = None) -> N3SyntaxError:
+        """
+        Create a syntax error. Supports two call patterns:
+        1. Grammar style: _error(message, line: _Line)
+        2. AIParserMixin style: _error(message, line_no: int, line: str)
+        """
+        # Pattern 1: Grammar style with _Line object
+        if isinstance(line_or_line_no, _Line):
+            line = line_or_line_no
+            return N3SyntaxError(
+                f"Syntax error: {message}",
+                path=self._path or None,
+                line=line.number,
+                code="SYNTAX_GRAMMAR",
+                hint=line.text.strip() or None,
+            )
+        # Pattern 2: AIParserMixin style with line_no and line_text
+        elif isinstance(line_or_line_no, int):
+            line_no = line_or_line_no
+            return N3SyntaxError(
+                f"Syntax error: {message}",
+                path=self._path or None,
+                line=line_no,
+                code="SYNTAX_GRAMMAR",
+                hint=line_text.strip() if line_text else None,
+            )
+        # Fallback for no line info
+        else:
+            return N3SyntaxError(
+                f"Syntax error: {message}",
+                path=self._path or None,
+                line=None,
+                code="SYNTAX_GRAMMAR",
+                hint=None,
+            )
     
     def _parse_string_list(self, value: str) -> List[str]:
         """Parse a string representation of a list like '["a", "b", "c"]'."""
@@ -1655,6 +1937,59 @@ class _GrammarModuleParser:
                         items.append(item)
                 return items
             return [value.strip().strip('"').strip("'")]
+    
+    def _parse_function_def(self, line: _Line) -> None:
+        """Parse function definition: fn name(params) => body"""
+        from namel3ss.parser.symbolic import SymbolicExpressionParser
+        from namel3ss.ast.expressions import FunctionDef
+        
+        # For now, only handle single-line function definitions
+        func_text = line.text
+        
+        # Create symbolic parser
+        parser = SymbolicExpressionParser(func_text, path=self._path)
+        
+        try:
+            func_def = parser.parse_function_def()
+            
+            # Functions are attached to the active app; create a default if needed.
+            self._ensure_app(line)
+            
+            # Add function to app functions collection
+            if self._app:
+                self._app.functions.append(func_def)
+            self._extra_nodes.append(func_def)
+
+            # Move past this line so the main loop can continue
+            self._advance()
+            
+        except Exception as e:
+            raise self._error(f"Failed to parse function definition: {e}", line)
+    
+    def _parse_rule_def(self, line: _Line) -> None:
+        """Parse rule definition: rule head :- body."""
+        from namel3ss.parser.symbolic import SymbolicExpressionParser
+        from namel3ss.ast.expressions import RuleDef
+        
+        # For now, only handle single-line rule definitions
+        rule_text = line.text
+        
+        # Create symbolic parser
+        parser = SymbolicExpressionParser(rule_text, path=self._path)
+        
+        try:
+            rule_def = parser.parse_rule_def()
+            
+            # Ensure app exists
+            if self._app is None:
+                self._app = App(name="", body=[])
+            
+            # Add rule to app rules collection
+            self._app.rules.append(rule_def)
+            self._extra_nodes.append(rule_def)
+            
+        except Exception as e:
+            raise self._error(f"Failed to parse rule definition: {e}", line)
 
     def _unsupported(self, line: _Line, feature: str) -> None:
         location = f"{self._path}:{line.number}" if self._path else f"line {line.number}"

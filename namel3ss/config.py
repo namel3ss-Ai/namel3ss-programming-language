@@ -30,6 +30,9 @@ class WorkspaceDefaults:
     connector_retry_base_delay: float = 0.5
     connector_retry_max_delay: float = 5.0
     connector_concurrency_limit: int = 10
+    # Symbolic expression safety limits
+    expr_max_depth: int = 100
+    expr_max_steps: int = 10000
 
 
 @dataclass
@@ -49,6 +52,9 @@ class AppConfig:
     connector_retry_base_delay: Optional[float] = None
     connector_retry_max_delay: Optional[float] = None
     connector_concurrency_limit: Optional[int] = None
+    # Symbolic expression safety limits
+    expr_max_depth: Optional[int] = None
+    expr_max_steps: Optional[int] = None
 
     def merged_env(self, inherited: Sequence[str]) -> List[str]:
         if not inherited:

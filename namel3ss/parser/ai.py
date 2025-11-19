@@ -460,7 +460,8 @@ class AIParserMixin(ParserBase):
                 self._advance()
                 if inline_text:
                     template_text = self._stringify_value(self._coerce_scalar(inline_text))
-                else:
+                elif template_text is None:
+                    # Legacy syntax where the template body follows the `using model` line
                     template_text = self._parse_prompt_template_block(indent)
             else:
                 assign = re.match(r'([\w\.\-]+)\s*(=|:)\s*(.*)$', stripped_line)
@@ -747,10 +748,16 @@ class AIParserMixin(ParserBase):
         model_name: Optional[str] = None
         dataset_name: Optional[str] = None
         objective: Optional[str] = None
+        target: Optional[str] = None
+        features: List[str] = []
+        framework: Optional[str] = None
         hyperparameters: Dict[str, Any] = {}
         metrics: List[str] = []
         metadata: Dict[str, Any] = {}
         compute_spec = TrainingComputeSpec()
+        split: Dict[str, float] = {}
+        validation_split: Optional[float] = None
+        early_stopping: Optional[EarlyStoppingSpec] = None
         output_registry: Optional[str] = None
         description: Optional[str] = None
 
@@ -774,6 +781,20 @@ class AIParserMixin(ParserBase):
             if lowered.startswith('compute:'):
                 self._advance()
                 compute_spec = self._parse_training_compute_block(indent)
+                continue
+            if lowered.startswith('split:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                split = {k: float(v) if isinstance(v, (int, float)) else 0.0 for k, v in block.items()}
+                continue
+            if lowered.startswith('early_stopping:'):
+                self._advance()
+                block = self._parse_kv_block(indent)
+                early_stopping = self._build_early_stopping_spec(block)
+                continue
+            if lowered.startswith('features:'):
+                self._advance()
+                features.extend(self._parse_string_list(indent))
                 continue
             if lowered.startswith('metrics:'):
                 self._advance()
@@ -800,6 +821,12 @@ class AIParserMixin(ParserBase):
                 dataset_name = self._strip_quotes(self._stringify_value(value))
             elif key == 'objective':
                 objective = self._strip_quotes(self._stringify_value(value))
+            elif key == 'target':
+                target = self._strip_quotes(self._stringify_value(value))
+            elif key == 'framework':
+                framework = self._strip_quotes(self._stringify_value(value))
+            elif key == 'validation_split':
+                validation_split = float(value) if isinstance(value, (int, float)) else None
             elif key in {'output_registry', 'registry', 'output'}:
                 output_registry = self._strip_quotes(self._stringify_value(value))
             elif key == 'description':
@@ -819,8 +846,14 @@ class AIParserMixin(ParserBase):
             model=model_name,
             dataset=dataset_name,
             objective=objective,
+            target=target,
+            features=features,
+            framework=framework,
             hyperparameters=hyperparameters,
             compute=compute_spec,
+            split=split,
+            validation_split=validation_split,
+            early_stopping=early_stopping,
             output_registry=output_registry,
             metrics=metrics,
             description=description,
@@ -1391,4 +1424,4 @@ class AIParserMixin(ParserBase):
                 saw_ai_hint = True
         return saw_ai_hint
 _MEMORY_SCOPES = {"session", "page", "conversation", "global"}
-_MEMORY_KINDS = {"list", "conversation", "key_value", "vector"}
+_MEMORY_KINDS = {"list", "conversation", "key_value", "vector", "buffer"}

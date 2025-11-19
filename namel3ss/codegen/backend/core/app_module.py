@@ -207,8 +207,14 @@ run_prompt = runtime.run_prompt
 evaluate_experiment = runtime.evaluate_experiment
 run_experiment = runtime.run_experiment
 run_training_job = runtime.run_training_job
+run_tuning_job = runtime.run_tuning_job
 resolve_training_job_plan = runtime.resolve_training_job_plan
 list_training_jobs = runtime.list_training_jobs
+list_tuning_jobs = runtime.list_tuning_jobs
+get_training_job = runtime.get_training_job
+get_tuning_job = runtime.get_tuning_job
+training_job_history = runtime.training_job_history
+tuning_job_history = runtime.tuning_job_history
 available_training_backends = runtime.available_training_backends
 DATASETS = runtime.DATASETS
 INSIGHTS = runtime.INSIGHTS
@@ -228,8 +234,14 @@ __all__ = [
     "evaluate_experiment",
     "run_experiment",
     "run_training_job",
+    "run_tuning_job",
     "resolve_training_job_plan",
     "list_training_jobs",
+    "list_tuning_jobs",
+    "get_training_job",
+    "get_tuning_job",
+    "training_job_history",
+    "tuning_job_history",
     "available_training_backends",
     "DATASETS",
     "INSIGHTS",

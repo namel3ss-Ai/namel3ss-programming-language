@@ -25,6 +25,7 @@ from .models import ModelParserMixin
 from .pages import PageParserMixin
 from .crud import CrudParserMixin
 from .frames import FrameParserMixin
+from .logic import LogicParserMixin
 
 
 _IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
@@ -35,6 +36,7 @@ _LANG_VERSION_RE = re.compile(r'^language_version\s+"([0-9]+\.[0-9]+\.[0-9]+)"\s
 
 
 class LegacyProgramParser(
+    LogicParserMixin,
     FrameParserMixin,
     PageParserMixin,
     CrudParserMixin,
@@ -184,6 +186,16 @@ class LegacyProgramParser(
                 self._ensure_app_initialized(line_no, line)
                 experiment = self._parse_experiment(line, line_no, indent)
                 self.app.experiments.append(experiment)
+            elif stripped.startswith('knowledge '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                knowledge_module = self._parse_knowledge_module(line, line_no, indent)
+                self.app.knowledge_modules.append(knowledge_module)
+            elif stripped.startswith('query '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                query = self._parse_query(line, line_no, indent)
+                self.app.queries.append(query)
             elif stripped.startswith('enable crud'):
                 imports_allowed = False
                 self._ensure_app_initialized(line_no, line)

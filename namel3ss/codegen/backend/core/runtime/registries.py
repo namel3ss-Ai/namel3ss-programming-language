@@ -62,6 +62,7 @@ def render_registries_block(
         "CONNECTOR_DRIVERS: Dict[str, Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[List[Dict[str, Any]]]]] = {}",
         "DATASET_TRANSFORMS: Dict[str, Callable[[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]], List[Dict[str, Any]]]] = {}",
         "TRAINING_JOB_HISTORY: Dict[str, List[Dict[str, Any]]] = defaultdict(list)",
+        "TUNING_JOB_HISTORY: Dict[str, List[Dict[str, Any]]] = defaultdict(list)",
     ]
     return "\n".join(registries).rstrip()
 

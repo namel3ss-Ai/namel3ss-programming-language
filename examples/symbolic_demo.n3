@@ -1,0 +1,218 @@
+// Symbolic Expression Demo - Advanced N3 Features
+// This demonstrates functional programming, pattern matching, and logic rules
+
+app "Symbolic Demo" connects to postgres "demo_db".
+
+// Define datasets with functional filters
+dataset "high_value_orders" from postgres orders:
+  filter by: fn(row) => row.amount > 1000 and row.status == "completed"
+  
+dataset "recent_orders" from postgres orders:
+  filter by: fn(row) => 
+    let days_ago = (current_date() - row.created_at) / 86400 in
+    days_ago < 30
+
+// Computed dataset with map/filter/reduce
+dataset "order_summary" from postgres orders:
+  transform rows: fn(orders) =>
+    let totals = map(fn(o) => o.amount, orders) in
+    let total_revenue = reduce(fn(a, b) => a + b, totals, 0) in
+    let avg_revenue = total_revenue / length(orders) in
+    [{
+      total_orders: length(orders),
+      total_revenue: total_revenue,
+      average_order: avg_revenue,
+      max_order: max(totals),
+      min_order: min(totals)
+    }]
+
+// Define helper functions
+fn calculate_discount(amount, tier) =>
+  match tier {
+    case "gold" => amount * 0.20
+    case "silver" => amount * 0.10
+    case "bronze" => amount * 0.05
+    case _ => 0
+  }
+
+fn categorize_order(amount) =>
+  if amount > 10000 then "enterprise"
+  else if amount > 1000 then "professional"
+  else if amount > 100 then "standard"
+  else "basic"
+
+fn enrich_order(order) =>
+  let category = categorize_order(order.amount) in
+  let discount = calculate_discount(order.amount, order.customer_tier) in
+  {
+    ...order,
+    category: category,
+    discount: discount,
+    final_amount: order.amount - discount
+  }
+
+// Pattern matching for order processing
+fn process_order_status(order) =>
+  match {status: order.status, amount: order.amount} {
+    case {status: "pending", amount: amt} if amt > 5000 =>
+      "Requires approval"
+    case {status: "pending", ...rest} =>
+      "Processing"
+    case {status: "completed", ...rest} =>
+      "Fulfilled"
+    case {status: "cancelled", ...rest} =>
+      "Refund processed"
+    case _ =>
+      "Unknown status"
+  }
+
+// Logic rules for business intelligence
+rule high_value_customer(customer_id) :-
+  order(customer_id, order_id, amount),
+  amount > 10000.
+
+rule frequent_buyer(customer_id) :-
+  order_count(customer_id, count),
+  count > 10.
+
+rule at_risk(customer_id) :-
+  high_value_customer(customer_id),
+  days_since_last_order(customer_id, days),
+  days > 90.
+
+rule vip_customer(customer_id) :-
+  high_value_customer(customer_id),
+  frequent_buyer(customer_id).
+
+// Recursive functions
+fn fibonacci(n) =>
+  if n <= 1 then n
+  else fibonacci(n - 1) + fibonacci(n - 2)
+
+fn factorial(n) =>
+  if n <= 1 then 1
+  else n * factorial(n - 1)
+
+fn sum_list(lst) =>
+  match lst {
+    case [] => 0
+    case [head, ...tail] => head + sum_list(tail)
+  }
+
+// Higher-order function examples
+fn apply_to_all(func, items) =>
+  map(func, items)
+
+fn find_matching(predicate, items) =>
+  filter(predicate, items)
+
+fn aggregate(combiner, items, initial) =>
+  reduce(combiner, items, initial)
+
+// Page with computed properties using expressions
+page "Dashboard" at "/":
+  show text:
+    title: "Order Analytics"
+    content: fn() =>
+      let orders = dataset("high_value_orders") in
+      let count = length(orders) in
+      let total = reduce(fn(a, o) => a + o.amount, orders, 0) in
+      let avg = total / count in
+      "Total Orders: " + str(count) + 
+      ", Revenue: $" + str(total) +
+      ", Average: $" + str(avg)
+  
+  show table:
+    title: "Enriched Orders"
+    source: dataset("high_value_orders")
+    transform: fn(orders) => map(enrich_order, orders)
+    columns: ["id", "customer", "amount", "category", "discount", "final_amount"]
+  
+  show chart:
+    title: "Orders by Category"
+    type: "pie"
+    data: fn() =>
+      let orders = dataset("high_value_orders") in
+      let categories = map(fn(o) => categorize_order(o.amount), orders) in
+      let grouped = group_by(categories, identity) in
+      map(fn(pair) => {
+        label: pair[0],
+        value: length(pair[1])
+      }, items(grouped))
+
+page "Customer Insights" at "/customers":
+  show text:
+    title: "VIP Customers"
+    content: fn() =>
+      let vips = query vip_customer(X) in
+      "Found " + str(length(vips)) + " VIP customers"
+  
+  show text:
+    title: "At-Risk Customers"
+    content: fn() =>
+      let at_risk_list = query at_risk(X) in
+      "Alert: " + str(length(at_risk_list)) + " high-value customers need attention"
+  
+  show table:
+    title: "Customer Segments"
+    source: query customer_segment(CustomerID, Segment)
+    columns: ["CustomerID", "Segment"]
+
+// AI Prompt with functional composition
+prompt analyze_order {
+  system "You are a business analyst"
+  user fn(order) =>
+    let enriched = enrich_order(order) in
+    let status_msg = process_order_status(enriched) in
+    "Analyze this order:\n" +
+    "ID: " + str(enriched.id) + "\n" +
+    "Amount: $" + str(enriched.amount) + "\n" +
+    "Category: " + enriched.category + "\n" +
+    "Status: " + status_msg + "\n" +
+    "Discount: $" + str(enriched.discount) + "\n" +
+    "Final Amount: $" + str(enriched.final_amount)
+}
+
+// Chain with functional transformations
+define chain "order_pipeline":
+  step transform_orders:
+    input: dataset("recent_orders")
+    transform: fn(orders) => map(enrich_order, orders)
+  
+  step filter_high_value:
+    input: previous
+    transform: fn(orders) => 
+      filter(fn(o) => o.final_amount > 500, orders)
+  
+  step analyze_with_ai:
+    input: previous
+    prompt: analyze_order
+    parallel: true
+
+// Complex pattern matching example
+fn extract_customer_info(data) =>
+  match data {
+    case {type: "order", customer: {id: cid, name: cname}, ...rest} =>
+      {customer_id: cid, customer_name: cname, data_type: "order"}
+    case {type: "invoice", billing: {customer_id: cid}, ...rest} =>
+      {customer_id: cid, customer_name: "Unknown", data_type: "invoice"}
+    case {customer_id: cid, ...rest} =>
+      {customer_id: cid, customer_name: "Unknown", data_type: "generic"}
+    case _ =>
+      {customer_id: null, customer_name: "Unknown", data_type: "unknown"}
+  }
+
+// Compose functions
+fn compose(f, g) =>
+  fn(x) => f(g(x))
+
+fn pipe(functions, value) =>
+  reduce(fn(acc, f) => f(acc), functions, value)
+
+// Usage example
+fn process_pipeline(order) =>
+  pipe([
+    enrich_order,
+    fn(o) => { ...o, timestamp: current_timestamp() },
+    fn(o) => { ...o, processed: true }
+  ], order)
