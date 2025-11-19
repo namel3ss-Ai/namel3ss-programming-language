@@ -78,6 +78,8 @@ from ...ast import (
 	Evaluator,
 	Metric,
 	Guardrail,
+	EvalMetricSpec,
+	EvalSuiteDefinition,
 	NameRef,
 	OrderByOp,
 	Page,
@@ -91,6 +93,9 @@ from ...ast import (
 	ShowText,
 	Prompt,
 	PromptField,
+	OutputSchema,
+	OutputField,
+	OutputFieldType,
 	AIModel,
 	WorkflowIfBlock,
 	WorkflowForBlock,
@@ -187,6 +192,7 @@ class BackendState:
 	evaluators: Dict[str, Dict[str, Any]]
 	metrics: Dict[str, Dict[str, Any]]
 	guardrails: Dict[str, Dict[str, Any]]
+	eval_suites: Dict[str, Dict[str, Any]]
 	pages: List[PageSpec]
 	env_keys: List[str]
 
@@ -317,6 +323,10 @@ def build_backend_state(app: App) -> BackendState:
 		for guardrail in app.guardrails:
 			guardrails[guardrail.name] = _encode_guardrail(guardrail)
 
+		eval_suites: Dict[str, Dict[str, Any]] = {}
+		for suite in app.eval_suites:
+			eval_suites[suite.name] = _encode_eval_suite(suite)
+
 		pages: List[PageSpec] = []
 		for index, page in enumerate(app.pages):
 			pages.append(_encode_page(index, page, env_keys, prompt_lookup))
@@ -356,6 +366,7 @@ def build_backend_state(app: App) -> BackendState:
 			evaluators=evaluators,
 			metrics=metrics,
 			guardrails=guardrails,
+			eval_suites=eval_suites,
 			pages=pages,
 			env_keys=sorted_env_keys,
 		)
@@ -1301,7 +1312,28 @@ def _encode_prompt(prompt: Prompt, env_keys: Set[str]) -> Dict[str, Any]:
 	metadata_value = _encode_value(prompt.metadata, env_keys)
 	if not isinstance(metadata_value, dict):
 		metadata_value = {"value": metadata_value} if metadata_value is not None else {}
-	return {
+	
+	# Encode structured prompt args
+	args_list = []
+	if prompt.args:
+		for arg in prompt.args:
+			arg_dict = {
+				"name": arg.name,
+				"type": arg.arg_type,
+				"required": arg.required,
+			}
+			if arg.default is not None:
+				arg_dict["default"] = _encode_value(arg.default, env_keys)
+			if arg.description:
+				arg_dict["description"] = arg.description
+			args_list.append(arg_dict)
+	
+	# Encode structured output schema
+	output_schema_dict = None
+	if prompt.output_schema:
+		output_schema_dict = _encode_output_schema(prompt.output_schema, env_keys)
+	
+	result = {
 		"name": prompt.name,
 		"model": prompt.model,
 		"template": prompt.template,
@@ -1311,6 +1343,14 @@ def _encode_prompt(prompt: Prompt, env_keys: Set[str]) -> Dict[str, Any]:
 		"metadata": metadata_value,
 		"description": prompt.description,
 	}
+	
+	# Add structured prompt fields if present
+	if args_list:
+		result["args"] = args_list
+	if output_schema_dict:
+		result["output_schema"] = output_schema_dict
+	
+	return result
 
 
 def _encode_prompt_field(field: PromptField, env_keys: Set[str]) -> Dict[str, Any]:
@@ -1328,6 +1368,48 @@ def _encode_prompt_field(field: PromptField, env_keys: Set[str]) -> Dict[str, An
 	if field.default is not None:
 		payload["default"] = _encode_value(field.default, env_keys)
 	return payload
+
+
+def _encode_output_field_type(field_type: "OutputFieldType") -> Dict[str, Any]:
+	"""Encode an OutputFieldType to a dictionary for runtime."""
+	result = {
+		"base_type": field_type.base_type,
+		"nullable": field_type.nullable,
+	}
+	
+	if field_type.enum_values:
+		result["enum_values"] = field_type.enum_values
+	
+	if field_type.element_type:
+		result["element_type"] = _encode_output_field_type(field_type.element_type)
+	
+	if field_type.nested_fields:
+		result["nested_fields"] = [
+			{
+				"name": field.name,
+				"field_type": _encode_output_field_type(field.field_type),
+				"required": field.required,
+				"description": field.description,
+			}
+			for field in field_type.nested_fields
+		]
+	
+	return result
+
+
+def _encode_output_schema(schema: "OutputSchema", env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode an OutputSchema to a dictionary for runtime."""
+	return {
+		"fields": [
+			{
+				"name": field.name,
+				"field_type": _encode_output_field_type(field.field_type),
+				"required": field.required,
+				"description": field.description,
+			}
+			for field in schema.fields
+		]
+	}
 
 
 def _encode_llm(llm: "LLMDefinition", env_keys: Set[str]) -> Dict[str, Any]:
@@ -1574,6 +1656,29 @@ def _encode_guardrail(guardrail: Guardrail) -> Dict[str, Any]:
 		"evaluators": list(guardrail.evaluators),
 		"action": guardrail.action,
 		"message": guardrail.message,
+	}
+
+
+def _encode_eval_suite(suite: EvalSuiteDefinition) -> Dict[str, Any]:
+	"""Encode an eval_suite definition for backend runtime."""
+	return {
+		"name": suite.name,
+		"dataset_name": suite.dataset_name,
+		"target_chain_name": suite.target_chain_name,
+		"metrics": [_encode_eval_metric_spec(spec) for spec in suite.metrics],
+		"judge_llm_name": suite.judge_llm_name,
+		"rubric": suite.rubric,
+		"description": suite.description,
+		"metadata": dict(suite.metadata or {}),
+	}
+
+
+def _encode_eval_metric_spec(spec: EvalMetricSpec) -> Dict[str, Any]:
+	"""Encode an eval metric specification."""
+	return {
+		"name": spec.name,
+		"type": spec.type,
+		"config": dict(spec.config or {}),
 	}
 
 

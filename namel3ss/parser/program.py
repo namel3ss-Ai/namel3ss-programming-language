@@ -105,6 +105,12 @@ class LegacyProgramParser(
                 guardrail = self._parse_guardrail(line, line_no, indent)
                 self.app.guardrails.append(guardrail)
                 extra_nodes.append(guardrail)
+            elif stripped.startswith('eval_suite '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                eval_suite = self._parse_eval_suite(line, line_no, indent)
+                self.app.eval_suites.append(eval_suite)
+                extra_nodes.append(eval_suite)
             elif stripped.startswith('theme'):
                 imports_allowed = False
                 self._ensure_app_initialized(line_no, line)
@@ -195,7 +201,7 @@ class LegacyProgramParser(
                 self.app.variables.append(assignment)
             else:
                 raise self._error(
-                    "Expected 'app', 'theme', 'dataset', 'connector', 'insight', 'model', 'experiment', 'evaluator', 'metric', 'guardrail', 'enable crud', or 'page'",
+                    "Expected 'app', 'theme', 'dataset', 'connector', 'insight', 'model', 'experiment', 'evaluator', 'metric', 'guardrail', 'eval_suite', 'enable crud', or 'page'",
                     line_no,
                     line,
                 )

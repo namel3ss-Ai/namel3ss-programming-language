@@ -1,0 +1,90 @@
+# Structured Prompts Demo
+# Demonstrates the new structured prompt syntax with typed args and output schemas
+
+llm "gpt4" {
+    provider: "openai"
+    model: "gpt-4o"
+    temperature: 0.7
+}
+
+# Example 1: Simple classification prompt with enum output
+prompt "classify_ticket" {
+    args: {
+        text: string
+    }
+    output_schema: {
+        category: enum["billing", "technical", "account", "other"],
+        urgency: enum["low", "medium", "high"],
+        needs_handoff: bool
+    }
+    model: "gpt4"
+    template: """
+You are a support triage agent. Analyze the following support ticket and classify it.
+
+Ticket: {text}
+
+Provide a JSON response with:
+- category: the main category of the issue
+- urgency: the urgency level
+- needs_handoff: whether this needs to be handed off to a human agent
+"""
+}
+
+# Example 2: Prompt with default arguments
+prompt "summarize" {
+    args: {
+        text: string,
+        max_words: int = 100,
+        style: string = "concise"
+    }
+    output_schema: {
+        summary: string,
+        key_points: list[string],
+        word_count: int
+    }
+    model: "gpt4"
+    template: """
+Summarize the following text in approximately {max_words} words using a {style} style.
+
+Text: {text}
+
+Provide:
+- summary: the main summary
+- key_points: list of 3-5 key points
+- word_count: actual word count of your summary
+"""
+}
+
+# Example 3: Complex output schema with confidence scores
+prompt "analyze_sentiment" {
+    args: {
+        text: string,
+        include_aspects: bool = false
+    }
+    output_schema: {
+        sentiment: enum["positive", "negative", "neutral", "mixed"],
+        confidence: float,
+        reasoning: string
+    }
+    model: "gpt4"
+    template: """
+Analyze the sentiment of the following text:
+
+{text}
+
+Provide your analysis including confidence score (0.0 to 1.0) and brief reasoning.
+"""
+}
+
+# Example 4: Chain using structured prompts
+chain "triage_and_route" {
+    step classification = prompt.classify_ticket(text = input.ticket_text) | llm.gpt4
+    step summary = prompt.summarize(text = input.ticket_text, max_words = 50) | llm.gpt4
+    
+    output = {
+        category: classification.category,
+        urgency: classification.urgency,
+        needs_handoff: classification.needs_handoff,
+        summary: summary.summary
+    }
+}

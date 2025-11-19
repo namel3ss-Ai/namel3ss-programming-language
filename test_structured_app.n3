@@ -1,0 +1,31 @@
+app "StructuredTest".
+
+llm gpt4:
+    provider: openai
+    model: gpt-4o
+    temperature: 0.7
+
+prompt classify:
+    args: {
+        text: string
+    }
+    output_schema: {
+        category: enum("billing", "technical", "account"),
+        urgency: enum("low", "medium", "high")
+    }
+    model: "gpt4"
+    template: """
+Classify this ticket: {text}
+"""
+
+chain test_chain:
+    input { text: string }
+    
+    step classify_ticket {
+        call: classify
+        args: { text: input.text }
+    }
+    
+    output {
+        result: classify_ticket
+    }

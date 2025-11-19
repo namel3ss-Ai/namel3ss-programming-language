@@ -1,0 +1,51 @@
+// Test app for structured prompts in chains
+
+app test_structured_chain {
+    title: "Structured Prompt Chain Test"
+}
+
+model gpt4 {
+    provider: openai
+    model: gpt-4o-mini
+    temperature: 0.3
+}
+
+// Structured prompt with typed args and output schema
+prompt classify_ticket {
+    model: gpt4
+    
+    args: {
+        text: string,
+        department: string = "general"
+    }
+    
+    template: """
+    You are a support ticket classifier for the {department} department.
+    
+    Analyze this ticket and classify it:
+    {text}
+    
+    Provide a classification with category, urgency, and whether it needs escalation.
+    """
+    
+    output_schema: {
+        category: enum["billing", "technical", "account", "general"],
+        urgency: enum["low", "medium", "high", "critical"],
+        needs_escalation: bool,
+        confidence: float
+    }
+}
+
+// Simple chain that uses the structured prompt
+chain process_ticket {
+    input: {
+        ticket_text: string
+    }
+    
+    steps: [
+        prompt.classify_ticket(
+            text: input.ticket_text,
+            department: "support"
+        ) | model.gpt4
+    ]
+}

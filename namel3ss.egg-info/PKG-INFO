@@ -26,6 +26,7 @@ Requires-Dist: httpx<0.29,>=0.28
 Requires-Dist: pydantic<3.0,>=2.7
 Requires-Dist: uvicorn<0.31,>=0.30
 Requires-Dist: sqlalchemy<3.0,>=2.0
+Requires-Dist: pygls<2.0,>=1.3
 Provides-Extra: cli
 Requires-Dist: python-dotenv>=1.0; extra == "cli"
 Provides-Extra: sql
@@ -545,6 +546,14 @@ backend automatically.
 
 Namel3ss now scaffolds deterministic ML/DL plumbing so the generated
 projects are ready to host real models when you are:
+
+- **Training backends** – Declarative `training` blocks feed into
+  `namel3ss.ml.training`, which normalises a `TrainingPlan` and executes it via
+  local or Ray backends (auto-selected from the compute spec).  Plans inherit
+  hyperparameters, resource hints, metadata, and dataset references so results
+  can be piped into experiments, registries, or future CLI commands.
+
+
 
   representative sklearn and PyTorch entries.  Extend it freely or wire it to
   your own model catalogue.

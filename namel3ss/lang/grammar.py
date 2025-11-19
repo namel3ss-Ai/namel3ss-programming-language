@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Tuple
 
 from namel3ss.ast import (
     App,
@@ -67,9 +67,10 @@ from namel3ss.ast import (
     ShowText,
     Theme,
 )
-from namel3ss.ast.ai import LLMDefinition, ToolDefinition, PromptArgument, Prompt
+from namel3ss.ast.ai import LLMDefinition, ToolDefinition, PromptArgument, Prompt, OutputSchema, OutputField, OutputFieldType, Chain, ChainStep
 from namel3ss.ast.rag import IndexDefinition, RagPipelineDefinition
 from namel3ss.ast.agents import AgentDefinition, GraphDefinition, GraphEdge, MemoryConfig
+from namel3ss.ast.policy import PolicyDefinition
 from namel3ss.ast.pages import ElifBlock, ForLoop, IfBlock
 from namel3ss.ast.program import Module
 from namel3ss.ast.modules import Import, ImportedName
@@ -83,10 +84,12 @@ _PAGE_HEADER_RE = re.compile(r'^page\s+"([^"]+)"\s+at\s+"([^"]+)"\s*:\s*$')
 _LLM_HEADER_RE = re.compile(r'^llm\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
 _TOOL_HEADER_RE = re.compile(r'^tool\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
 _PROMPT_HEADER_RE = re.compile(r'^prompt\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_CHAIN_HEADER_RE = re.compile(r'^define\s+chain\s+"([^"]+)"(?:\s+effect\s+([\w\-]+))?\s*:\s*$')
 _INDEX_HEADER_RE = re.compile(r'^index\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
 _RAG_PIPELINE_HEADER_RE = re.compile(r'^rag_pipeline\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
 _AGENT_HEADER_RE = re.compile(r'^agent\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$')
 _GRAPH_HEADER_RE = re.compile(r'^graph\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$')
+_POLICY_HEADER_RE = re.compile(r'^policy\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$')
 _APP_HEADER_RE = re.compile(
     r'^app\s+"([^"]+)"(?:\s+connects\s+to\s+[A-Za-z_][A-Za-z0-9_]*\s+"([^"]+)")?\s*\.?$'
 )
@@ -207,6 +210,9 @@ class _GrammarModuleParser:
             if stripped.startswith('prompt '):
                 self._parse_prompt(line)
                 continue
+            if stripped.startswith('define chain '):
+                self._parse_chain(line)
+                continue
             if stripped.startswith('index '):
                 self._parse_index(line)
                 continue
@@ -218,6 +224,9 @@ class _GrammarModuleParser:
                 continue
             if stripped.startswith('graph '):
                 self._parse_graph(line)
+                continue
+            if stripped.startswith('policy '):
+                self._parse_policy(line)
                 continue
             self._unsupported(line, f"top-level statement '{stripped.split()[0]}'")
 
@@ -612,7 +621,22 @@ class _GrammarModuleParser:
         )
         
         self._ensure_app(line)
+        # Add to both lists for backwards compatibility
         self._app.llms.append(llm)
+        
+        # Also add as AIModel for resolver validation
+        from namel3ss.ast import AIModel
+        ai_model = AIModel(
+            name=name,
+            provider=provider,
+            model_name=model,
+            config={
+                'temperature': temperature,
+                'max_tokens': max_tokens,
+                **(config or {})
+            }
+        )
+        self._app.ai_models.append(ai_model)
 
     def _parse_tool(self, line: _Line) -> None:
         """
@@ -672,12 +696,15 @@ class _GrammarModuleParser:
 
     def _parse_prompt(self, line: _Line) -> None:
         """
-        Parse a prompt definition block with typed arguments.
+        Parse a prompt definition block with typed arguments and output schema.
         
         Grammar:
             prompt <name>:
                 args:
                     <arg_name>: <type> [= <default>]
+                    ...
+                output_schema:
+                    <field_name>: <type>
                     ...
                 template: <string>
                 model: <llm_name>
@@ -689,62 +716,383 @@ class _GrammarModuleParser:
         base_indent = self._indent(line.text)
         self._advance()
         
-        # Parse key-value properties
-        properties = self._parse_kv_block(base_indent)
+        # Initialize fields
+        args: List[PromptArgument] = []
+        output_schema: Optional[OutputSchema] = None
+        template: Optional[str] = None
+        model: Optional[str] = None
+        config: Dict[str, Any] = {}
         
-        # Extract required fields
-        template = properties.get('template')
-        model = properties.get('model')
+        # Parse block content
+        while True:
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Stop if we've dedented
+            if stripped and indent <= base_indent:
+                break
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            lowered = stripped.lower()
+            
+            # Handle args: block
+            if lowered.startswith('args:'):
+                self._advance()
+                args = self._parse_prompt_args_block(indent)
+            # Handle output_schema: block
+            elif lowered.startswith('output_schema:'):
+                self._advance()
+                output_schema = self._parse_output_schema_block(indent)
+            # Handle template: field
+            elif lowered.startswith('template:'):
+                self._advance()
+                template = self._parse_prompt_template(indent, stripped)
+            # Handle model: field
+            elif lowered.startswith('model:'):
+                model = stripped.split(':', 1)[1].strip()
+                self._advance()
+            # Handle other config fields
+            else:
+                if ':' in stripped:
+                    key, val = stripped.split(':', 1)
+                    config[key.strip()] = val.strip()
+                self._advance()
+        
         if not template:
             raise self._error("prompt block requires 'template' field", line)
-        
-        # Strip quotes from template string
-        if template.startswith('"') and template.endswith('"'):
-            template = template[1:-1]
-        elif template.startswith("'") and template.endswith("'"):
-            template = template[1:-1]
-        
-        # Parse args if present
-        args: List[PromptArgument] = []
-        if 'args' in properties:
-            args_value = properties['args']
-            if isinstance(args_value, dict):
-                for arg_name, arg_spec in args_value.items():
-                    # Parse "type = default" or just "type"
-                    arg_type = 'string'
-                    default = None
-                    required = True
-                    
-                    if isinstance(arg_spec, str):
-                        if '=' in arg_spec:
-                            parts = arg_spec.split('=', 1)
-                            arg_type = parts[0].strip()
-                            default = parts[1].strip()
-                            required = False
-                        else:
-                            arg_type = arg_spec.strip()
-                    
-                    args.append(PromptArgument(
-                        name=arg_name,
-                        arg_type=arg_type,
-                        required=required,
-                        default=default,
-                    ))
-        
-        # Build config from remaining properties
-        config = {k: v for k, v in properties.items() 
-                  if k not in {'template', 'model', 'args'}}
         
         prompt = Prompt(
             name=name,
             model=model or '',
             template=template,
             args=args,
+            output_schema=output_schema,
             parameters=config,
         )
         
         self._ensure_app(line)
         self._app.prompts.append(prompt)
+
+    def _parse_prompt_args_block(self, parent_indent: int) -> List[PromptArgument]:
+        """Parse the args: block for a structured prompt."""
+        args: List[PromptArgument] = []
+        
+        while True:
+            nxt = self._peek()
+            if nxt is None:
+                break
+            
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Stop if dedented
+            if stripped and indent <= parent_indent:
+                break
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Parse arg line: name: type [= default]
+            if ':' in stripped:
+                parts = stripped.split(':', 1)
+                arg_name = parts[0].strip()
+                arg_spec = parts[1].strip()
+                
+                # Check for default value
+                arg_type = 'string'
+                default = None
+                required = True
+                
+                if '=' in arg_spec:
+                    type_part, default_part = arg_spec.split('=', 1)
+                    arg_type = type_part.strip()
+                    default = default_part.strip()
+                    # Remove quotes from default if present
+                    if default.startswith('"') and default.endswith('"'):
+                        default = default[1:-1]
+                    elif default.startswith("'") and default.endswith("'"):
+                        default = default[1:-1]
+                    required = False
+                else:
+                    arg_type = arg_spec
+                
+                args.append(PromptArgument(
+                    name=arg_name,
+                    arg_type=arg_type,
+                    required=required,
+                    default=default,
+                ))
+            
+            self._advance()
+        
+        return args
+
+    def _parse_output_schema_block(self, parent_indent: int) -> OutputSchema:
+        """Parse the output_schema: block for a structured prompt."""
+        fields: List[OutputField] = []
+        
+        while True:
+            nxt = self._peek()
+            if nxt is None:
+                break
+            
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Stop if dedented
+            if stripped and indent <= parent_indent:
+                break
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Parse field line: name: type
+            if ':' in stripped:
+                parts = stripped.split(':', 1)
+                field_name = parts[0].strip()
+                type_spec = parts[1].strip()
+                
+                # Check for optional marker (?)
+                required = True
+                if field_name.endswith('?'):
+                    field_name = field_name[:-1]
+                    required = False
+                
+                # Parse the type specification
+                field_type = self._parse_output_field_type(type_spec)
+                
+                fields.append(OutputField(
+                    name=field_name,
+                    field_type=field_type,
+                    required=required,
+                ))
+            
+            self._advance()
+        
+        return OutputSchema(fields=fields)
+
+    def _parse_output_field_type(self, type_spec: str) -> OutputFieldType:
+        """Parse a type specification like 'string', 'enum(\"a\", \"b\")', 'list[string]', 'object {...}'."""
+        type_spec = type_spec.strip()
+        
+        # Handle enum: enum(\"val1\", \"val2\", ...)
+        if type_spec.startswith('enum(') or type_spec.startswith('enum['):
+            # Extract enum values
+            start_char = '(' if '(' in type_spec else '['
+            end_char = ')' if start_char == '(' else ']'
+            start_idx = type_spec.index(start_char) + 1
+            end_idx = type_spec.rindex(end_char)
+            values_str = type_spec[start_idx:end_idx]
+            
+            # Split and clean values
+            enum_values = []
+            for val in values_str.split(','):
+                val = val.strip()
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]
+                elif val.startswith("'") and val.endswith("'"):
+                    val = val[1:-1]
+                if val:
+                    enum_values.append(val)
+            
+            return OutputFieldType(base_type='enum', enum_values=enum_values)
+        
+        # Handle list: list[element_type]
+        if type_spec.startswith('list[') or type_spec.startswith('list<'):
+            start_idx = type_spec.index('[') if '[' in type_spec else type_spec.index('<')
+            end_idx = type_spec.rindex(']') if '[' in type_spec else type_spec.rindex('>')
+            element_type_str = type_spec[start_idx+1:end_idx].strip()
+            element_type = self._parse_output_field_type(element_type_str)
+            return OutputFieldType(base_type='list', element_type=element_type)
+        
+        # Handle object: object { ... } (simplified - just mark as object for now)
+        if type_spec.startswith('object'):
+            # For now, we'll create a simple object type
+            # Full nested object parsing would require more complex logic
+            return OutputFieldType(base_type='object')
+        
+        # Handle primitives: string, int, float, bool
+        if type_spec in ('string', 'int', 'float', 'bool'):
+            return OutputFieldType(base_type=type_spec)
+        
+        # Default to string
+        return OutputFieldType(base_type='string')
+
+    def _parse_prompt_template(self, parent_indent: int, first_line: str) -> str:
+        """Parse template field - can be inline or multiline block."""
+        # Check if there's inline content after template:
+        if 'template:' in first_line.lower():
+            inline = first_line.split(':', 1)[1].strip()
+            if inline:
+                # Remove quotes if present
+                if inline.startswith('"""') or inline.startswith("'''"):
+                    # Multiline string starts on same line - collect until end marker
+                    quote = inline[:3]
+                    content = inline[3:]
+                    lines = [content]
+                    
+                    while True:
+                        nxt = self._peek()
+                        if nxt is None:
+                            break
+                        line_text = nxt.text.rstrip()
+                        self._advance()
+                        
+                        if quote in line_text:
+                            # Found end quote
+                            end_idx = line_text.index(quote)
+                            lines.append(line_text[:end_idx])
+                            break
+                        else:
+                            lines.append(line_text)
+                    
+                    return '\n'.join(lines)
+                elif inline.startswith('"') and inline.endswith('"'):
+                    return inline[1:-1]
+                elif inline.startswith("'") and inline.endswith("'"):
+                    return inline[1:-1]
+                else:
+                    return inline
+        
+        # Otherwise, expect a multiline block
+        lines = []
+        while True:
+            nxt = self._peek()
+            if nxt is None:
+                break
+            
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Stop if dedented
+            if stripped and indent <= parent_indent:
+                break
+            
+            # Add line content (preserving indentation within the block)
+            if stripped:
+                lines.append(nxt.text[parent_indent+2:] if len(nxt.text) > parent_indent+2 else stripped)
+            else:
+                lines.append('')
+            
+            self._advance()
+        
+        return '\n'.join(lines)
+
+    def _parse_chain(self, line: _Line) -> None:
+        """
+        Parse a chain definition.
+        
+        Grammar:
+            define chain "<name>" [effect <effect_name>]:
+                policy: <policy_name>
+                <key>: <value>
+                input -> step1 | step2 | ...
+        
+        Example:
+            define chain "support_agent" effect read:
+                policy: strict_safety
+                input -> template.customer_support(query = input.query) | llm.chat_model
+        """
+        match = _CHAIN_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "chain declaration")
+        
+        name = match.group(1)
+        effect = match.group(2) if match.lastindex >= 2 else None
+        
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Initialize fields
+        policy_name: Optional[str] = None
+        metadata: Dict[str, Any] = {}
+        steps: List[ChainStep] = []
+        input_key: str = "input"
+        
+        # Parse block content
+        while True:
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Stop if we've dedented
+            if stripped and indent <= base_indent:
+                break
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            lowered = stripped.lower()
+            
+            # Handle policy reference
+            if lowered.startswith('policy:'):
+                policy_name = stripped.split(':', 1)[1].strip().strip('"').strip("'")
+                self._advance()
+            # Handle pipeline with ->
+            elif '->' in stripped:
+                # Simple pipeline parsing: input -> step1 | step2
+                pipeline_parts = stripped.split('->')
+                if len(pipeline_parts) >= 2:
+                    # First part is input
+                    input_part = pipeline_parts[0].strip()
+                    if input_part.lower().startswith('input'):
+                        parts = input_part.split()
+                        if len(parts) > 1:
+                            input_key = parts[1]
+                    
+                    # Rest is the pipeline
+                    pipeline_str = '->'.join(pipeline_parts[1:]).strip()
+                    # Split by | for steps
+                    step_strs = [s.strip() for s in pipeline_str.split('|')]
+                    
+                    for step_str in step_strs:
+                        if not step_str:
+                            continue
+                        
+                        # Parse step: "template.name(args)" or "llm.model"
+                        tokens = step_str.split()
+                        if tokens:
+                            # Simple step parsing - just capture the step string
+                            # Full parsing would need expression parser integration
+                            kind = tokens[0].split('.')[0] if '.' in tokens[0] else tokens[0]
+                            target = tokens[0]
+                            steps.append(ChainStep(kind=kind, target=target, options={}))
+                
+                self._advance()
+            # Handle other metadata
+            elif ':' in stripped:
+                key, val = stripped.split(':', 1)
+                metadata[key.strip()] = val.strip()
+                self._advance()
+            else:
+                self._advance()
+        
+        chain = Chain(
+            name=name,
+            input_key=input_key,
+            steps=steps,
+            metadata=metadata,
+            declared_effect=effect,
+            policy_name=policy_name,
+        )
+        
+        self._ensure_app(line)
+        self._app.chains.append(chain)
 
     def _parse_index(self, line: _Line) -> None:
         """
@@ -1033,6 +1381,89 @@ class _GrammarModuleParser:
         self._ensure_app(line)
         self._app.graphs.append(graph)
 
+    def _parse_policy(self, line: _Line) -> None:
+        """
+        Parse a policy definition block.
+        
+        Grammar:
+            policy <name> {
+                block_categories: ["self-harm", "hate", "sexual_minors"]
+                allow_categories: ["educational"]
+                alert_only_categories: ["profanity"]
+                redact_pii: true
+                max_tokens: 512
+                fallback_message: "I can't help with that."
+                log_level: "full"
+            }
+        """
+        match = _POLICY_HEADER_RE.match(line.text.strip())
+        if not match:
+            self._unsupported(line, "policy declaration")
+        name = match.group(1)
+        base_indent = self._indent(line.text)
+        self._advance()
+        
+        # Parse key-value properties within braces
+        properties = self._parse_kv_block_braces(base_indent)
+        
+        # Extract policy fields
+        block_categories = properties.get('block_categories', [])
+        if isinstance(block_categories, str):
+            # Parse string representation of list
+            block_categories = self._parse_string_list(block_categories)
+        
+        allow_categories = properties.get('allow_categories', [])
+        if isinstance(allow_categories, str):
+            allow_categories = self._parse_string_list(allow_categories)
+        
+        alert_only_categories = properties.get('alert_only_categories', [])
+        if isinstance(alert_only_categories, str):
+            alert_only_categories = self._parse_string_list(alert_only_categories)
+        
+        redact_pii = properties.get('redact_pii', False)
+        if isinstance(redact_pii, str):
+            redact_pii = redact_pii.lower() in ('true', 'yes', '1')
+        
+        max_tokens = properties.get('max_tokens')
+        if max_tokens is not None:
+            max_tokens = int(max_tokens)
+        
+        fallback_message = properties.get('fallback_message')
+        if fallback_message and isinstance(fallback_message, str):
+            # Remove quotes if present
+            if fallback_message.startswith('"') and fallback_message.endswith('"'):
+                fallback_message = fallback_message[1:-1]
+            elif fallback_message.startswith("'") and fallback_message.endswith("'"):
+                fallback_message = fallback_message[1:-1]
+        
+        log_level = properties.get('log_level', 'full')
+        if isinstance(log_level, str):
+            log_level = log_level.strip('"').strip("'")
+        
+        # Build config from remaining properties
+        config = {
+            k: v for k, v in properties.items()
+            if k not in {
+                'block_categories', 'allow_categories', 'alert_only_categories',
+                'redact_pii', 'max_tokens', 'fallback_message', 'log_level'
+            }
+        }
+        
+        policy = PolicyDefinition(
+            name=name,
+            block_categories=block_categories,
+            allow_categories=allow_categories,
+            alert_only_categories=alert_only_categories,
+            redact_pii=redact_pii,
+            max_tokens=max_tokens,
+            fallback_message=fallback_message,
+            log_level=log_level,
+            config=config,
+        )
+        
+        self._ensure_app(line)
+        self._app.policies.append(policy)
+
     def _parse_kv_block_braces(self, parent_indent: int) -> dict[str, any]:
         """Parse a key-value block enclosed in braces."""
         entries: dict[str, any] = {}
@@ -1203,6 +1634,27 @@ class _GrammarModuleParser:
             code="SYNTAX_GRAMMAR",
             hint=line.text.strip() or None,
         )
+    
+    def _parse_string_list(self, value: str) -> List[str]:
+        """Parse a string representation of a list like '["a", "b", "c"]'."""
+        import json
+        try:
+            # Try JSON parsing first
+            result = json.loads(value)
+            if isinstance(result, list):
+                return [str(item) for item in result]
+            return [str(result)]
+        except (json.JSONDecodeError, ValueError):
+            # Fall back to basic parsing
+            if value.startswith('[') and value.endswith(']'):
+                content = value[1:-1]
+                items = []
+                for item in content.split(','):
+                    item = item.strip().strip('"').strip("'")
+                    if item:
+                        items.append(item)
+                return items
+            return [value.strip().strip('"').strip("'")]
 
     def _unsupported(self, line: _Line, feature: str) -> None:
         location = f"{self._path}:{line.number}" if self._path else f"line {line.number}"

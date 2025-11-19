@@ -16,6 +16,15 @@ from namel3ss.codegen.backend.core.runtime.expression_sandbox import (
     evaluate_expression_tree as _evaluate_expression_tree,
 )
 
+# Structured prompt support
+try:
+    from namel3ss.prompts import PromptProgram, execute_structured_prompt_sync
+    from namel3ss.llm.base import BaseLLM
+    from namel3ss.ast import Prompt, PromptArgument, OutputSchema, OutputField, OutputFieldType
+    _STRUCTURED_PROMPTS_AVAILABLE = True
+except ImportError:
+    _STRUCTURED_PROMPTS_AVAILABLE = False
+
 
 def _stringify_prompt_value(name: str, value: Any) -> str:
     if isinstance(value, (dict, list)):
@@ -1652,6 +1661,263 @@ def call_llm_connector(
         return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
 
 
+def _is_structured_prompt(prompt_spec: Dict[str, Any]) -> bool:
+    """Check if a prompt has structured args and output_schema."""
+    return bool(prompt_spec.get("args") or prompt_spec.get("output_schema"))
+
+
+def _reconstruct_prompt_ast(prompt_spec: Dict[str, Any]) -> "Prompt":
+    """Reconstruct a Prompt AST node from the encoded spec for structured execution."""
+    if not _STRUCTURED_PROMPTS_AVAILABLE:
+        raise ImportError("Structured prompts not available - missing imports")
+    
+    # Reconstruct args
+    args_list = []
+    for arg_dict in prompt_spec.get("args", []):
+        arg = PromptArgument(
+            name=arg_dict["name"],
+            arg_type=arg_dict["type"],
+            required=arg_dict.get("required", True),
+            default=arg_dict.get("default"),
+            description=arg_dict.get("description"),
+        )
+        args_list.append(arg)
+    
+    # Reconstruct output_schema
+    output_schema = None
+    schema_dict = prompt_spec.get("output_schema")
+    if schema_dict:
+        fields = []
+        for field_dict in schema_dict.get("fields", []):
+            field_type = _reconstruct_output_field_type(field_dict["field_type"])
+            field = OutputField(
+                name=field_dict["name"],
+                field_type=field_type,
+                required=field_dict.get("required", True),
+                description=field_dict.get("description"),
+            )
+            fields.append(field)
+        output_schema = OutputSchema(fields=fields)
+    
+    # Create Prompt AST node
+    return Prompt(
+        name=prompt_spec["name"],
+        model=prompt_spec["model"],
+        template=prompt_spec["template"],
+        args=args_list,
+        output_schema=output_schema,
+        description=prompt_spec.get("description"),
+    )
+
+
+def _reconstruct_output_field_type(type_dict: Dict[str, Any]) -> "OutputFieldType":
+    """Reconstruct an OutputFieldType from encoded dict."""
+    element_type = None
+    if type_dict.get("element_type"):
+        element_type = _reconstruct_output_field_type(type_dict["element_type"])
+    
+    nested_fields = None
+    if type_dict.get("nested_fields"):
+        nested_fields = []
+        for nested_dict in type_dict["nested_fields"]:
+            nested_field_type = _reconstruct_output_field_type(nested_dict["field_type"])
+            nested_field = OutputField(
+                name=nested_dict["name"],
+                field_type=nested_field_type,
+                required=nested_dict.get("required", True),
+                description=nested_dict.get("description"),
+            )
+            nested_fields.append(nested_field)
+    
+    return OutputFieldType(
+        base_type=type_dict["base_type"],
+        element_type=element_type,
+        enum_values=type_dict.get("enum_values"),
+        nested_fields=nested_fields,
+        nullable=type_dict.get("nullable", False),
+    )
+
+
+def _get_llm_instance(model_name: str, context: Optional[Dict[str, Any]]) -> Optional["BaseLLM"]:
+    """Get or create an instantiated LLM instance."""
+    if not context:
+        return None
+    
+    # First, try to get from llms registry (if they're already BaseLLM instances)
+    llms_registry = context.get("llms", {})
+    if isinstance(llms_registry, dict):
+        llm_instance = llms_registry.get(model_name)
+        if isinstance(llm_instance, BaseLLM):
+            return llm_instance
+    
+    # Otherwise, get model spec and create instance
+    model_spec = AI_MODELS.get(model_name)
+    if not model_spec:
+        return None
+    
+    provider = str(model_spec.get("provider", "")).lower()
+    model_id = model_spec.get("model")
+    
+    if not model_id:
+        return None
+    
+    # Create LLM instance based on provider
+    try:
+        if provider == "openai":
+            from namel3ss.llm.openai_llm import OpenAILLM
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return None
+            return OpenAILLM(
+                model=model_id,
+                api_key=api_key,
+                temperature=model_spec.get("temperature", 0.7),
+                max_tokens=model_spec.get("max_tokens", 1024),
+            )
+        elif provider == "anthropic":
+            from namel3ss.llm.anthropic_llm import AnthropicLLM
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                return None
+            return AnthropicLLM(
+                model=model_id,
+                api_key=api_key,
+                temperature=model_spec.get("temperature", 0.7),
+                max_tokens=model_spec.get("max_tokens", 1024),
+            )
+        # Add more providers as needed
+    except ImportError:
+        pass
+    
+    return None
+
+
+def _run_structured_prompt(
+    prompt_spec: Dict[str, Any],
+    args: Dict[str, Any],
+    context: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Execute a structured prompt with validation and return results."""
+    if not _STRUCTURED_PROMPTS_AVAILABLE:
+        return {
+            "status": "error",
+            "error": "Structured prompts not available - missing namel3ss.prompts module",
+        }
+    
+    prompt_name = prompt_spec.get("name", "unknown")
+    model_name = prompt_spec.get("model", "unknown")
+    
+    try:
+        # Reconstruct the Prompt AST
+        prompt_ast = _reconstruct_prompt_ast(prompt_spec)
+        
+        # Get LLM instance
+        llm_instance = _get_llm_instance(model_name, context)
+        if not llm_instance:
+            error_msg = f"LLM instance '{model_name}' not found in context"
+            logger.error(f"Structured prompt '{prompt_name}': {error_msg}")
+            _record_runtime_metric(
+                context,
+                name="prompt_program_failures",
+                value=1,
+                unit="count",
+                tags={"prompt": prompt_name, "reason": "llm_not_found"},
+            )
+            return {
+                "status": "error",
+                "error": error_msg,
+            }
+        
+        # Execute structured prompt
+        logger.info(f"Executing structured prompt '{prompt_name}' with model '{model_name}'")
+        result = execute_structured_prompt_sync(
+            prompt_def=prompt_ast,
+            llm=llm_instance,
+            args=args,
+            retry_on_validation_error=True,
+            max_retries=2,
+        )
+        
+        # Record metrics
+        _record_runtime_metric(
+            context,
+            name="prompt_program_latency_ms",
+            value=result.latency_ms,
+            unit="milliseconds",
+            tags={"prompt": prompt_name, "model": model_name},
+        )
+        
+        validation_attempts = result.metadata.get("validation_attempts", 1)
+        if validation_attempts > 1:
+            retry_count = validation_attempts - 1
+            _record_runtime_metric(
+                context,
+                name="prompt_program_retries",
+                value=retry_count,
+                unit="count",
+                tags={"prompt": prompt_name, "model": model_name},
+            )
+            logger.warning(f"Structured prompt '{prompt_name}' required {retry_count} retries due to validation failures")
+        
+        # Check for validation errors in metadata
+        if result.metadata.get("validation_errors"):
+            validation_errors = result.metadata["validation_errors"]
+            _record_runtime_metric(
+                context,
+                name="prompt_program_validation_failures",
+                value=len(validation_errors),
+                unit="count",
+                tags={"prompt": prompt_name},
+            )
+            # Log sanitized validation errors (first 200 chars)
+            for error in validation_errors[:3]:  # Log up to 3 errors
+                sanitized_error = str(error)[:200]
+                logger.warning(f"Validation error in '{prompt_name}': {sanitized_error}")
+        
+        # Record success metric
+        _record_runtime_metric(
+            context,
+            name="prompt_program_success",
+            value=1,
+            unit="count",
+            tags={"prompt": prompt_name, "model": model_name},
+        )
+        
+        logger.info(f"Structured prompt '{prompt_name}' completed successfully in {result.latency_ms}ms")
+        
+        # Convert to compatible response format
+        return {
+            "status": "ok",
+            "prompt": prompt_name,
+            "model": model_name,
+            "inputs": args,
+            "output": result.output,
+            "result": {"text": json.dumps(result.output), "json": result.output},
+            "metadata": {
+                "elapsed_ms": result.latency_ms,
+                "tokens_used": result.tokens_used or 0,
+                "validation_attempts": validation_attempts,
+                "structured": True,
+            },
+        }
+    except Exception as exc:
+        error_msg = f"Structured prompt execution failed: {exc}"
+        logger.error(f"Structured prompt '{prompt_name}': {error_msg}")
+        _record_runtime_metric(
+            context,
+            name="prompt_program_failures",
+            value=1,
+            unit="count",
+            tags={"prompt": prompt_name, "reason": "execution_error"},
+        )
+        return {
+            "status": "error",
+            "error": error_msg,
+            "prompt": prompt_name,
+            "model": model_name,
+        }
+
+
 def run_prompt(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
@@ -1707,6 +1973,24 @@ def run_prompt(
     if not prompt_spec:
         metadata = {"elapsed_ms": _elapsed_ms()}
         return _stub_response(f"Prompt '{name}' is not defined", metadata) if allow_stubs else _error_response(f"Prompt '{name}' is not defined", metadata)
+    
+    # Check if this is a structured prompt and route to structured execution
+    if _STRUCTURED_PROMPTS_AVAILABLE and _is_structured_prompt(prompt_spec):
+        # Extract args from payload (skip memory-related keys)
+        args_for_prompt = {k: v for k, v in payload_dict.items() if k not in ["read_memory", "write_memory"]}
+        structured_result = _run_structured_prompt(prompt_spec, args_for_prompt, context)
+        
+        # Handle memory writes if needed
+        if structured_result.get("status") == "ok" and write_memory:
+            _write_memory_entries(
+                memory_state,
+                write_memory,
+                structured_result.get("output"),
+                context=context,
+                source=f"prompt:{name}",
+            )
+        
+        return structured_result
 
     normalized_inputs = _normalize_prompt_inputs(
         prompt_spec,

@@ -74,7 +74,8 @@ class Prompt:
     template: str
     input_fields: List[PromptField] = field(default_factory=list)
     output_fields: List[PromptField] = field(default_factory=list)
-    args: List['PromptArgument'] = field(default_factory=list)  # New: typed arguments for parameterized prompts
+    args: List['PromptArgument'] = field(default_factory=list)  # Typed arguments for parameterized prompts
+    output_schema: Optional['OutputSchema'] = None  # Structured output schema
     parameters: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     description: Optional[str] = None
@@ -130,6 +131,7 @@ class Chain:
     metadata: Dict[str, Any] = field(default_factory=dict)
     declared_effect: Optional[str] = None
     effects: Set[str] = field(default_factory=set)
+    policy_name: Optional[str] = None  # Reference to safety policy
 
 
 WorkflowNode = Union[ChainStep, WorkflowIfBlock, WorkflowForBlock, WorkflowWhileBlock]
@@ -269,17 +271,144 @@ class PromptArgument:
         prompt summarize {
             args: {
                 text: string,
-                max_length: number = 100
+                max_length: int = 100
             }
             template: "Summarize the following text in {max_length} words: {text}"
         }
     """
     name: str
-    arg_type: str  # string, number, boolean, object, array
+    arg_type: str  # string, int, float, bool, list, object
     required: bool = True
     default: Any = None
     description: Optional[str] = None
     location: Optional[SourceLocation] = None
+
+
+@dataclass
+class EnumType:
+    """
+    Enum type constraint for output schema fields.
+    
+    Example:
+        enum["billing", "technical", "account", "other"]
+    """
+    values: List[str]
+    
+    def __str__(self) -> str:
+        vals = ', '.join(f'"{v}"' for v in self.values)
+        return f"enum[{vals}]"
+
+
+@dataclass
+class OutputFieldType:
+    """
+    Type specification for an output schema field.
+    
+    Supports:
+    - Primitives: string, int, float, bool
+    - Collections: list[T]
+    - Nested objects: {field: type, ...}
+    - Enums: enum["val1", "val2"]
+    """
+    base_type: str  # string, int, float, bool, list, object, enum
+    element_type: Optional['OutputFieldType'] = None  # For list[T]
+    enum_values: Optional[List[str]] = None  # For enum types
+    nested_fields: Optional[List['OutputField']] = None  # For object types
+    nullable: bool = False
+    
+    def __str__(self) -> str:
+        if self.base_type == "enum" and self.enum_values:
+            vals = ', '.join(f'"{v}"' for v in self.enum_values)
+            return f"enum[{vals}]"
+        elif self.base_type == "list" and self.element_type:
+            return f"list[{self.element_type}]"
+        elif self.base_type == "object" and self.nested_fields:
+            return "object{...}"
+        suffix = "?" if self.nullable else ""
+        return f"{self.base_type}{suffix}"
+
+
+@dataclass
+class OutputField:
+    """
+    A single field in an output schema.
+    
+    Example:
+        category: enum["billing", "technical"]
+        confidence: float
+        tags: list[string]
+    """
+    name: str
+    field_type: OutputFieldType
+    required: bool = True
+    description: Optional[str] = None
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class OutputSchema:
+    """
+    Structured output schema for a prompt.
+    
+    Example DSL:
+        output_schema: {
+            category: enum["billing", "technical", "account"],
+            urgency: enum["low", "medium", "high"],
+            needs_handoff: bool,
+            confidence: float
+        }
+    """
+    fields: List[OutputField]
+    
+    def to_json_schema(self) -> Dict[str, Any]:
+        """Convert to JSON Schema format for LLM providers."""
+        properties = {}
+        required = []
+        
+        for field in self.fields:
+            properties[field.name] = self._field_type_to_json_schema(field.field_type)
+            if field.description:
+                properties[field.name]["description"] = field.description
+            if field.required:
+                required.append(field.name)
+        
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False
+        }
+    
+    def _field_type_to_json_schema(self, ft: OutputFieldType) -> Dict[str, Any]:
+        """Convert OutputFieldType to JSON Schema type definition."""
+        if ft.base_type == "enum" and ft.enum_values:
+            return {"type": "string", "enum": ft.enum_values}
+        elif ft.base_type == "list" and ft.element_type:
+            return {
+                "type": "array",
+                "items": self._field_type_to_json_schema(ft.element_type)
+            }
+        elif ft.base_type == "object" and ft.nested_fields:
+            nested_props = {}
+            nested_required = []
+            for nf in ft.nested_fields:
+                nested_props[nf.name] = self._field_type_to_json_schema(nf.field_type)
+                if nf.required:
+                    nested_required.append(nf.name)
+            return {
+                "type": "object",
+                "properties": nested_props,
+                "required": nested_required
+            }
+        else:
+            # Map N3 types to JSON Schema types
+            type_map = {
+                "string": "string",
+                "int": "integer",
+                "float": "number",
+                "bool": "boolean",
+            }
+            return {"type": type_map.get(ft.base_type, "string")}
 
 
 __all__ = [
@@ -290,6 +419,10 @@ __all__ = [
     "PromptField",
     "Prompt",
     "PromptArgument",
+    "EnumType",
+    "OutputFieldType",
+    "OutputField",
+    "OutputSchema",
     "ChainStep",
     "StepEvaluationConfig",
     "WorkflowIfBlock",

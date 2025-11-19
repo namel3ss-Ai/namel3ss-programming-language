@@ -1,0 +1,100 @@
+# Safety and Guardrails Example
+# Demonstrates first-class policy primitives in Namel3ss
+
+app "Safe Customer Support Agent".
+
+# Define LLM
+llm chat_model:
+    provider: openai
+    model: gpt-4
+    temperature: 0.7
+    max_tokens: 1024
+
+# Define safety policies
+policy strict_safety {
+    # Block harmful content categories
+    block_categories: ["violence", "hate", "self-harm", "sexual_minors"]
+    
+    # Redact PII from all outputs
+    redact_pii: true
+    
+    # Enforce maximum token limit
+    max_tokens: 512
+    
+    # User-friendly fallback message
+    fallback_message: "I'm sorry, but I'm not able to help with that request. Is there something else I can assist you with?"
+    
+    # Full audit logging
+    log_level: "full"
+}
+
+policy content_moderation {
+    # Block explicit categories
+    block_categories: ["hate", "sexual"]
+    
+    # Alert on profanity but don't block
+    alert_only_categories: ["profanity"]
+    
+    # Allow educational content even if flagged
+    allow_categories: ["educational_violence"]
+    
+    # Moderate PII redaction
+    redact_pii: true
+    max_tokens: 1024
+    fallback_message: "I cannot provide that information."
+    log_level: "minimal"
+}
+
+# Templates
+define template "customer_support":
+    """
+    You are a helpful customer support agent.
+    
+    User question: {{query}}
+    
+    Provide a helpful, professional response.
+    """
+
+define template "product_recommendation":
+    """
+    Based on the user's preferences, recommend suitable products.
+    
+    User preferences: {{preferences}}
+    Product category: {{category}}
+    
+    Provide 3-5 product recommendations with brief explanations.
+    """
+
+# Safe chains with policy enforcement
+define chain "safe_support" effect read:
+    # Attach strict safety policy
+    policy: strict_safety
+    
+    # Input goes through safety checks before processing
+    input -> template.customer_support(query = input.query) | llm.chat_model
+
+define chain "safe_recommendations" effect read:
+    # Use content moderation policy
+    policy: content_moderation
+    
+    input -> template.product_recommendation(
+        preferences = input.preferences,
+        category = input.category
+    ) | llm.chat_model
+
+# Chain without policy (unprotected - not recommended for production)
+define chain "unprotected_qa" effect read:
+    input -> template.customer_support(query = input.query) | llm.chat_model
+
+# Pages to test the system
+page "Support" at "/support":
+    show text "Customer Support (with Safety)"
+    show text "This endpoint uses strict safety policies to protect users."
+
+page "Recommendations" at "/recommendations":
+    show text "Product Recommendations (with Content Moderation)"
+    show text "This endpoint uses content moderation to filter inappropriate requests."
+
+page "Unsafe" at "/unsafe":
+    show text "Unprotected Endpoint (Demo Only)"
+    show text "WARNING: This endpoint has no safety policies applied."

@@ -1,0 +1,112 @@
+# Namel3ss Evaluation Suite Demo
+# This example demonstrates how to use eval_suite blocks to systematically
+# evaluate AI chains with multiple metrics.
+
+app "RAG Evaluation Demo".
+
+# LLM for the chain and judge
+llm gpt35:
+  provider: openai
+  model: "gpt-3.5-turbo"
+  temperature: 0.0
+
+llm gpt4:
+  provider: openai
+  model: "gpt-4"
+  temperature: 0.0
+
+# Sample knowledge base
+dataset "knowledge_base" from inline:
+  rows: [
+    {
+      id: "doc1",
+      text: "The Eiffel Tower is located in Paris, France. It was built in 1889 and stands 330 meters tall."
+    },
+    {
+      id: "doc2",
+      text: "The Great Wall of China is over 13,000 miles long and was built over many centuries."
+    },
+    {
+      id: "doc3",
+      text: "The Statue of Liberty was a gift from France to the United States in 1886."
+    }
+  ]
+
+# Evaluation dataset with ground truth
+dataset "qa_eval_set" from inline:
+  rows: [
+    {
+      question: "Where is the Eiffel Tower located?",
+      ground_truth: "Paris, France",
+      contexts: ["The Eiffel Tower is located in Paris, France. It was built in 1889 and stands 330 meters tall."]
+    },
+    {
+      question: "How tall is the Eiffel Tower?",
+      ground_truth: "330 meters",
+      contexts: ["The Eiffel Tower is located in Paris, France. It was built in 1889 and stands 330 meters tall."]
+    },
+    {
+      question: "What is the Statue of Liberty?",
+      ground_truth: "A gift from France to the United States",
+      contexts: ["The Statue of Liberty was a gift from France to the United States in 1886."]
+    }
+  ]
+
+# Simple QA chain
+define chain "simple_qa":
+  input -> llm "gpt35"
+
+# Basic evaluation suite with latency metric only
+eval_suite basic_qa_eval {
+  dataset: "qa_eval_set"
+  target_chain: "simple_qa"
+  
+  metrics: [
+    { name: "latency_ms", type: "builtin_latency" }
+  ]
+  
+  description: "Basic latency evaluation"
+}
+
+# Comprehensive evaluation with RAGAS metrics and judge
+eval_suite comprehensive_qa_eval {
+  dataset: "qa_eval_set"
+  target_chain: "simple_qa"
+  
+  metrics: [
+    { name: "answer_relevance", type: "ragas_answer_relevancy" },
+    { name: "answer_similarity", type: "ragas_answer_similarity" },
+    { name: "latency_ms", type: "builtin_latency" },
+    { name: "cost_usd", type: "builtin_cost" }
+  ]
+  
+  judge_llm: "gpt4"
+  rubric: """
+Score each answer on the following dimensions using a 1-5 scale:
+
+1. Accuracy (1-5):
+   - 5: Completely accurate and comprehensive
+   - 4: Mostly accurate with minor gaps
+   - 3: Partially accurate
+   - 2: Mostly inaccurate
+   - 1: Completely wrong
+
+2. Clarity (1-5):
+   - 5: Crystal clear and well-structured
+   - 4: Clear with minor issues
+   - 3: Somewhat unclear
+   - 2: Confusing
+   - 1: Incomprehensible
+
+3. Conciseness (1-5):
+   - 5: Perfect balance of detail and brevity
+   - 4: Slightly verbose but acceptable
+   - 3: Too verbose or too terse
+   - 2: Significantly over/under-explained
+   - 1: Completely inappropriate length
+
+Provide scores as: {"accuracy": X, "clarity": Y, "conciseness": Z}
+  """
+  
+  description: "Comprehensive evaluation with quality metrics and LLM judge"
+}

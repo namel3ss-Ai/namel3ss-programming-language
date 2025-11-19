@@ -32,10 +32,12 @@ EXPORT_ATTRS: Tuple[str, ...] = (
     "evaluators",
     "metrics",
     "guardrails",
+    "eval_suites",
     "training_jobs",
     "tuning_jobs",
     "indices",
     "rag_pipelines",
+    "policies",
 )
 
 EXPORT_LABELS: Dict[str, str] = {
@@ -56,19 +58,12 @@ EXPORT_LABELS: Dict[str, str] = {
     "evaluators": "evaluator",
     "metrics": "metric",
     "guardrails": "guardrail",
+    "eval_suites": "eval_suite",
     "training_jobs": "training job",
     "tuning_jobs": "tuning job",
     "indices": "index",
     "rag_pipelines": "rag_pipeline",
-}
-    "chains": "chain",
-    "experiments": "experiment",
-    "crud_resources": "CRUD resource",
-    "evaluators": "evaluator",
-    "metrics": "metric",
-    "guardrails": "guardrail",
-    "training_jobs": "training job",
-    "tuning_jobs": "tuning job",
+    "policies": "policy",
 }
 
 
@@ -155,7 +150,10 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
     for resolved in resolved_modules.values():
         resolved.imports = _resolve_imports(resolved, resolved_modules)
 
+    _validate_prompts(resolved_modules)
+    _validate_chains(resolved_modules)
     _validate_evaluations(resolved_modules)
+    _validate_eval_suites(resolved_modules)
     _validate_training_artifacts(resolved_modules)
     merged_app = _merge_apps(resolved_modules, root)
     check_app(merged_app, path=root.module.path)
@@ -309,6 +307,78 @@ def _validate_evaluations(resolved_modules: Dict[str, ResolvedModule]) -> None:
                     )
 
 
+def _validate_eval_suites(resolved_modules: Dict[str, ResolvedModule]) -> None:
+    """Validate eval_suite references to datasets, chains, and LLMs."""
+    dataset_owners = _collect_global_symbols(resolved_modules, "datasets")
+    frame_owners = _collect_global_symbols(resolved_modules, "frames")
+    chain_owners = _collect_global_symbols(resolved_modules, "chains")
+    ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
+    llm_owners = _collect_global_symbols(resolved_modules, "llms")
+    
+    def _has_dataset(name: str) -> bool:
+        return name in dataset_owners or name in frame_owners
+    
+    def _has_llm(name: str) -> bool:
+        return name in ai_model_owners or name in llm_owners
+    
+    # Known metric types - basic validation
+    known_metric_types = {
+        "builtin_latency",
+        "builtin_cost",
+        "ragas_relevance",
+        "ragas_context_precision",
+        "ragas_context_recall",
+        "ragas_faithfulness",
+        "ragas_answer_similarity",
+        "ragas_answer_correctness",
+    }
+    
+    for module_name, resolved in resolved_modules.items():
+        eval_suites = resolved.exports.exports_by_kind.get("eval_suites", {})
+        for suite in eval_suites.values():
+            # Validate dataset reference
+            if not _has_dataset(suite.dataset_name):
+                raise ModuleResolutionError(
+                    f"eval_suite '{suite.name}' in module '{module_name}' references unknown dataset or frame '{suite.dataset_name}'"
+                )
+            
+            # Validate target_chain reference
+            if suite.target_chain_name not in chain_owners:
+                raise ModuleResolutionError(
+                    f"eval_suite '{suite.name}' in module '{module_name}' references unknown chain '{suite.target_chain_name}'"
+                )
+            
+            # Validate judge_llm reference if specified
+            if suite.judge_llm_name and not _has_llm(suite.judge_llm_name):
+                raise ModuleResolutionError(
+                    f"eval_suite '{suite.name}' in module '{module_name}' references unknown LLM '{suite.judge_llm_name}'"
+                )
+            
+            # Validate rubric consistency
+            if suite.rubric and not suite.judge_llm_name:
+                raise ModuleResolutionError(
+                    f"eval_suite '{suite.name}' in module '{module_name}' defines rubric but no judge_llm"
+                )
+            
+            # Validate metrics
+            for metric_spec in suite.metrics:
+                if not metric_spec.name:
+                    raise ModuleResolutionError(
+                        f"eval_suite '{suite.name}' in module '{module_name}' has metric with empty name"
+                    )
+                if not metric_spec.type:
+                    raise ModuleResolutionError(
+                        f"eval_suite '{suite.name}' metric '{metric_spec.name}' in module '{module_name}' has no type"
+                    )
+                # Warn about unknown metric types (but don't fail - allows custom metrics)
+                if not (metric_spec.type in known_metric_types or 
+                       metric_spec.type.startswith("custom_") or
+                       metric_spec.type.startswith("ragas_") or
+                       metric_spec.type.startswith("builtin_")):
+                    # Log warning but don't fail - extensibility
+                    pass
+
+
 def _validate_training_artifacts(resolved_modules: Dict[str, ResolvedModule]) -> None:
     model_owners = _collect_global_symbols(resolved_modules, "models")
     ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
@@ -389,6 +459,181 @@ def _validate_training_artifacts(resolved_modules: Dict[str, ResolvedModule]) ->
                         raise ModuleResolutionError(
                             f"Experiment '{experiment.name}' comparison challenger '{challenger}' is not defined"
                         )
+
+
+def _validate_prompts(resolved_modules: Dict[str, ResolvedModule]) -> None:
+    """
+    Validate structured prompts:
+    1. Check that args and output_schema are well-formed
+    2. Validate template placeholders match defined args
+    3. Check that model references exist
+    """
+    import re
+    from namel3ss.ast import Prompt, OutputSchema
+    
+    ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
+    
+    for module_name, resolved in resolved_modules.items():
+        prompts = resolved.exports.exports_by_kind.get("prompts", {})
+        
+        for prompt in prompts.values():
+            if not isinstance(prompt, Prompt):
+                continue
+            
+            # Validate model reference
+            if prompt.model and prompt.model not in ai_model_owners:
+                raise ModuleResolutionError(
+                    f"Prompt '{prompt.name}' in module '{module_name}' references unknown model '{prompt.model}'"
+                )
+            
+            # Validate args and output_schema if present (structured prompts)
+            if prompt.args or prompt.output_schema:
+                _validate_structured_prompt(prompt, module_name)
+
+
+def _validate_chains(resolved_modules: Dict[str, ResolvedModule]) -> None:
+    """
+    Validate chains:
+    1. Check that referenced policies exist
+    2. Validate step references
+    """
+    from namel3ss.ast import Chain
+    
+    policy_owners = _collect_global_symbols(resolved_modules, "policies")
+    
+    for module_name, resolved in resolved_modules.items():
+        chains = resolved.exports.exports_by_kind.get("chains", {})
+        
+        for chain in chains.values():
+            if not isinstance(chain, Chain):
+                continue
+            
+            # Validate policy reference if specified
+            if chain.policy_name and chain.policy_name not in policy_owners:
+                raise ModuleResolutionError(
+                    f"Chain '{chain.name}' in module '{module_name}' references unknown policy '{chain.policy_name}'"
+                )
+
+
+def _validate_structured_prompt(prompt, module_name: str) -> None:
+    """Validate a structured prompt's args, output_schema, and template."""
+    import re
+    from namel3ss.ast import OutputFieldType
+    
+    # Validate arg names are unique
+    if prompt.args:
+        arg_names = [arg.name for arg in prompt.args]
+        duplicates = [name for name in arg_names if arg_names.count(name) > 1]
+        if duplicates:
+            raise ModuleResolutionError(
+                f"Prompt '{prompt.name}' in module '{module_name}' has duplicate argument names: {', '.join(set(duplicates))}"
+            )
+        
+        # Validate arg types
+        valid_arg_types = {'string', 'int', 'float', 'bool', 'list', 'object'}
+        for arg in prompt.args:
+            base_type = arg.arg_type.split('[')[0]  # Handle list[T]
+            if base_type not in valid_arg_types:
+                raise ModuleResolutionError(
+                    f"Prompt '{prompt.name}' in module '{module_name}' has invalid arg type '{arg.arg_type}' for argument '{arg.name}'"
+                )
+    
+    # Validate output_schema
+    if prompt.output_schema:
+        _validate_output_schema(prompt.output_schema, prompt.name, module_name)
+    
+    # Validate template placeholders match args
+    if prompt.template and prompt.args:
+        _validate_template_placeholders(prompt.template, prompt.args, prompt.name, module_name)
+
+
+def _validate_output_schema(schema, prompt_name: str, module_name: str) -> None:
+    """Validate output schema field types and enums."""
+    from namel3ss.ast import OutputFieldType
+    
+    if not schema.fields:
+        raise ModuleResolutionError(
+            f"Prompt '{prompt_name}' in module '{module_name}' has empty output_schema"
+        )
+    
+    # Validate field names are unique
+    field_names = [f.name for f in schema.fields]
+    duplicates = [name for name in field_names if field_names.count(name) > 1]
+    if duplicates:
+        raise ModuleResolutionError(
+            f"Prompt '{prompt_name}' in module '{module_name}' has duplicate output field names: {', '.join(set(duplicates))}"
+        )
+    
+    # Validate each field type
+    for field in schema.fields:
+        _validate_output_field_type(field.field_type, field.name, prompt_name, module_name)
+
+
+def _validate_output_field_type(field_type, field_name: str, prompt_name: str, module_name: str) -> None:
+    """Recursively validate an output field type."""
+    from namel3ss.ast import OutputFieldType
+    
+    # Validate base type
+    valid_base_types = {'string', 'int', 'float', 'bool', 'list', 'object', 'enum'}
+    if field_type.base_type not in valid_base_types:
+        raise ModuleResolutionError(
+            f"Prompt '{prompt_name}' in module '{module_name}' field '{field_name}' has invalid type '{field_type.base_type}'"
+        )
+    
+    # Validate enum has values
+    if field_type.base_type == 'enum':
+        if not field_type.enum_values:
+            raise ModuleResolutionError(
+                f"Prompt '{prompt_name}' in module '{module_name}' field '{field_name}' has enum type with no values"
+            )
+        # Check all enum values are strings
+        for val in field_type.enum_values:
+            if not isinstance(val, str):
+                raise ModuleResolutionError(
+                    f"Prompt '{prompt_name}' in module '{module_name}' field '{field_name}' enum values must be strings"
+                )
+        # Check for duplicates
+        if len(field_type.enum_values) != len(set(field_type.enum_values)):
+            raise ModuleResolutionError(
+                f"Prompt '{prompt_name}' in module '{module_name}' field '{field_name}' has duplicate enum values"
+            )
+    
+    # Validate list has element type
+    if field_type.base_type == 'list':
+        if not field_type.element_type:
+            raise ModuleResolutionError(
+                f"Prompt '{prompt_name}' in module '{module_name}' field '{field_name}' has list type without element type"
+            )
+        _validate_output_field_type(field_type.element_type, f"{field_name}[]", prompt_name, module_name)
+    
+    # Validate nested object fields
+    if field_type.base_type == 'object' and field_type.nested_fields:
+        for nested_field in field_type.nested_fields:
+            _validate_output_field_type(nested_field.field_type, f"{field_name}.{nested_field.name}", prompt_name, module_name)
+
+
+def _validate_template_placeholders(template: str, args: list, prompt_name: str, module_name: str) -> None:
+    """Validate that template placeholders reference defined args."""
+    import re
+    
+    # Extract placeholders: {arg_name}
+    placeholder_pattern = r'\{(\w+)\}'
+    placeholders = set(re.findall(placeholder_pattern, template))
+    
+    # Get defined arg names
+    arg_names = {arg.name for arg in args}
+    
+    # Check for undefined placeholders
+    undefined = placeholders - arg_names
+    if undefined:
+        raise ModuleResolutionError(
+            f"Prompt '{prompt_name}' in module '{module_name}' template references undefined arguments: {', '.join(sorted(undefined))}"
+        )
+    
+    # Optionally warn about unused args (not an error, just informational)
+    # unused = arg_names - placeholders
+    # if unused:
+    #     # Could log a warning here
 
 
 def _iter_chain_steps(nodes: List[Any]) -> List[ChainStep]:

@@ -387,10 +387,10 @@ def env_strings_from_config(entries: Iterable[str]) -> List[str]:
 
 
 def extract_connector_config(app_cfg: AppConfig, defaults: WorkspaceDefaults) -> Dict[str, Any]:
-    \"\"\"Extract connector runtime configuration from AppConfig with defaults fallback.\"\"\"
+    """Extract connector runtime configuration from AppConfig with defaults fallback."""
     return {
-        \"retry_max_attempts\": app_cfg.connector_retry_max_attempts if app_cfg.connector_retry_max_attempts is not None else defaults.connector_retry_max_attempts,
-        \"retry_base_delay\": app_cfg.connector_retry_base_delay if app_cfg.connector_retry_base_delay is not None else defaults.connector_retry_base_delay,
-        \"retry_max_delay\": app_cfg.connector_retry_max_delay if app_cfg.connector_retry_max_delay is not None else defaults.connector_retry_max_delay,
-        \"concurrency_limit\": app_cfg.connector_concurrency_limit if app_cfg.connector_concurrency_limit is not None else defaults.connector_concurrency_limit,
+        "retry_max_attempts": app_cfg.connector_retry_max_attempts if app_cfg.connector_retry_max_attempts is not None else defaults.connector_retry_max_attempts,
+        "retry_base_delay": app_cfg.connector_retry_base_delay if app_cfg.connector_retry_base_delay is not None else defaults.connector_retry_base_delay,
+        "retry_max_delay": app_cfg.connector_retry_max_delay if app_cfg.connector_retry_max_delay is not None else defaults.connector_retry_max_delay,
+        "concurrency_limit": app_cfg.connector_concurrency_limit if app_cfg.connector_concurrency_limit is not None else defaults.connector_concurrency_limit,
     }

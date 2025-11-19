@@ -255,5 +255,141 @@ class BaseLLM(ABC):
         """
         return self.__class__.__name__.replace("LLM", "").lower()
     
+    def supports_structured_output(self) -> bool:
+        """
+        Check if this provider supports structured output (JSON mode or tool calling).
+        
+        Returns:
+            True if structured output is supported, False otherwise
+        """
+        return False  # Override in subclasses that support it
+    
+    def generate_structured(
+        self,
+        prompt: str,
+        output_schema: Dict[str, Any],
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """
+        Generate a structured JSON output based on a schema.
+        
+        Providers should use their native JSON mode or tool calling when available.
+        Falls back to text generation with format instructions if not supported.
+        
+        Args:
+            prompt: The text prompt
+            output_schema: JSON Schema dict describing the expected output structure
+            **kwargs: Additional generation parameters
+        
+        Returns:
+            LLMResponse with JSON text in the text field
+        
+        Raises:
+            LLMError: If generation fails
+        """
+        # Default implementation: append format instructions to prompt
+        if not self.supports_structured_output():
+            format_instructions = self._build_format_instructions(output_schema)
+            enhanced_prompt = f"{prompt}\n\n{format_instructions}"
+            return self.generate(enhanced_prompt, **kwargs)
+        
+        # Subclasses with native support should override this
+        raise NotImplementedError(
+            f"{self.__class__.__name__} should override generate_structured()"
+        )
+    
+    def generate_structured_chat(
+        self,
+        messages: List[ChatMessage],
+        output_schema: Dict[str, Any],
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """
+        Generate structured output from a chat conversation.
+        
+        Args:
+            messages: List of chat messages
+            output_schema: JSON Schema dict describing the expected output
+            **kwargs: Additional generation parameters
+        
+        Returns:
+            LLMResponse with JSON text
+        
+        Raises:
+            LLMError: If generation fails
+        """
+        # Default: add format instructions as system message
+        if not self.supports_structured_output():
+            format_instructions = self._build_format_instructions(output_schema)
+            enhanced_messages = messages.copy()
+            
+            # Add format instructions as a system message
+            format_msg = ChatMessage(
+                role="system",
+                content=f"IMPORTANT: {format_instructions}"
+            )
+            enhanced_messages.append(format_msg)
+            
+            return self.generate_chat(enhanced_messages, **kwargs)
+        
+        # Subclasses with native support should override
+        raise NotImplementedError(
+            f"{self.__class__.__name__} should override generate_structured_chat()"
+        )
+    
+    def _build_format_instructions(self, schema: Dict[str, Any]) -> str:
+        """
+        Build format instructions from JSON Schema for providers without native support.
+        
+        Args:
+            schema: JSON Schema dict
+        
+        Returns:
+            Human-readable format instructions
+        """
+        instructions = ["You must respond with valid JSON matching this schema:"]
+        instructions.append(f"```json\n{self._schema_to_example(schema)}\n```")
+        instructions.append("Respond ONLY with valid JSON. Do not include any other text.")
+        return "\n".join(instructions)
+    
+    def _schema_to_example(self, schema: Dict[str, Any]) -> str:
+        """
+        Convert JSON Schema to an example JSON structure.
+        
+        Args:
+            schema: JSON Schema dict
+        
+        Returns:
+            Example JSON string
+        """
+        import json
+        
+        if schema.get("type") != "object":
+            return "{}"
+        
+        example = {}
+        properties = schema.get("properties", {})
+        
+        for field_name, field_schema in properties.items():
+            field_type = field_schema.get("type", "string")
+            
+            if field_type == "string":
+                if "enum" in field_schema:
+                    example[field_name] = field_schema["enum"][0]
+                else:
+                    example[field_name] = f"<{field_name}>"
+            elif field_type == "integer":
+                example[field_name] = 0
+            elif field_type == "number":
+                example[field_name] = 0.0
+            elif field_type == "boolean":
+                example[field_name] = False
+            elif field_type == "array":
+                example[field_name] = []
+            elif field_type == "object":
+                example[field_name] = {}
+        
+        return json.dumps(example, indent=2)
+    
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name='{self.name}', model='{self.model}')"

@@ -1,0 +1,364 @@
+// Example: Advanced Provider Configuration and Multi-Provider Workflows
+
+// Enterprise OpenAI Configuration
+llm gpt4_turbo {
+    provider: "openai"
+    model: "gpt-4-turbo-preview"
+    temperature: 0.3
+    max_tokens: 4000
+    top_p: 0.95
+}
+
+// Anthropic for Long Context
+llm claude_opus {
+    provider: "anthropic"
+    model: "claude-3-opus-20240229"
+    temperature: 0.7
+    max_tokens: 4096
+}
+
+// Google for Cost-Effective Generation
+llm gemini_pro {
+    provider: "google"
+    model: "gemini-pro"
+    use_vertex: true
+    project_id: "my-project"
+    location: "us-central1"
+}
+
+// Azure OpenAI for Enterprise
+llm azure_gpt4 {
+    provider: "azure_openai"
+    model: "gpt-4"
+    deployment: "gpt-4-prod"
+    api_version: "2024-02-15-preview"
+}
+
+// Local vLLM for Privacy
+llm local_mistral {
+    provider: "local"
+    model: "mistral-7b-instruct"
+    base_url: "http://localhost:8000"
+}
+
+// Custom HTTP Endpoint
+llm custom_model {
+    provider: "http"
+    model: "my-custom-model"
+    endpoint: "https://api.example.com/v1/generate"
+    auth_header: "X-API-Key"
+}
+
+// Multi-Stage Chain with Different Providers
+chain multi_provider_analysis {
+    input: document
+    
+    // Stage 1: Fast extraction with Gemini (cost-effective)
+    step extract_entities {
+        target: extraction_prompt
+        model: gemini_pro
+        inputs: {text: $document}
+        output: entities
+    }
+    
+    // Stage 2: Deep analysis with GPT-4 (high quality)
+    step analyze_sentiment {
+        target: analysis_prompt
+        model: gpt4_turbo
+        inputs: {
+            text: $document,
+            entities: $entities
+        }
+        output: sentiment
+    }
+    
+    // Stage 3: Final synthesis with Claude (long context)
+    step synthesize {
+        target: synthesis_prompt
+        model: claude_opus
+        inputs: {
+            text: $document,
+            entities: $entities,
+            sentiment: $sentiment
+        }
+        output: summary
+    }
+    
+    return: {
+        entities: $entities,
+        sentiment: $sentiment,
+        summary: $summary
+    }
+}
+
+prompt extraction_prompt {
+    model: gemini_pro
+    system: "Extract named entities from text."
+    user: "Text: {{text}}\n\nEntities (JSON):"
+}
+
+prompt analysis_prompt {
+    model: gpt4_turbo
+    system: "Analyze sentiment considering entities."
+    user: """
+    Text: {{text}}
+    
+    Entities: {{entities}}
+    
+    Provide sentiment analysis:
+    """
+}
+
+prompt synthesis_prompt {
+    model: claude_opus
+    system: "Synthesize comprehensive summary."
+    user: """
+    Document: {{text}}
+    
+    Entities: {{entities}}
+    
+    Sentiment: {{sentiment}}
+    
+    Provide executive summary:
+    """
+}
+
+// Fallback Chain (Primary + Backup Providers)
+chain resilient_generation {
+    input: question
+    
+    step try_primary {
+        target: qa_prompt
+        model: gpt4_turbo
+        inputs: {question: $question}
+        output: answer
+        on_error: try_backup
+    }
+    
+    step try_backup {
+        target: qa_prompt
+        model: claude_opus
+        inputs: {question: $question}
+        output: answer
+        on_error: try_fallback
+    }
+    
+    step try_fallback {
+        target: qa_prompt
+        model: local_mistral
+        inputs: {question: $question}
+        output: answer
+    }
+    
+    return: answer
+}
+
+prompt qa_prompt {
+    system: "Answer concisely and accurately."
+    user: "Question: {{question}}\n\nAnswer:"
+}
+
+// Agent with Provider Selection
+agent adaptive_agent {
+    // Start with cost-effective model
+    llm: gemini_pro
+    
+    system: """
+    You are an adaptive assistant that can escalate to more powerful models.
+    
+    If the task is simple, use your current model (Gemini).
+    If the task requires advanced reasoning, request escalation to GPT-4.
+    If the task requires very long context, request escalation to Claude.
+    """
+    
+    max_turns: 10
+    
+    tools: [
+        search_web,
+        read_file,
+        escalate_to_gpt4,
+        escalate_to_claude
+    ]
+}
+
+// Streaming with Provider
+chain streaming_chat {
+    input: message
+    
+    step generate_response {
+        target: chat_prompt
+        model: claude_opus
+        inputs: {message: $message}
+        output: response
+        stream: true  // Enable streaming
+    }
+    
+    return: response
+}
+
+prompt chat_prompt {
+    model: claude_opus
+    system: "You are a helpful assistant."
+    user: "{{message}}"
+}
+
+// Batch Evaluation Across Providers
+eval provider_comparison {
+    dataset: "benchmark_questions.json"
+    
+    // Test each provider
+    providers: [
+        {name: "gpt4", model: gpt4_turbo},
+        {name: "claude", model: claude_opus},
+        {name: "gemini", model: gemini_pro},
+        {name: "azure", model: azure_gpt4},
+        {name: "local", model: local_mistral}
+    ]
+    
+    prompt: qa_prompt
+    
+    metrics: [
+        accuracy,
+        latency,
+        cost,
+        throughput
+    ]
+    
+    output: "provider_comparison_results.json"
+}
+
+// RAG with Multiple Providers
+chain hybrid_rag {
+    input: query
+    
+    // Use local model for embedding (fast, private)
+    step embed_query {
+        target: embedding_model
+        model: local_mistral
+        inputs: {text: $query}
+        output: query_embedding
+    }
+    
+    step retrieve {
+        target: vector_search
+        inputs: {embedding: $query_embedding}
+        output: contexts
+    }
+    
+    // Use cloud model for generation (high quality)
+    step generate_answer {
+        target: rag_generation
+        model: claude_opus
+        inputs: {
+            query: $query,
+            contexts: $contexts
+        }
+        output: answer
+    }
+    
+    return: answer
+}
+
+prompt rag_generation {
+    model: claude_opus
+    system: "Answer using only the provided contexts."
+    user: """
+    Contexts:
+    {{#each contexts}}
+    {{this}}
+    {{/each}}
+    
+    Question: {{query}}
+    
+    Answer:
+    """
+}
+
+// Cost-Optimized Chain
+chain cost_optimized {
+    input: task
+    
+    // Route based on complexity
+    step classify_complexity {
+        target: classify_prompt
+        model: gemini_pro  // Cheap classifier
+        inputs: {task: $task}
+        output: complexity
+    }
+    
+    step route_to_model {
+        if: $complexity == "simple"
+        then: {
+            step simple_model {
+                target: execute_task
+                model: gemini_pro
+                inputs: {task: $task}
+                output: result
+            }
+        }
+        else_if: $complexity == "medium"
+        then: {
+            step medium_model {
+                target: execute_task
+                model: gpt4_turbo
+                inputs: {task: $task}
+                output: result
+            }
+        }
+        else: {
+            step complex_model {
+                target: execute_task
+                model: claude_opus
+                inputs: {task: $task}
+                output: result
+            }
+        }
+    }
+    
+    return: result
+}
+
+prompt classify_prompt {
+    model: gemini_pro
+    system: "Classify task complexity: simple, medium, or complex."
+    user: "Task: {{task}}\n\nComplexity:"
+}
+
+prompt execute_task {
+    system: "Execute the given task."
+    user: "{{task}}"
+}
+
+// Privacy-First Local Chain
+chain private_chain {
+    input: sensitive_data
+    
+    // All processing on local models (no cloud)
+    step analyze {
+        target: analysis_prompt
+        model: local_mistral
+        inputs: {data: $sensitive_data}
+        output: analysis
+    }
+    
+    step summarize {
+        target: summary_prompt
+        model: local_mistral
+        inputs: {analysis: $analysis}
+        output: summary
+    }
+    
+    return: summary
+}
+
+prompt analysis_prompt {
+    model: local_mistral
+    system: "Analyze data thoroughly."
+    user: "Data: {{data}}\n\nAnalysis:"
+}
+
+prompt summary_prompt {
+    model: local_mistral
+    system: "Summarize analysis."
+    user: "Analysis: {{analysis}}\n\nSummary:"
+}

@@ -1105,6 +1105,172 @@ def cmd_eval(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_eval_suite(args: argparse.Namespace) -> None:
+    """Handle the 'eval-suite' subcommand for running evaluation suites."""
+    import asyncio
+    from .eval import EvalSuiteRunner, create_metric
+    from .eval.judge import LLMJudge
+    
+    suite_name = args.suite
+    source_arg = args.file
+    if source_arg is None:
+        default_file = _find_first_n3_file()
+        if default_file is None:
+            print("Error: no .n3 file found to run eval suite.", file=sys.stderr)
+            sys.exit(1)
+        source_arg = str(default_file)
+    
+    source_path = Path(source_arg)
+    app = _load_cli_app(source_path)
+    
+    # Find the eval suite
+    eval_suite = None
+    for suite in app.eval_suites:
+        if suite.name == suite_name:
+            eval_suite = suite
+            break
+    
+    if eval_suite is None:
+        available = ", ".join(sorted(s.name for s in app.eval_suites)) or "none"
+        print(
+            f"Error: eval_suite '{suite_name}' not found. Available suites: {available}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    
+    # Load runtime module to access datasets and chains
+    cache_key = str(source_path.resolve())
+    try:
+        runtime = _load_runtime_module(app, cache_key)
+    except Exception as exc:
+        print(f"Error loading runtime: {exc}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Get dataset rows
+    try:
+        dataset_name = eval_suite.dataset_name
+        datasets_data = getattr(runtime, "DATASETS_DATA", {})
+        if dataset_name not in datasets_data:
+            print(f"Error: dataset '{dataset_name}' not loaded in runtime", file=sys.stderr)
+            sys.exit(1)
+        
+        dataset_rows = datasets_data[dataset_name]
+        if not isinstance(dataset_rows, list):
+            dataset_rows = list(dataset_rows)
+    except Exception as exc:
+        print(f"Error loading dataset '{eval_suite.dataset_name}': {exc}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Create chain executor
+    chain_name = eval_suite.target_chain_name
+    run_chain = getattr(runtime, "run_chain", None)
+    if not callable(run_chain):
+        print("Error: runtime does not support run_chain", file=sys.stderr)
+        sys.exit(1)
+    
+    def chain_executor(input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute chain synchronously."""
+        return run_chain(chain_name, input_data)
+    
+    # Create metrics
+    metrics = []
+    for metric_spec in eval_suite.metrics:
+        try:
+            metric = create_metric(metric_spec.name, metric_spec.type, metric_spec.config)
+            metrics.append(metric)
+        except Exception as exc:
+            print(f"Error creating metric '{metric_spec.name}': {exc}", file=sys.stderr)
+            sys.exit(1)
+    
+    # Create judge if specified
+    judge = None
+    if eval_suite.judge_llm_name and eval_suite.rubric:
+        try:
+            # Get LLM instance from runtime
+            llm_instances = getattr(runtime, "_LLM_INSTANCES", {})
+            if eval_suite.judge_llm_name not in llm_instances:
+                print(f"Error: judge LLM '{eval_suite.judge_llm_name}' not found", file=sys.stderr)
+                sys.exit(1)
+            
+            judge_llm = llm_instances[eval_suite.judge_llm_name]
+            judge = LLMJudge(judge_llm, eval_suite.rubric)
+        except Exception as exc:
+            print(f"Error creating judge: {exc}", file=sys.stderr)
+            sys.exit(1)
+    
+    # Create runner
+    runner = EvalSuiteRunner(
+        suite_name=suite_name,
+        dataset_rows=dataset_rows,
+        chain_executor=chain_executor,
+        metrics=metrics,
+        judge=judge,
+    )
+    
+    # Run evaluation
+    try:
+        limit = args.limit if hasattr(args, 'limit') else None
+        batch_size = args.batch_size if hasattr(args, 'batch_size') else 1
+        
+        print(f"Running eval suite '{suite_name}'...", file=sys.stderr)
+        result = runner.run_sync(limit=limit, batch_size=batch_size)
+        
+        # Output results
+        output = args.output if hasattr(args, 'output') else None
+        
+        result_dict = {
+            "status": "ok",
+            "suite": result.suite_name,
+            "num_examples": result.num_examples,
+            "examples_per_second": result.examples_per_second,
+            "total_time_ms": result.total_time_ms,
+            "summary_metrics": result.summary_metrics,
+            "errors": result.errors,
+            "metadata": result.metadata,
+        }
+        
+        if args.verbose:
+            result_dict["metrics_per_example"] = [
+                {
+                    "example_id": ex.example_id,
+                    "metrics": {name: {"value": m.value, "details": m.details} for name, m in ex.metrics.items()},
+                    "judge_scores": ex.judge_scores,
+                    "error": ex.error,
+                    "execution_time_ms": ex.execution_time_ms,
+                }
+                for ex in result.metrics_per_example
+            ]
+        
+        result_json = json.dumps(result_dict, indent=2)
+        
+        if output:
+            with open(output, 'w') as f:
+                f.write(result_json)
+            print(f"Results written to {output}", file=sys.stderr)
+        else:
+            print(result_json)
+        
+        # Print summary to stderr
+        print("\n=== Evaluation Summary ===", file=sys.stderr)
+        print(f"Suite: {result.suite_name}", file=sys.stderr)
+        print(f"Examples: {result.num_examples}", file=sys.stderr)
+        print(f"Time: {result.total_time_ms:.2f}ms ({result.examples_per_second:.2f} ex/s)", file=sys.stderr)
+        
+        if result.errors:
+            print(f"Errors: {len(result.errors)}", file=sys.stderr)
+        
+        print("\nMetrics (mean ± std):", file=sys.stderr)
+        for metric_name, stats in result.summary_metrics.items():
+            mean_val = stats.get("mean", 0)
+            std_val = stats.get("std", 0)
+            print(f"  {metric_name}: {mean_val:.4f} ± {std_val:.4f}", file=sys.stderr)
+        
+    except Exception as exc:
+        print(f"Error running eval suite: {exc}", file=sys.stderr)
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     """Inspect or execute declared training jobs via the generated runtime."""
 
@@ -1485,6 +1651,41 @@ def main(argv: Optional[list] = None) -> None:
         help='Output format for experiment results'
     )
     eval_parser.set_defaults(func=cmd_eval)
+
+    eval_suite_parser = subparsers.add_parser(
+        'eval-suite',
+        help='Run evaluation suite on a dataset with metrics'
+    )
+    eval_suite_parser.add_argument('suite', help='Name of the eval_suite to run')
+    eval_suite_parser.add_argument(
+        '-f', '--file',
+        dest='file',
+        help='Path to the .n3 source file (defaults to first .n3 in current directory)'
+    )
+    eval_suite_parser.add_argument(
+        '--limit',
+        type=int,
+        default=None,
+        help='Limit the number of examples to evaluate'
+    )
+    eval_suite_parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=1,
+        help='Number of examples to process concurrently (default: 1)'
+    )
+    eval_suite_parser.add_argument(
+        '--output',
+        '-o',
+        help='Path to write JSON results (defaults to stdout)'
+    )
+    eval_suite_parser.add_argument(
+        '--verbose',
+        '-v',
+        action='store_true',
+        help='Include per-example metrics in output'
+    )
+    eval_suite_parser.set_defaults(func=cmd_eval_suite)
 
     train_parser = subparsers.add_parser(
         'train',

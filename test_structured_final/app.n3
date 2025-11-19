@@ -1,0 +1,20 @@
+app "Sentiment Analyzer".
+
+llm openai_model:
+    provider: openai
+    model: gpt-4
+
+prompt analyze_sentiment:
+    args:
+        review_text: string
+        context: string = "general"
+    output_schema:
+        sentiment: enum("positive", "negative", "neutral", "mixed")
+        confidence_score: float
+        key_phrases: list[string]
+        reasoning: string
+    template: "Analyze the sentiment of this {context} review: {review_text}"
+    model: openai_model
+
+page "Home" at "/":
+    show text "Sentiment Analysis Complete"

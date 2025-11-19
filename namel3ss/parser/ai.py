@@ -11,8 +11,13 @@ from namel3ss.ast import (
     ChainStep,
     Connector,
     ContextValue,
+    EnumType,
     Memory,
+    OutputField,
+    OutputFieldType,
+    OutputSchema,
     Prompt,
+    PromptArgument,
     PromptField,
     StepEvaluationConfig,
     Template,
@@ -219,6 +224,7 @@ class AIParserMixin(ParserBase):
         input_key = "input"
         workflow_nodes: List[WorkflowNode] = []
         metadata: Dict[str, Any] = {}
+        policy_name: Optional[str] = None
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -276,12 +282,25 @@ class AIParserMixin(ParserBase):
                 key = assign.group(1).strip()
                 remainder = assign.group(3)
                 self._advance()
+                
+                # Check for policy reference
+                if key.lower() == 'policy':
+                    policy_name = remainder.strip().strip('"').strip("'")
+                    continue
+                
                 if remainder == "":
                     value = self._transform_config(self._parse_kv_block(indent))
                 else:
                     value = self._transform_config(self._coerce_scalar(remainder))
                 metadata[key] = value
-        return Chain(name=name, input_key=input_key, steps=workflow_nodes, metadata=metadata, declared_effect=declared_effect)
+        return Chain(
+            name=name,
+            input_key=input_key,
+            steps=workflow_nodes,
+            metadata=metadata,
+            declared_effect=declared_effect,
+            policy_name=policy_name,
+        )
 
     def _parse_memory(self, line: str, line_no: int, base_indent: int) -> Memory:
         stripped = line.strip()
@@ -355,8 +374,12 @@ class AIParserMixin(ParserBase):
         if not match:
             raise self._error('Expected: prompt "Name":', line_no, line)
         name = match.group(1)
+        
+        # Initialize all possible fields
         input_fields: List[PromptField] = []
         output_fields: List[PromptField] = []
+        prompt_args: List[PromptArgument] = []
+        output_schema: Optional[OutputSchema] = None
         parameters: Dict[str, Any] = {}
         metadata: Dict[str, Any] = {}
         template_text: Optional[str] = None
@@ -375,10 +398,31 @@ class AIParserMixin(ParserBase):
             if indent <= base_indent:
                 break
             lowered = stripped_line.lower()
-            if lowered.startswith('input'):
+            
+            # Handle args: block (new structured prompts)
+            if lowered.startswith('args:'):
+                self._advance()
+                prompt_args = self._parse_prompt_args(indent)
+            # Handle output_schema: block (new structured prompts)
+            elif lowered.startswith('output_schema:'):
+                self._advance()
+                output_schema = self._parse_output_schema(indent)
+            # Handle template: (new structured prompts - inline or block)
+            elif lowered.startswith('template:'):
+                self._advance()
+                inline_text = stripped_line[len('template:'):].strip()
+                if inline_text:
+                    # Inline template
+                    template_text = self._stringify_value(self._coerce_scalar(inline_text))
+                else:
+                    # Multi-line template block
+                    template_text = self._parse_prompt_template_block(indent)
+            # Legacy: input schema
+            elif lowered.startswith('input'):
                 self._advance()
                 schema = self._parse_prompt_schema_block(indent)
                 input_fields.extend(schema)
+            # Legacy: output schema (old PromptField style)
             elif lowered.startswith('output'):
                 self._advance()
                 schema = self._parse_prompt_schema_block(indent)
@@ -401,7 +445,13 @@ class AIParserMixin(ParserBase):
                 self._advance()
                 desc_raw = stripped_line[len('description:'):].strip()
                 description = self._stringify_value(self._coerce_scalar(desc_raw)) if desc_raw else None
+            elif lowered.startswith('model:'):
+                # New: model: "name" syntax
+                self._advance()
+                model_str = stripped_line[len('model:'):].strip()
+                model_name = self._strip_quotes(model_str)
             elif lowered.startswith('using model'):
+                # Legacy: using model "Name": template syntax
                 match_model = re.match(r'using\s+model\s+"([^"]+)"\s*:?\s*(.*)$', stripped_line, flags=re.IGNORECASE)
                 if not match_model:
                     raise self._error('Expected: using model "Name":', self.pos + 1, nxt)
@@ -422,24 +472,44 @@ class AIParserMixin(ParserBase):
                 value = self._coerce_scalar(remainder)
                 parameters[key] = value
 
-        if not input_fields:
-            raise self._error(f"Prompt '{name}' must define an input schema", line_no, line)
-        if not output_fields:
-            raise self._error(f"Prompt '{name}' must define an output schema", line_no, line)
-        if model_name is None:
-            raise self._error(f"Prompt '{name}' must specify 'using model \"Name\"'", line_no, line)
-        if not template_text:
-            raise self._error(f"Prompt '{name}' must include a template body", line_no, line)
+        # Validation: Two modes supported
+        # Mode 1: Legacy (input_fields + output_fields + model)
+        # Mode 2: Structured (args + output_schema + template + model)
+        
+        has_legacy = input_fields or output_fields
+        has_structured = prompt_args or output_schema
+        
+        if has_structured:
+            # Structured mode: require template and model
+            if not template_text:
+                raise self._error(f"Prompt '{name}' with args/output_schema must include a template", line_no, line)
+            if model_name is None:
+                raise self._error(f"Prompt '{name}' must specify a model", line_no, line)
+        elif has_legacy:
+            # Legacy mode: require input/output fields and model
+            if not input_fields:
+                raise self._error(f"Prompt '{name}' must define an input schema", line_no, line)
+            if not output_fields:
+                raise self._error(f"Prompt '{name}' must define an output schema", line_no, line)
+            if model_name is None:
+                raise self._error(f"Prompt '{name}' must specify 'using model \"Name\"'", line_no, line)
+            if not template_text:
+                raise self._error(f"Prompt '{name}' must include a template body", line_no, line)
+        else:
+            # Neither mode detected - error
+            raise self._error(f"Prompt '{name}' must define either (args/output_schema/template) or (input/output/model)", line_no, line)
 
         parameters_transformed = self._transform_config(parameters)
         parameters_payload = parameters_transformed if isinstance(parameters_transformed, dict) else {"value": parameters_transformed}
 
         prompt_object = Prompt(
             name=name,
-            model=model_name,
-            template=template_text,
+            model=model_name or "",
+            template=template_text or "",
             input_fields=input_fields,
             output_fields=output_fields,
+            args=prompt_args,
+            output_schema=output_schema,
             parameters=parameters_payload,
             metadata=metadata,
             description=description,
@@ -995,6 +1065,241 @@ class AIParserMixin(ParserBase):
                 )
             )
         return fields
+
+    def _parse_prompt_args(self, parent_indent: int) -> List[PromptArgument]:
+        """
+        Parse args block for structured prompts.
+        
+        Syntax:
+            args: {
+                text: string,
+                max_length: int = 100,
+                style: string = "concise"
+            }
+        """
+        args: List[PromptArgument] = []
+        
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            indent = self._indent(line)
+            stripped = line.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= parent_indent:
+                break
+            
+            # Parse: name: type [= default]
+            if '=' in stripped:
+                name_type_part, _, default_part = stripped.partition('=')
+                has_default = True
+            else:
+                name_type_part = stripped
+                default_part = None
+                has_default = False
+            
+            # Remove trailing comma
+            name_type_part = name_type_part.rstrip(',').strip()
+            
+            # Split name: type
+            if ':' not in name_type_part:
+                raise self._error(f"Expected 'name: type' in args block", self.pos + 1, line)
+            
+            arg_name, _, type_str = name_type_part.partition(':')
+            arg_name = arg_name.strip()
+            type_str = type_str.strip()
+            
+            # Parse default value if present
+            default_value = None
+            if has_default and default_part:
+                default_str = default_part.rstrip(',').strip()
+                default_value = self._coerce_scalar(default_str)
+            
+            # Normalize type names
+            arg_type = self._normalize_arg_type(type_str)
+            
+            args.append(PromptArgument(
+                name=arg_name,
+                arg_type=arg_type,
+                required=not has_default,
+                default=default_value,
+            ))
+            
+            self._advance()
+        
+        return args
+    
+    def _normalize_arg_type(self, type_str: str) -> str:
+        """Normalize argument type strings to canonical forms."""
+        type_lower = type_str.lower().strip()
+        
+        # Map common variations
+        type_map = {
+            'str': 'string',
+            'text': 'string',
+            'int': 'int',
+            'integer': 'int',
+            'number': 'float',
+            'float': 'float',
+            'bool': 'bool',
+            'boolean': 'bool',
+            'array': 'list',
+            'dict': 'object',
+            'map': 'object',
+        }
+        
+        # Handle list[T] syntax
+        if type_lower.startswith('list['):
+            return type_str  # Keep as-is for now
+        
+        return type_map.get(type_lower, type_str)
+    
+    def _parse_output_schema(self, parent_indent: int) -> OutputSchema:
+        """
+        Parse output_schema block for structured prompts.
+        
+        Syntax:
+            output_schema: {
+                category: enum["billing", "technical", "account"],
+                urgency: enum["low", "medium", "high"],
+                needs_handoff: bool,
+                confidence: float,
+                tags: list[string]
+            }
+        """
+        fields: List[OutputField] = []
+        
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            indent = self._indent(line)
+            stripped = line.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= parent_indent:
+                break
+            
+            # Parse: field_name: type
+            if ':' not in stripped:
+                raise self._error(f"Expected 'field_name: type' in output_schema", self.pos + 1, line)
+            
+            field_name, _, type_part = stripped.partition(':')
+            field_name = field_name.strip().rstrip(',')
+            type_part = type_part.strip().rstrip(',')
+            
+            # Parse the field type
+            field_type = self._parse_output_field_type(type_part, self.pos + 1, line)
+            
+            fields.append(OutputField(
+                name=field_name,
+                field_type=field_type,
+                required=True,  # Default to required
+            ))
+            
+            self._advance()
+        
+        if not fields:
+            raise self._error("output_schema cannot be empty", self.pos, "")
+        
+        return OutputSchema(fields=fields)
+    
+    def _parse_output_field_type(self, type_str: str, line_no: int, line: str) -> OutputFieldType:
+        """
+        Parse a field type specification into OutputFieldType.
+        
+        Supports:
+        - Primitives: string, int, float, bool
+        - Enums: enum["val1", "val2", "val3"]
+        - Lists: list[string], list[int]
+        - Nested objects (TODO for future enhancement)
+        """
+        type_str = type_str.strip()
+        
+        # Handle enum["val1", "val2"]
+        if type_str.startswith('enum['):
+            if not type_str.endswith(']'):
+                raise self._error("Malformed enum type, expected closing ]", line_no, line)
+            
+            inner = type_str[5:-1].strip()
+            enum_values = self._parse_enum_values(inner, line_no, line)
+            
+            return OutputFieldType(
+                base_type="enum",
+                enum_values=enum_values
+            )
+        
+        # Handle list[T]
+        if type_str.startswith('list['):
+            if not type_str.endswith(']'):
+                raise self._error("Malformed list type, expected closing ]", line_no, line)
+            
+            inner_type_str = type_str[5:-1].strip()
+            element_type = self._parse_output_field_type(inner_type_str, line_no, line)
+            
+            return OutputFieldType(
+                base_type="list",
+                element_type=element_type
+            )
+        
+        # Handle optional types (trailing ?)
+        nullable = False
+        if type_str.endswith('?'):
+            nullable = True
+            type_str = type_str[:-1].strip()
+        
+        # Normalize primitive types
+        type_lower = type_str.lower()
+        type_map = {
+            'str': 'string',
+            'text': 'string',
+            'string': 'string',
+            'int': 'int',
+            'integer': 'int',
+            'number': 'float',
+            'float': 'float',
+            'bool': 'bool',
+            'boolean': 'bool',
+        }
+        
+        base_type = type_map.get(type_lower)
+        if not base_type:
+            raise self._error(f"Unknown output field type: {type_str}", line_no, line)
+        
+        return OutputFieldType(
+            base_type=base_type,
+            nullable=nullable
+        )
+    
+    def _parse_enum_values(self, inner: str, line_no: int, line: str) -> List[str]:
+        """
+        Parse enum values from string like: "val1", "val2", "val3"
+        """
+        if not inner:
+            raise self._error("Enum must have at least one value", line_no, line)
+        
+        # Try to use Python's ast.literal_eval for safety
+        expr = f"[{inner}]"
+        try:
+            parsed = py_ast.literal_eval(expr)
+            if isinstance(parsed, (list, tuple)):
+                values = []
+                for item in parsed:
+                    if not isinstance(item, str):
+                        raise self._error(f"Enum values must be strings, got: {type(item).__name__}", line_no, line)
+                    values.append(item)
+                if not values:
+                    raise self._error("Enum must have at least one value", line_no, line)
+                return values
+        except (ValueError, SyntaxError) as e:
+            raise self._error(f"Invalid enum syntax: {e}", line_no, line)
+        
+        raise self._error("Failed to parse enum values", line_no, line)
 
     def _parse_prompt_template_block(self, parent_indent: int) -> str:
         lines: List[str] = []

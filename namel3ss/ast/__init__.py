@@ -86,9 +86,14 @@ from .ai import (
     ChainStep,
     Connector,
     EarlyStoppingSpec,
+    EnumType,
     HyperparamSpec,
     Memory,
+    OutputField,
+    OutputFieldType,
+    OutputSchema,
     Prompt,
+    PromptArgument,
     PromptField,
     StepEvaluationConfig,
     Template,
@@ -102,7 +107,7 @@ from .ai import (
 )
 from .modules import ImportedName, Import, ModuleSpec
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
-from .eval import Evaluator, Metric, Guardrail
+from .eval import Evaluator, Metric, Guardrail, EvalMetricSpec, EvalSuiteDefinition
 from .rag import IndexDefinition, RagPipelineDefinition
 from .agents import AgentDefinition, GraphDefinition, GraphEdge, MemoryConfig
 from .program import Module, Program

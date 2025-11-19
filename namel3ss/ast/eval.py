@@ -36,4 +36,31 @@ class Guardrail:
     message: Optional[str] = None
 
 
-__all__ = ["Evaluator", "Metric", "Guardrail"]
+@dataclass
+class EvalMetricSpec:
+    """Specification for a single evaluation metric."""
+
+    name: str
+    type: str
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EvalSuiteDefinition:
+    """
+    First-class eval_suite block defining a declarative evaluation suite.
+    
+    Evaluates a target chain over a dataset using specified metrics.
+    """
+
+    name: str
+    dataset_name: str
+    target_chain_name: str
+    metrics: List[EvalMetricSpec] = field(default_factory=list)
+    judge_llm_name: Optional[str] = None
+    rubric: Optional[str] = None
+    description: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+__all__ = ["Evaluator", "Metric", "Guardrail", "EvalMetricSpec", "EvalSuiteDefinition"]

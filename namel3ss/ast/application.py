@@ -27,7 +27,8 @@ from .insights import Insight
 from .models import Model
 from .pages import PageStatement, VariableAssignment
 from .crud import CrudResource
-from .eval import Evaluator, Metric, Guardrail
+from .eval import Evaluator, Metric, Guardrail, EvalSuiteDefinition
+from .policy import PolicyDefinition
 
 
 @dataclass
@@ -64,12 +65,14 @@ class App:
     evaluators: List[Evaluator] = field(default_factory=list)
     metrics: List[Metric] = field(default_factory=list)
     guardrails: List[Guardrail] = field(default_factory=list)
+    eval_suites: List[EvalSuiteDefinition] = field(default_factory=list)
     training_jobs: List[TrainingJob] = field(default_factory=list)
     tuning_jobs: List[TuningJob] = field(default_factory=list)
     indices: List[IndexDefinition] = field(default_factory=list)  # RAG retrieval indices
     rag_pipelines: List[RagPipelineDefinition] = field(default_factory=list)  # RAG pipeline definitions
     agents: List[AgentDefinition] = field(default_factory=list)  # Agent definitions
     graphs: List[GraphDefinition] = field(default_factory=list)  # Multi-agent graph definitions
+    policies: List[PolicyDefinition] = field(default_factory=list)  # Safety policies
 
 
 __all__ = [
