@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union, AsyncIterator
 
 from .embeddings import get_embedding_provider
 from .backends import get_vector_backend, ScoredDocument
@@ -282,24 +282,26 @@ class IndexBuildResult:
 
 async def build_index(
     index_name: str,
-    documents: List[Dict[str, Any]],
+    documents: Union[List[Dict[str, Any]], AsyncIterator[Dict[str, Any]]],
     embedding_model: str,
     vector_backend: Any,
     chunk_size: int = 512,
     overlap: int = 64,
     batch_size: int = 32,
+    progress_callback: Optional[callable] = None,
 ) -> IndexBuildResult:
     """
     Build vector index from documents.
     
     Args:
         index_name: Name of the index
-        documents: List of documents (each with 'id', 'content', 'metadata')
+        documents: List or async iterator of documents (each with 'id', 'content', 'metadata')
         embedding_model: Embedding model name
         vector_backend: Vector backend instance
         chunk_size: Chunk size in characters
         overlap: Overlap between chunks
         batch_size: Batch size for embedding
+        progress_callback: Optional callback(doc_count, chunk_count, tokens) for progress reporting
     
     Returns:
         IndexBuildResult with statistics
@@ -314,6 +316,7 @@ async def build_index(
     
     chunks_created = 0
     chunks_indexed = 0
+    documents_processed = 0
     tokens_used = 0
     errors = []
     
@@ -323,7 +326,17 @@ async def build_index(
     all_chunk_contents = []
     all_chunk_metadatas = []
     
-    for doc in documents:
+    # Handle both list and async iterator
+    if hasattr(documents, "__aiter__"):
+        doc_iter = documents
+    else:
+        # Convert list to async iterator
+        async def _iter_list():
+            for doc in documents:
+                yield doc
+        doc_iter = _iter_list()
+    
+    async for doc in doc_iter:
         try:
             doc_id = doc["id"]
             content = doc["content"]
@@ -349,7 +362,7 @@ async def build_index(
                 
                 # Batch embedding calls
                 if len(all_chunk_contents) >= batch_size:
-                    await _embed_and_upsert_batch(
+                    embed_result = await _embed_and_upsert_batch(
                         embedding_provider,
                         vector_backend,
                         all_chunk_ids,
@@ -357,9 +370,16 @@ async def build_index(
                         all_chunk_metadatas,
                     )
                     chunks_indexed += len(all_chunk_ids)
+                    tokens_used += embed_result.tokens_used if hasattr(embed_result, 'tokens_used') else 0
                     all_chunk_ids = []
                     all_chunk_contents = []
                     all_chunk_metadatas = []
+            
+            documents_processed += 1
+            
+            # Call progress callback if provided
+            if progress_callback:
+                progress_callback(documents_processed, chunks_created, tokens_used)
         
         except Exception as e:
             error_msg = f"Error processing document {doc.get('id', 'unknown')}: {e}"
@@ -387,7 +407,7 @@ async def build_index(
     
     return IndexBuildResult(
         index_name=index_name,
-        documents_processed=len(documents),
+        documents_processed=documents_processed,
         chunks_created=chunks_created,
         chunks_indexed=chunks_indexed,
         tokens_used=tokens_used,

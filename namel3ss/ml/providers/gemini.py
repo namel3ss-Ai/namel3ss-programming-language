@@ -1,4 +1,4 @@
-"""OpenAI LLM provider implementation with full async + streaming support."""
+"""Google Gemini LLM provider implementation with full async + streaming support."""
 
 import asyncio
 import json
@@ -24,9 +24,9 @@ from .base import (
 logger = get_logger(__name__)
 
 
-class OpenAIProvider(LLMProvider):
+class GeminiProvider(LLMProvider):
     """
-    OpenAI LLM provider with production-grade async + streaming support.
+    Google Gemini LLM provider with production-grade async + streaming support.
     
     Features:
     - Real async HTTP requests via httpx.AsyncClient
@@ -35,33 +35,35 @@ class OpenAIProvider(LLMProvider):
     - Cancellation propagation and cleanup
     - Concurrency control via semaphore
     - Retry logic with jitter backoff
+    
+    Supports models: gemini-pro, gemini-pro-vision, gemini-ultra
     """
     
-    DEFAULT_BASE_URL = "https://api.openai.com/v1"
+    DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
     
     def __init__(self, *, model: str, api_key: Optional[str] = None, 
                  base_url: Optional[str] = None, max_concurrent: int = 10, **kwargs):
         """
-        Initialize OpenAI provider.
+        Initialize Gemini provider.
         
         Args:
-            model: Model name (e.g., "gpt-4o")
-            api_key: API key (defaults to OPENAI_API_KEY env var)
-            base_url: Base URL for API (for Azure OpenAI or proxies)
+            model: Model name (e.g., "gemini-pro", "gemini-1.5-pro")
+            api_key: API key (defaults to GOOGLE_API_KEY or GEMINI_API_KEY env var)
+            base_url: Base URL for API
             max_concurrent: Maximum concurrent requests
             **kwargs: Additional parameters passed to LLMProvider
         """
         super().__init__(model=model, **kwargs)
         
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise LLMError(
-                "OpenAI API key not provided. Set OPENAI_API_KEY environment variable "
+                "Gemini API key not provided. Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable "
                 "or pass api_key parameter.",
-                provider="openai"
+                provider="gemini"
             )
         
-        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL", self.DEFAULT_BASE_URL)
+        self.base_url = base_url or os.environ.get("GEMINI_BASE_URL", self.DEFAULT_BASE_URL)
         self.retry_config = RetryConfig(
             max_attempts=3,
             base_delay=1.0,
@@ -89,70 +91,84 @@ class OpenAIProvider(LLMProvider):
             await self._client.aclose()
             self._client = None
     
-    def _build_headers(self) -> Dict[str, str]:
-        """Build HTTP headers for OpenAI API."""
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-    
-    def _build_request_body(self, prompt: str, *, system: Optional[str] = None, 
-                           stream: bool = False, **kwargs) -> Dict:
-        """Build request body for OpenAI chat completions API."""
-        messages = []
+    def _build_request_body(self, prompt: str, *, system: Optional[str] = None, **kwargs) -> Dict:
+        """Build request body for Gemini API."""
+        contents = []
         
+        # Gemini uses "parts" structure
         if system:
-            messages.append({"role": "system", "content": system})
+            # System instructions can be in the first message
+            contents.append({
+                "role": "user",
+                "parts": [{"text": system}]
+            })
+            contents.append({
+                "role": "model",
+                "parts": [{"text": "Understood."}]
+            })
         
-        messages.append({"role": "user", "content": prompt})
+        contents.append({
+            "role": "user",
+            "parts": [{"text": prompt}]
+        })
         
         body = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            "stream": stream,
+            "contents": contents,
+            "generationConfig": {
+                "temperature": kwargs.get("temperature", self.temperature),
+                "maxOutputTokens": kwargs.get("max_tokens", self.max_tokens),
+            }
         }
         
         if self.top_p is not None:
-            body["top_p"] = self.top_p
-        if self.frequency_penalty is not None:
-            body["frequency_penalty"] = self.frequency_penalty
-        if self.presence_penalty is not None:
-            body["presence_penalty"] = self.presence_penalty
+            body["generationConfig"]["topP"] = self.top_p
         
-        # Add any additional parameters
-        for key in ("stop", "user", "logprobs", "seed"):
-            if key in kwargs:
-                body[key] = kwargs[key]
+        # Gemini uses topK instead of frequency/presence penalty
+        if "top_k" in kwargs:
+            body["generationConfig"]["topK"] = kwargs["top_k"]
+        
+        if "stop_sequences" in kwargs:
+            body["generationConfig"]["stopSequences"] = kwargs["stop_sequences"]
         
         return body
     
     def _parse_response(self, response_data: Dict) -> LLMResponse:
-        """Parse OpenAI API response into LLMResponse."""
+        """Parse Gemini API response into LLMResponse."""
         try:
-            choice = response_data["choices"][0]
-            content = choice["message"]["content"]
-            finish_reason = choice.get("finish_reason")
+            candidates = response_data.get("candidates", [])
+            if not candidates:
+                raise ValueError("No candidates in response")
             
-            usage = response_data.get("usage", {})
+            candidate = candidates[0]
+            content_parts = candidate.get("content", {}).get("parts", [])
+            
+            # Extract text from parts
+            content = "".join(
+                part.get("text", "") 
+                for part in content_parts
+            )
+            
+            # Gemini usage metadata
+            usage_metadata = response_data.get("usageMetadata", {})
             usage_dict = {
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
+                "prompt_tokens": usage_metadata.get("promptTokenCount", 0),
+                "completion_tokens": usage_metadata.get("candidatesTokenCount", 0),
+                "total_tokens": usage_metadata.get("totalTokenCount", 0),
             }
             
             return LLMResponse(
                 content=content,
-                model=response_data.get("model", self.model),
+                model=self.model,
                 usage=usage_dict,
-                finish_reason=finish_reason,
-                metadata={"response_id": response_data.get("id")}
+                finish_reason=candidate.get("finishReason"),
+                metadata={
+                    "safety_ratings": candidate.get("safetyRatings", []),
+                }
             )
-        except (KeyError, IndexError) as e:
+        except (KeyError, ValueError) as e:
             raise LLMError(
-                f"Failed to parse OpenAI response: {e}",
-                provider="openai",
+                f"Failed to parse Gemini response: {e}",
+                provider="gemini",
                 original_error=e
             )
     
@@ -167,7 +183,7 @@ class OpenAIProvider(LLMProvider):
             # We're in an async context, should use agenerate instead
             raise LLMError(
                 "Cannot call synchronous generate() from async context. Use agenerate() instead.",
-                provider="openai"
+                provider="gemini"
             )
         except RuntimeError:
             # No running loop, we can create one
@@ -175,7 +191,7 @@ class OpenAIProvider(LLMProvider):
     
     async def agenerate(self, prompt: str, *, system: Optional[str] = None, **kwargs) -> LLMResponse:
         """
-        Generate completion using OpenAI API (async).
+        Generate completion using Gemini API (async).
         
         Implements:
         - Real async HTTP via httpx.AsyncClient
@@ -183,11 +199,10 @@ class OpenAIProvider(LLMProvider):
         - Timeout control
         - Concurrency limiting via semaphore
         """
-        url = f"{self.base_url}/chat/completions"
-        headers = self._build_headers()
-        body = self._build_request_body(prompt, system=system, stream=False, **kwargs)
+        url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+        body = self._build_request_body(prompt, system=system, **kwargs)
         
-        logger.info(f"OpenAI agenerate: model={self.model}, prompt_len={len(prompt)}")
+        logger.info(f"Gemini agenerate: model={self.model}, prompt_len={len(prompt)}")
         
         async with self._semaphore:
             client = await self._get_client()
@@ -200,7 +215,6 @@ class OpenAIProvider(LLMProvider):
                 try:
                     response = await client.post(
                         url,
-                        headers=headers,
                         json=body,
                         timeout=self.retry_config.timeout
                     )
@@ -211,11 +225,11 @@ class OpenAIProvider(LLMProvider):
                         
                         # Record metrics
                         record_metric("llm.generation.success", 1, 
-                                    tags={"provider": "openai", "model": self.model})
+                                    tags={"provider": "gemini", "model": self.model})
                         record_metric("llm.tokens.total", llm_response.usage.get("total_tokens", 0),
-                                    tags={"provider": "openai", "model": self.model})
+                                    tags={"provider": "gemini", "model": self.model})
                         
-                        logger.info(f"OpenAI agenerate complete: tokens={llm_response.usage.get('total_tokens')}")
+                        logger.info(f"Gemini agenerate complete: tokens={llm_response.usage.get('total_tokens')}")
                         return llm_response
                     
                     # Handle retryable status codes
@@ -224,16 +238,16 @@ class OpenAIProvider(LLMProvider):
                         if attempt < self.retry_config.max_attempts:
                             delay = self.retry_config.compute_delay(attempt)
                             logger.warning(
-                                f"OpenAI API error {response.status_code}, retrying in {delay}s "
+                                f"Gemini API error {response.status_code}, retrying in {delay}s "
                                 f"(attempt {attempt}/{self.retry_config.max_attempts})"
                             )
                             await asyncio.sleep(delay)
                             continue
                     
                     # Non-retryable error
-                    error_msg = f"OpenAI API error: {response.status_code} - {response.text}"
+                    error_msg = f"Gemini API error: {response.status_code} - {response.text}"
                     logger.error(error_msg)
-                    raise LLMError(error_msg, provider="openai", status_code=response.status_code)
+                    raise LLMError(error_msg, provider="gemini", status_code=response.status_code)
                 
                 except (httpx.TimeoutException, httpx.TransportError) as e:
                     last_error = e
@@ -241,7 +255,7 @@ class OpenAIProvider(LLMProvider):
                     if attempt < self.retry_config.max_attempts:
                         delay = self.retry_config.compute_delay(attempt)
                         logger.warning(
-                            f"OpenAI network error: {e}, retrying in {delay}s "
+                            f"Gemini network error: {e}, retrying in {delay}s "
                             f"(attempt {attempt}/{self.retry_config.max_attempts})"
                         )
                         await asyncio.sleep(delay)
@@ -249,26 +263,26 @@ class OpenAIProvider(LLMProvider):
                     break
                 
                 except asyncio.CancelledError:
-                    logger.info("OpenAI agenerate cancelled")
+                    logger.info("Gemini agenerate cancelled")
                     raise
                 
                 except Exception as e:
                     record_metric("llm.generation.error", 1, 
-                                tags={"provider": "openai", "model": self.model})
+                                tags={"provider": "gemini", "model": self.model})
                     if isinstance(e, LLMError):
                         raise
                     raise LLMError(
-                        f"OpenAI request failed: {e}",
-                        provider="openai",
+                        f"Gemini request failed: {e}",
+                        provider="gemini",
                         original_error=e
                     )
             
             # All retries exhausted
             record_metric("llm.generation.error", 1, 
-                        tags={"provider": "openai", "model": self.model})
+                        tags={"provider": "gemini", "model": self.model})
             raise LLMError(
-                f"OpenAI request failed after {self.retry_config.max_attempts} attempts: {last_error}",
-                provider="openai",
+                f"Gemini request failed after {self.retry_config.max_attempts} attempts: {last_error}",
+                provider="gemini",
                 original_error=last_error
             )
     
@@ -276,7 +290,7 @@ class OpenAIProvider(LLMProvider):
                              stream_config: Optional[StreamConfig] = None,
                              **kwargs) -> AsyncIterator[StreamChunk]:
         """
-        Stream completion using OpenAI API with SSE.
+        Stream completion using Gemini API with SSE.
         
         Implements:
         - True SSE token streaming
@@ -285,13 +299,12 @@ class OpenAIProvider(LLMProvider):
         - Backpressure control (max chunks)
         - Clean cancellation and connection closure
         """
-        url = f"{self.base_url}/chat/completions"
-        headers = self._build_headers()
-        body = self._build_request_body(prompt, system=system, stream=True, **kwargs)
+        url = f"{self.base_url}/models/{self.model}:streamGenerateContent?key={self.api_key}&alt=sse"
+        body = self._build_request_body(prompt, system=system, **kwargs)
         
         config = stream_config or StreamConfig()
         
-        logger.info(f"OpenAI stream_generate: model={self.model}, prompt_len={len(prompt)}")
+        logger.info(f"Gemini stream_generate: model={self.model}, prompt_len={len(prompt)}")
         
         async with self._semaphore:
             client = await self._get_client()
@@ -303,7 +316,6 @@ class OpenAIProvider(LLMProvider):
                 async with client.stream(
                     "POST",
                     url,
-                    headers=headers,
                     json=body,
                     timeout=httpx.Timeout(
                         connect=10.0,
@@ -314,9 +326,9 @@ class OpenAIProvider(LLMProvider):
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
-                        error_msg = f"OpenAI streaming error: {response.status_code} - {error_text.decode()}"
+                        error_msg = f"Gemini streaming error: {response.status_code} - {error_text.decode()}"
                         logger.error(error_msg)
-                        raise LLMError(error_msg, provider="openai", status_code=response.status_code)
+                        raise LLMError(error_msg, provider="gemini", status_code=response.status_code)
                     
                     # Parse SSE stream
                     async for line in response.aiter_lines():
@@ -324,12 +336,12 @@ class OpenAIProvider(LLMProvider):
                         if config.stream_timeout:
                             elapsed = asyncio.get_event_loop().time() - start_time
                             if elapsed > config.stream_timeout:
-                                logger.warning(f"OpenAI stream timeout after {elapsed}s")
+                                logger.warning(f"Gemini stream timeout after {elapsed}s")
                                 raise asyncio.TimeoutError(f"Stream exceeded timeout of {config.stream_timeout}s")
                         
                         # Check max chunks
                         if config.max_chunks and chunk_count >= config.max_chunks:
-                            logger.info(f"OpenAI stream reached max chunks: {config.max_chunks}")
+                            logger.info(f"Gemini stream reached max chunks: {config.max_chunks}")
                             return
                         
                         # Parse SSE format: "data: {...}"
@@ -339,111 +351,71 @@ class OpenAIProvider(LLMProvider):
                         if line.startswith("data: "):
                             data = line[6:]  # Remove "data: " prefix
                             
-                            if data.strip() == "[DONE]":
-                                logger.info(f"OpenAI stream complete: chunks={chunk_count}")
-                                return
-                            
                             try:
                                 chunk_data = json.loads(data)
-                                choice = chunk_data.get("choices", [{}])[0]
-                                delta = choice.get("delta", {})
-                                content = delta.get("content", "")
+                                candidates = chunk_data.get("candidates", [])
+                                
+                                if not candidates:
+                                    continue
+                                
+                                candidate = candidates[0]
+                                content_parts = candidate.get("content", {}).get("parts", [])
+                                
+                                # Extract text from parts
+                                content = "".join(
+                                    part.get("text", "")
+                                    for part in content_parts
+                                )
                                 
                                 if content:
                                     chunk_count += 1
                                     yield StreamChunk(
                                         content=content,
-                                        finish_reason=choice.get("finish_reason"),
-                                        model=chunk_data.get("model"),
-                                        metadata={"chunk_id": chunk_data.get("id")}
+                                        finish_reason=candidate.get("finishReason"),
+                                        model=self.model,
+                                        metadata={
+                                            "safety_ratings": candidate.get("safetyRatings", []),
+                                        }
                                     )
                                 
                                 # Check for finish
-                                if choice.get("finish_reason"):
-                                    logger.info(f"OpenAI stream finished: reason={choice['finish_reason']}, chunks={chunk_count}")
+                                if candidate.get("finishReason"):
+                                    logger.info(f"Gemini stream finished: reason={candidate['finishReason']}, chunks={chunk_count}")
                                     return
                             
                             except json.JSONDecodeError as e:
-                                logger.warning(f"Failed to parse OpenAI SSE chunk: {e}")
+                                logger.warning(f"Failed to parse Gemini SSE chunk: {e}")
                                 continue
                 
                 # Record success
                 record_metric("llm.streaming.success", 1,
-                            tags={"provider": "openai", "model": self.model})
+                            tags={"provider": "gemini", "model": self.model})
                 record_metric("llm.streaming.chunks", chunk_count,
-                            tags={"provider": "openai", "model": self.model})
+                            tags={"provider": "gemini", "model": self.model})
             
             except asyncio.CancelledError:
-                logger.info(f"OpenAI stream cancelled after {chunk_count} chunks")
+                logger.info(f"Gemini stream cancelled after {chunk_count} chunks")
                 record_metric("llm.streaming.cancelled", 1,
-                            tags={"provider": "openai", "model": self.model})
+                            tags={"provider": "gemini", "model": self.model})
                 raise
             
             except asyncio.TimeoutError as e:
                 record_metric("llm.streaming.timeout", 1,
-                            tags={"provider": "openai", "model": self.model})
+                            tags={"provider": "gemini", "model": self.model})
                 raise LLMError(
-                    f"OpenAI stream timeout: {e}",
-                    provider="openai",
+                    f"Gemini stream timeout: {e}",
+                    provider="gemini",
                     original_error=e
                 )
             
             except Exception as e:
                 record_metric("llm.streaming.error", 1,
-                            tags={"provider": "openai", "model": self.model})
+                            tags={"provider": "gemini", "model": self.model})
                 if isinstance(e, LLMError):
                     raise
                 raise LLMError(
-                    f"OpenAI streaming failed: {e}",
-                    provider="openai",
-                    original_error=e
-                )
-    
-    async def chat(self, messages, **kwargs) -> LLMResponse:
-        """Generate completion for conversation (async)."""
-        url = f"{self.base_url}/chat/completions"
-        headers = self._build_headers()
-        
-        body = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": kwargs.get("temperature", self.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-        }
-        
-        if self.top_p is not None:
-            body["top_p"] = self.top_p
-        if self.frequency_penalty is not None:
-            body["frequency_penalty"] = self.frequency_penalty
-        if self.presence_penalty is not None:
-            body["presence_penalty"] = self.presence_penalty
-        
-        async with self._semaphore:
-            client = await self._get_client()
-            
-            try:
-                response = await client.post(
-                    url,
-                    headers=headers,
-                    json=body,
-                    timeout=self.retry_config.timeout
-                )
-                
-                if response.status_code != 200:
-                    raise LLMError(
-                        f"OpenAI API error: {response.status_code} - {response.text}",
-                        provider="openai",
-                        status_code=response.status_code
-                    )
-                
-                return self._parse_response(response.json())
-            
-            except Exception as e:
-                if isinstance(e, LLMError):
-                    raise
-                raise LLMError(
-                    f"OpenAI chat request failed: {e}",
-                    provider="openai",
+                    f"Gemini streaming failed: {e}",
+                    provider="gemini",
                     original_error=e
                 )
     

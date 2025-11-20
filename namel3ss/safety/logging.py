@@ -10,10 +10,11 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .runtime import SafetyAction, SafetyViolation
+from .persistence import SafetyEventSink
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,15 @@ class SafetyEvent:
 
 
 class SafetyEventLogger:
-    """Logger for safety events with async buffering and frame/dataset support."""
+    """Logger for safety events with async buffering and frame/dataset support.
+    
+    This logger provides:
+    - Buffered event collection with automatic flushing
+    - Integration with frames/datasets for persistence
+    - Back-pressure handling to prevent unbounded memory growth
+    - Graceful degradation on persistence failures
+    - Configurable retention and overflow strategies
+    """
     
     def __init__(
         self,
@@ -84,23 +93,48 @@ class SafetyEventLogger:
         target_dataset: Optional[str] = None,
         buffer_size: int = 100,
         flush_interval_seconds: float = 10.0,
+        event_sink: Optional[SafetyEventSink] = None,
+        adapter_registry: Optional[Any] = None,
+        overflow_strategy: str = "drop_oldest",  # drop_oldest, drop_newest, block
+        fallback_path: Optional[str] = None,
     ):
         """Initialize safety event logger.
         
         Args:
             target_frame: Name of frame to log to (if using frames)
-            target_dataset: Name of dataset to log to (if using datasets)
+            target_dataset: Name of dataset to log to (recommended: "safety_events")
             buffer_size: Number of events to buffer before flushing
             flush_interval_seconds: Time between automatic flushes
+            event_sink: Pre-configured SafetyEventSink instance
+            adapter_registry: Dataset adapter registry for persistence
+            overflow_strategy: How to handle buffer overflow (drop_oldest, drop_newest, block)
+            fallback_path: Path for fallback file persistence on errors
         """
         self.target_frame = target_frame
-        self.target_dataset = target_dataset
+        self.target_dataset = target_dataset or "safety_events"
         self.buffer_size = buffer_size
         self.flush_interval = flush_interval_seconds
+        self.overflow_strategy = overflow_strategy
         
-        self._buffer: list[SafetyEvent] = []
+        # Initialize event sink
+        if event_sink is not None:
+            self._sink = event_sink
+        else:
+            from namel3ss.codegen.backend.core.runtime.logic_adapters import AdapterRegistry
+            
+            registry = adapter_registry or AdapterRegistry()
+            self._sink = SafetyEventSink(
+                dataset_name=self.target_dataset,
+                adapter_registry=registry,
+                fallback_path=fallback_path or "/tmp/namel3ss_safety_fallback",
+            )
+        
+        self._buffer: List[SafetyEvent] = []
         self._lock = asyncio.Lock()
         self._flush_task: Optional[asyncio.Task] = None
+        self._total_logged = 0
+        self._total_flushed = 0
+        self._total_dropped = 0
         
     async def start(self):
         """Start the background flush task."""
@@ -131,9 +165,31 @@ class SafetyEventLogger:
         """
         try:
             async with self._lock:
+                self._total_logged += 1
+                
+                # Handle buffer overflow
+                if len(self._buffer) >= self.buffer_size:
+                    if self.overflow_strategy == "drop_oldest":
+                        self._buffer.pop(0)
+                        self._total_dropped += 1
+                        logger.warning(
+                            "Safety event buffer overflow, dropping oldest event",
+                            extra={"total_dropped": self._total_dropped}
+                        )
+                    elif self.overflow_strategy == "drop_newest":
+                        self._total_dropped += 1
+                        logger.warning(
+                            "Safety event buffer overflow, dropping newest event",
+                            extra={"total_dropped": self._total_dropped}
+                        )
+                        return  # Don't add the new event
+                    elif self.overflow_strategy == "block":
+                        # Force flush to make room
+                        await self._flush_internal()
+                
                 self._buffer.append(event)
                 
-                # Flush if buffer is full
+                # Flush if buffer is still full after handling overflow
                 if len(self._buffer) >= self.buffer_size:
                     await self._flush_internal()
                     
@@ -156,27 +212,34 @@ class SafetyEventLogger:
         
         try:
             await self._write_events(events_to_flush)
+            self._total_flushed += len(events_to_flush)
         except Exception as e:
             logger.error(f"Failed to flush {len(events_to_flush)} safety events: {e}", exc_info=True)
     
-    async def _write_events(self, events: list[SafetyEvent]) -> None:
-        """Write events to the target frame/dataset.
+    async def _write_events(self, events: List[SafetyEvent]) -> None:
+        """Write events to the target dataset via SafetyEventSink.
         
-        This is where integration with the frames/datasets system happens.
-        For now, this logs to structured logging. Full integration with
-        frames/datasets will be added when connecting to the runtime.
+        This integrates with the frames/datasets system for production-grade
+        persistence. Events are written via dataset adapters with automatic
+        retry logic and fallback file persistence on failures.
+        
+        Args:
+            events: List of safety events to persist
         """
-        # TODO: Integrate with actual frames/datasets system
-        # For now, log to structured logger
-        for event in events:
-            logger.info(
-                "Safety event",
+        try:
+            # Use SafetyEventSink for production-grade persistence
+            await self._sink.write_events(events)
+            
+        except Exception as e:
+            # Log error but don't crash - SafetyEventSink has fallback handling
+            logger.error(
+                f"Failed to persist {len(events)} safety events via sink: {e}",
+                exc_info=True,
                 extra={
-                    "safety_event": event.to_dict(),
-                    "event_id": event.event_id,
-                    "policy": event.policy_name,
-                    "action": event.action.value if isinstance(event.action, SafetyAction) else event.action,
-                },
+                    "event_count": len(events),
+                    "first_event_id": events[0].event_id if events else None,
+                    "dataset": self.target_dataset,
+                }
             )
     
     async def _periodic_flush(self) -> None:
@@ -187,6 +250,24 @@ class SafetyEventLogger:
                 await self.flush()
         except asyncio.CancelledError:
             pass
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the logger's operation.
+        
+        Returns:
+            Dictionary with statistics including total logged, flushed, dropped,
+            current buffer size, and overflow strategy.
+        """
+        return {
+            "total_logged": self._total_logged,
+            "total_flushed": self._total_flushed,
+            "total_dropped": self._total_dropped,
+            "current_buffer_size": len(self._buffer),
+            "max_buffer_size": self.buffer_size,
+            "overflow_strategy": self.overflow_strategy,
+            "flush_interval_seconds": self.flush_interval,
+            "target_dataset": self.target_dataset,
+        }
 
 
 # Global logger instance
@@ -194,11 +275,38 @@ _global_logger: Optional[SafetyEventLogger] = None
 
 
 def get_global_logger() -> SafetyEventLogger:
-    """Get or create the global safety event logger."""
+    """Get or create the global safety event logger.
+    
+    The global logger uses default configuration. For custom configuration,
+    create a SafetyEventLogger instance directly and manage its lifecycle.
+    
+    Returns:
+        Global SafetyEventLogger instance with default settings
+    """
     global _global_logger
     if _global_logger is None:
-        _global_logger = SafetyEventLogger()
+        # Initialize with default configuration
+        # In production, this should be configured via app config/DSL
+        _global_logger = SafetyEventLogger(
+            target_dataset="safety_events",
+            buffer_size=100,
+            flush_interval_seconds=10.0,
+            overflow_strategy="drop_oldest",
+        )
     return _global_logger
+
+
+def set_global_logger(logger: SafetyEventLogger) -> None:
+    """Set a custom global safety event logger.
+    
+    This allows applications to configure the global logger with
+    custom settings (dataset, buffer size, adapter registry, etc.).
+    
+    Args:
+        logger: Configured SafetyEventLogger instance
+    """
+    global _global_logger
+    _global_logger = logger
 
 
 async def log_safety_event(event: SafetyEvent) -> None:

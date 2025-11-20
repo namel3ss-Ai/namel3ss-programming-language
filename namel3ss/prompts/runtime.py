@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from namel3ss.ast import Prompt, PromptArgument, OutputSchema, OutputField, OutputFieldType
 from namel3ss.errors import N3Error
+from namel3ss.templates import get_default_engine, TemplateError
 
 if TYPE_CHECKING:
     from namel3ss.codegen.backend.core.runtime.memory import MemoryRegistry
@@ -21,7 +22,10 @@ if TYPE_CHECKING:
 
 class PromptProgramError(N3Error):
     """Errors related to prompt program execution."""
-    pass
+    
+    def __init__(self, message: str, *, original_error: Optional[Exception] = None):
+        super().__init__(message)
+        self.original_error = original_error
 
 
 @dataclass
@@ -50,6 +54,9 @@ class PromptProgram:
         """
         Render the prompt template with validated arguments and memory context.
         
+        Uses the unified template engine for secure, production-grade rendering.
+        Supports Jinja2 syntax with variables, conditionals, loops, and filters.
+        
         Args:
             args: Dictionary of argument values
             
@@ -70,19 +77,51 @@ class PromptProgram:
             template = await self._resolve_memory_placeholders(template)
         
         try:
-            # Simple placeholder substitution: {arg_name}
-            rendered = template
-            for arg_name, arg_value in validated_args.items():
-                placeholder = f"{{{arg_name}}}"
-                # Convert value to string
-                str_value = self._value_to_string(arg_value)
-                rendered = rendered.replace(placeholder, str_value)
+            # Use template engine for rendering
+            engine = get_default_engine()
+            compiled = engine.compile(
+                template,
+                name=f"prompt_{self.definition.name}",
+                validate=True
+            )
             
-            return rendered
+            # Convert arguments to template context
+            context = self._args_to_context(validated_args)
+            
+            return compiled.render(context)
+            
+        except TemplateError as e:
+            raise PromptProgramError(
+                f"Failed to render prompt '{self.definition.name}': {e}",
+                original_error=e
+            ) from e
         except Exception as e:
             raise PromptProgramError(
                 f"Failed to render prompt '{self.definition.name}': {e}"
             ) from e
+    
+    def _args_to_context(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert validated arguments to template context.
+        
+        Converts values to template-friendly formats while preserving types
+        that Jinja2 can handle directly (str, int, float, bool, list, dict).
+        
+        Args:
+            args: Validated argument values
+            
+        Returns:
+            Template context dictionary
+        """
+        context = {}
+        for key, value in args.items():
+            # Keep Jinja2-compatible types as-is
+            if isinstance(value, (str, int, float, bool, type(None), list, dict)):
+                context[key] = value
+            else:
+                # Convert other types to strings
+                context[key] = self._value_to_string(value)
+        return context
     
     async def _resolve_memory_placeholders(self, template: str) -> str:
         """

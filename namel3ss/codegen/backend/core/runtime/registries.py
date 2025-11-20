@@ -40,6 +40,8 @@ def render_registries_block(
         _assign_literal("EVALUATORS", "Dict[str, Dict[str, Any]]", state.evaluators),
         _assign_literal("METRICS", "Dict[str, Dict[str, Any]]", state.metrics),
         _assign_literal("GUARDRAILS", "Dict[str, Dict[str, Any]]", state.guardrails),
+        _assign_literal("APP_QUERIES", "Dict[str, Dict[str, Any]]", state.queries),
+        _assign_literal("KNOWLEDGE_MODULES", "Dict[str, Dict[str, Any]]", state.knowledge_modules),
         _assign_literal(
             "MODEL_REGISTRY",
             "Dict[str, Dict[str, Any]]",

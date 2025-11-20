@@ -12,6 +12,16 @@ from .rerankers import (
     CohereReranker,
     HTTPReranker,
 )
+from .loaders import (
+    LoadedDocument,
+    DatasetLoader,
+    CSVDatasetLoader,
+    JSONDatasetLoader,
+    InlineDatasetLoader,
+    DatabaseDatasetLoader,
+)
+from .loader_factory import get_dataset_loader, DatasetLoaderError
+from .index_state import IndexState, IndexStateManager
 
 __all__ = [
     "EmbeddingProvider",
@@ -31,4 +41,14 @@ __all__ = [
     "SentenceTransformerReranker",
     "CohereReranker",
     "HTTPReranker",
+    "LoadedDocument",
+    "DatasetLoader",
+    "CSVDatasetLoader",
+    "JSONDatasetLoader",
+    "InlineDatasetLoader",
+    "DatabaseDatasetLoader",
+    "get_dataset_loader",
+    "DatasetLoaderError",
+    "IndexState",
+    "IndexStateManager",
 ]

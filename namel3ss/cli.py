@@ -1817,6 +1817,28 @@ def main(argv: Optional[list] = None) -> None:
         help='Override the source dataset name'
     )
     build_index_parser.add_argument(
+        '-n', '--max-documents',
+        type=int,
+        metavar='N',
+        help='Maximum number of documents to index'
+    )
+    build_index_parser.add_argument(
+        '--filter',
+        action='append',
+        metavar='KEY=VALUE',
+        help='Metadata filter (can be specified multiple times, e.g., --filter tag=support --filter lang=en)'
+    )
+    build_index_parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume indexing from previous checkpoint'
+    )
+    build_index_parser.add_argument(
+        '--force-rebuild',
+        action='store_true',
+        help='Force rebuild the index from scratch (delete previous state)'
+    )
+    build_index_parser.add_argument(
         '-v', '--verbose',
         action='store_true',
         help='Print detailed progress information'

@@ -292,11 +292,47 @@ class CompiledQuery:
             elif isinstance(arg, LogicStruct):
                 self._collect_vars_from_struct(arg, variables)
             elif isinstance(arg, LogicList):
+                # Collect variables from list elements
                 for elem in arg.elements:
                     if isinstance(elem, LogicVar):
                         variables.add(elem.name)
                     elif isinstance(elem, LogicStruct):
                         self._collect_vars_from_struct(elem, variables)
+                    elif isinstance(elem, LogicList):
+                        # Recursively handle nested lists
+                        self._collect_vars_from_list(elem, variables)
+                
+                # Collect variable from tail if present
+                if arg.tail:
+                    if isinstance(arg.tail, LogicVar):
+                        variables.add(arg.tail.name)
+                    elif isinstance(arg.tail, LogicStruct):
+                        self._collect_vars_from_struct(arg.tail, variables)
+                    elif isinstance(arg.tail, LogicList):
+                        self._collect_vars_from_list(arg.tail, variables)
+    
+    def _collect_vars_from_list(self, list_term: Any, variables: set) -> None:
+        """Helper to recursively collect variables from list terms."""
+        from namel3ss.ast.logic import LogicList, LogicStruct, LogicVar
+        
+        if not isinstance(list_term, LogicList):
+            return
+        
+        for elem in list_term.elements:
+            if isinstance(elem, LogicVar):
+                variables.add(elem.name)
+            elif isinstance(elem, LogicStruct):
+                self._collect_vars_from_struct(elem, variables)
+            elif isinstance(elem, LogicList):
+                self._collect_vars_from_list(elem, variables)
+        
+        if list_term.tail:
+            if isinstance(list_term.tail, LogicVar):
+                variables.add(list_term.tail.name)
+            elif isinstance(list_term.tail, LogicStruct):
+                self._collect_vars_from_struct(list_term.tail, variables)
+            elif isinstance(list_term.tail, LogicList):
+                self._collect_vars_from_list(list_term.tail, variables)
     
     def _term_to_python(self, term: Any) -> Any:
         """Convert a logic term to a Python value."""
@@ -333,7 +369,17 @@ class CompiledQuery:
                 "args": [self._term_to_python(arg) for arg in term.args],
             }
         elif isinstance(term, LogicList):
-            return [self._term_to_python(elem) for elem in term.elements]
+            # Convert list to Python list
+            result = [self._term_to_python(elem) for elem in term.elements]
+            # If there's a tail, note that in the result (for debugging/inspection)
+            # In practice, after successful unification, tails should be bound to lists
+            if term.tail:
+                tail_value = self._term_to_python(term.tail)
+                # If tail is a list, extend the result
+                if isinstance(tail_value, list):
+                    result.extend(tail_value)
+                # Otherwise, keep as-is (may be unbound variable)
+            return result
         else:
             return str(term)
 

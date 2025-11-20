@@ -1106,7 +1106,7 @@ class _GrammarModuleParser(_LogicParserMixin, _AIParserMixin):
             if ':' in stripped:
                 parts = stripped.split(':', 1)
                 field_name = parts[0].strip()
-                type_spec = parts[1].strip()
+                type_spec = parts[1].strip().rstrip(',')
                 
                 # Check for optional marker (?)
                 required = True
@@ -1114,18 +1114,98 @@ class _GrammarModuleParser(_LogicParserMixin, _AIParserMixin):
                     field_name = field_name[:-1]
                     required = False
                 
-                # Parse the type specification
-                field_type = self._parse_output_field_type(type_spec)
+                # Check if this is a nested object or list of objects
+                if type_spec == '{':
+                    # Nested object definition follows
+                    self._advance()
+                    nested_fields = self._parse_nested_object_fields_grammar(indent)
+                    field_type = OutputFieldType(base_type='object', nested_fields=nested_fields)
+                elif type_spec.startswith('list[{'):
+                    # List of objects
+                    self._advance()
+                    nested_fields = self._parse_nested_object_fields_grammar(indent)
+                    element_type = OutputFieldType(base_type='object', nested_fields=nested_fields)
+                    field_type = OutputFieldType(base_type='list', element_type=element_type)
+                else:
+                    # Parse the type specification normally
+                    field_type = self._parse_output_field_type(type_spec)
+                    self._advance()
                 
                 fields.append(OutputField(
                     name=field_name,
                     field_type=field_type,
                     required=required,
                 ))
+                continue
             
             self._advance()
         
         return OutputSchema(fields=fields)
+    
+    def _parse_nested_object_fields_grammar(self, parent_indent: int) -> List[OutputField]:
+        """Parse nested object fields for grammar-based parsing."""
+        nested_fields: List[OutputField] = []
+        
+        while True:
+            nxt = self._peek_line()
+            if nxt is None:
+                break
+            
+            indent = self._indent(nxt.text)
+            stripped = nxt.text.strip()
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Check for closing brace
+            if stripped == '}' or stripped.startswith('}'):
+                self._advance()
+                break
+            
+            # Stop if dedented
+            if indent <= parent_indent:
+                break
+            
+            # Parse field
+            if ':' in stripped:
+                parts = stripped.split(':', 1)
+                field_name = parts[0].strip().rstrip(',')
+                type_spec = parts[1].strip().rstrip(',')
+                
+                required = True
+                if field_name.endswith('?'):
+                    field_name = field_name[:-1]
+                    required = False
+                
+                # Check for nested object
+                if type_spec == '{':
+                    self._advance()
+                    sub_nested_fields = self._parse_nested_object_fields_grammar(indent)
+                    field_type = OutputFieldType(base_type='object', nested_fields=sub_nested_fields)
+                elif type_spec.startswith('list[{'):
+                    self._advance()
+                    sub_nested_fields = self._parse_nested_object_fields_grammar(indent)
+                    element_type = OutputFieldType(base_type='object', nested_fields=sub_nested_fields)
+                    field_type = OutputFieldType(base_type='list', element_type=element_type)
+                else:
+                    field_type = self._parse_output_field_type(type_spec)
+                    self._advance()
+                
+                nested_fields.append(OutputField(
+                    name=field_name,
+                    field_type=field_type,
+                    required=required,
+                ))
+                continue
+            
+            self._advance()
+        
+        if not nested_fields:
+            raise self._error("Nested object must have at least one field", 0, "")
+        
+        return nested_fields
 
     def _parse_output_field_type(self, type_spec: str, line_no: int = None, line: str = None) -> OutputFieldType:
         """
@@ -1134,6 +1214,11 @@ class _GrammarModuleParser(_LogicParserMixin, _AIParserMixin):
         Args compatible with both Grammar (1 arg) and AIParserMixin (3 args) call patterns.
         """
         type_spec = type_spec.strip()
+        
+        # Special case: list[{ without closing ] should not be parsed here
+        # This is handled separately in _parse_output_schema_block and _parse_nested_object_fields_grammar
+        if type_spec == 'list[{' or type_spec.startswith('list[{') and not type_spec.endswith(']'):
+            raise self._error(f"Incomplete list of objects syntax: {type_spec}. Should be handled at higher level.", line_no or 0, line or "")
         
         # Handle enum: enum(\"val1\", \"val2\", ...)
         if type_spec.startswith('enum(') or type_spec.startswith('enum['):

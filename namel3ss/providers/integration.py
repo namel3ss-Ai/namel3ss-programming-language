@@ -5,6 +5,7 @@ import asyncio
 
 from namel3ss.llm.base import BaseLLM, ChatMessage, LLMResponse
 from namel3ss.providers.base import N3Provider, ProviderMessage, ProviderResponse
+from namel3ss.templates import get_default_engine, TemplateError
 
 
 class ProviderLLMBridge(BaseLLM):
@@ -329,17 +330,39 @@ async def run_agent_with_provider(
 
 
 def _build_prompt_from_step(step: Any, state: Dict[str, Any]) -> str:
-    """Build prompt from chain step and current state."""
-    # Simple template substitution
-    # TODO: Use proper template engine if needed
-    prompt = step.target
+    """
+    Build prompt from chain step and current state using template engine.
     
-    for key, value in state.items():
-        placeholder = f"{{{key}}}"
-        if placeholder in prompt:
-            prompt = prompt.replace(placeholder, str(value))
+    Uses the unified template engine for secure, production-grade template rendering.
+    Templates support Jinja2 syntax with variables, conditionals, loops, and filters.
     
-    return prompt
+    Args:
+        step: Chain step with target template string
+        state: Current state variables for template context
+        
+    Returns:
+        Rendered prompt string
+        
+    Raises:
+        TemplateError: If template compilation or rendering fails
+    """
+    template_source = step.target
+    engine = get_default_engine()
+    
+    try:
+        # Compile and render template with state variables
+        compiled = engine.compile(template_source, name=f"chain_step_{step.name or 'unnamed'}")
+        return compiled.render(state)
+    except TemplateError:
+        # Re-raise template errors as-is
+        raise
+    except Exception as e:
+        # Wrap other errors
+        raise TemplateError(
+            f"Failed to build prompt from chain step: {e}",
+            template_name=f"chain_step_{step.name or 'unnamed'}",
+            original_error=e,
+        )
 
 
 def _build_tool_input(step: Any, state: Dict[str, Any]) -> Dict[str, Any]:

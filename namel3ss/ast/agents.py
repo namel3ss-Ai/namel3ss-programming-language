@@ -12,9 +12,17 @@ from .base import Expression
 class MemoryConfig:
     """Configuration for agent memory."""
     
-    policy: str = "none"  # none, conversation, window, custom
+    policy: str = "none"  # none, conversation_window, full_history, summary
     max_items: Optional[int] = None
     window_size: Optional[int] = None
+    
+    # Summarization configuration
+    summarizer: Optional[str] = None  # e.g., "openai/gpt-4o-mini", "anthropic/claude-3-haiku"
+    max_summary_tokens: Optional[int] = None  # Max tokens for summary (default: 512)
+    summary_trigger_messages: Optional[int] = None  # Trigger after N messages (default: 20)
+    summary_trigger_tokens: Optional[int] = None  # Trigger after N estimated tokens (default: 4000)
+    summary_recent_window: Optional[int] = None  # Keep last N messages unsummarized (default: 5)
+    
     config: Dict[str, Any] = field(default_factory=dict)
 
 

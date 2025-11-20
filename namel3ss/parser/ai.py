@@ -34,6 +34,13 @@ from namel3ss.ast import (
 
 from .base import ParserBase
 
+# Import template engine for compile-time validation
+try:
+    from namel3ss.templates import get_default_engine, TemplateCompilationError
+    TEMPLATE_VALIDATION_AVAILABLE = True
+except ImportError:
+    TEMPLATE_VALIDATION_AVAILABLE = False
+
 
 _AI_MODEL_PROVIDER_HINTS = {
     "openai",
@@ -168,6 +175,11 @@ class AIParserMixin(ParserBase):
         )
 
     def _parse_template(self, line: str, line_no: int, base_indent: int) -> Template:
+        """
+        Parse template definition with compile-time validation.
+        
+        Validates template syntax during compilation to catch errors early.
+        """
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
@@ -210,6 +222,19 @@ class AIParserMixin(ParserBase):
         if prompt is None:
             prompt = ""
         prompt_text = prompt if isinstance(prompt, str) else str(prompt)
+        
+        # Compile-time template validation
+        if TEMPLATE_VALIDATION_AVAILABLE and prompt_text:
+            try:
+                engine = get_default_engine()
+                engine.compile(prompt_text, name=f"template_{name}", validate=True)
+            except TemplateCompilationError as e:
+                raise self._error(
+                    f"Template '{name}' compilation error: {str(e)}",
+                    line_no,
+                    line
+                )
+        
         return Template(name=name, prompt=prompt_text, metadata=metadata)
 
     def _parse_chain(self, line: str, line_no: int, base_indent: int) -> Chain:
@@ -502,6 +527,12 @@ class AIParserMixin(ParserBase):
 
         parameters_transformed = self._transform_config(parameters)
         parameters_payload = parameters_transformed if isinstance(parameters_transformed, dict) else {"value": parameters_transformed}
+
+        # Consume closing brace if present
+        if self.pos < len(self.lines):
+            line = self._peek()
+            if line and line.strip() in ['}', '},']:
+                self._advance()
 
         prompt_object = Prompt(
             name=name,
@@ -1200,7 +1231,12 @@ class AIParserMixin(ParserBase):
                 urgency: enum["low", "medium", "high"],
                 needs_handoff: bool,
                 confidence: float,
-                tags: list[string]
+                tags: list[string],
+                user: {
+                    name: string,
+                    email: string,
+                    roles: list[string]
+                }
             }
         """
         fields: List[OutputField] = []
@@ -1226,33 +1262,70 @@ class AIParserMixin(ParserBase):
             field_name = field_name.strip().rstrip(',')
             type_part = type_part.strip().rstrip(',')
             
-            # Parse the field type
-            field_type = self._parse_output_field_type(type_part, self.pos + 1, line)
+            # Check if this is the start of a nested object
+            if type_part == '{':
+                # The nested object fields follow on subsequent lines
+                self._advance()
+                field_type = OutputFieldType(
+                    base_type="object",
+                    nested_fields=self._parse_nested_object_fields(indent)
+                )
+            elif type_part.startswith('list[{'):
+                # list of objects: list[{ ... }]
+                # The object fields follow on subsequent lines
+                self._advance()
+                element_type = OutputFieldType(
+                    base_type="object",
+                    nested_fields=self._parse_nested_object_fields(indent)
+                )
+                field_type = OutputFieldType(
+                    base_type="list",
+                    element_type=element_type
+                )
+            else:
+                # Parse the field type normally
+                field_type = self._parse_output_field_type(type_part, self.pos + 1, line)
+                self._advance()
             
             fields.append(OutputField(
                 name=field_name,
                 field_type=field_type,
                 required=True,  # Default to required
             ))
-            
-            self._advance()
         
         if not fields:
             raise self._error("output_schema cannot be empty", self.pos, "")
         
+        # Consume the closing brace if present
+        if self.pos < len(self.lines):
+            line = self._peek()
+            if line and line.strip() in ['}', '},']:
+                self._advance()
+        
         return OutputSchema(fields=fields)
     
-    def _parse_output_field_type(self, type_str: str, line_no: int, line: str) -> OutputFieldType:
+    def _parse_output_field_type(self, type_str: str, line_no: int, line: str, parent_indent: Optional[int] = None) -> OutputFieldType:
         """
         Parse a field type specification into OutputFieldType.
         
         Supports:
         - Primitives: string, int, float, bool
         - Enums: enum["val1", "val2", "val3"]
-        - Lists: list[string], list[int]
-        - Nested objects (TODO for future enhancement)
+        - Lists: list[string], list[int], list[object]
+        - Nested objects: { field: type, ... }
         """
         type_str = type_str.strip()
+        
+        # Handle nested object type: { ... }
+        if type_str == '{' or (type_str.startswith('{') and len(type_str) == 1):
+            # This is an inline nested object, parse its fields from subsequent lines
+            if parent_indent is None:
+                raise self._error("Cannot parse nested object without parent indent context", line_no, line)
+            nested_fields = self._parse_nested_object_fields(parent_indent)
+            return OutputFieldType(
+                base_type="object",
+                nested_fields=nested_fields
+            )
         
         # Handle enum["val1", "val2"]
         if type_str.startswith('enum['):
@@ -1273,7 +1346,7 @@ class AIParserMixin(ParserBase):
                 raise self._error("Malformed list type, expected closing ]", line_no, line)
             
             inner_type_str = type_str[5:-1].strip()
-            element_type = self._parse_output_field_type(inner_type_str, line_no, line)
+            element_type = self._parse_output_field_type(inner_type_str, line_no, line, parent_indent)
             
             return OutputFieldType(
                 base_type="list",
@@ -1309,6 +1382,81 @@ class AIParserMixin(ParserBase):
             nullable=nullable
         )
     
+    def _parse_nested_object_fields(self, parent_indent: int) -> List[OutputField]:
+        """
+        Parse nested object fields from the current position.
+        
+        Expects fields indented beyond parent_indent, similar to _parse_output_schema.
+        Stops when encountering a closing brace or dedent.
+        """
+        nested_fields: List[OutputField] = []
+        
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            
+            indent = self._indent(line)
+            stripped = line.strip()
+            
+            # Skip empty lines and comments
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Check for closing brace
+            if stripped == '}' or stripped.startswith('}'):
+                self._advance()
+                break
+            
+            # Stop if we've dedented back to or before parent level
+            if indent <= parent_indent:
+                break
+            
+            # Parse: field_name: type
+            if ':' not in stripped:
+                raise self._error(f"Expected 'field_name: type' in nested object", self.pos + 1, line)
+            
+            field_name, _, type_part = stripped.partition(':')
+            field_name = field_name.strip().rstrip(',')
+            type_part = type_part.strip().rstrip(',')
+            
+            # Check if this is the start of a nested object
+            if type_part == '{':
+                # The nested object fields follow on subsequent lines
+                self._advance()
+                field_type = OutputFieldType(
+                    base_type="object",
+                    nested_fields=self._parse_nested_object_fields(indent)
+                )
+            elif type_part.startswith('list[{'):
+                # list of objects: list[{ ... }]
+                # The object fields follow on subsequent lines
+                self._advance()
+                element_type = OutputFieldType(
+                    base_type="object",
+                    nested_fields=self._parse_nested_object_fields(indent)
+                )
+                field_type = OutputFieldType(
+                    base_type="list",
+                    element_type=element_type
+                )
+            else:
+                # Parse the field type normally
+                field_type = self._parse_output_field_type(type_part, self.pos + 1, line)
+                self._advance()
+            
+            nested_fields.append(OutputField(
+                name=field_name,
+                field_type=field_type,
+                required=True,
+            ))
+        
+        if not nested_fields:
+            raise self._error("Nested object must have at least one field", self.pos, "")
+        
+        return nested_fields
+    
     def _parse_enum_values(self, inner: str, line_no: int, line: str) -> List[str]:
         """
         Parse enum values from string like: "val1", "val2", "val3"
@@ -1335,6 +1483,13 @@ class AIParserMixin(ParserBase):
         raise self._error("Failed to parse enum values", line_no, line)
 
     def _parse_prompt_template_block(self, parent_indent: int) -> str:
+        """
+        Parse multi-line template block with compile-time validation.
+        
+        Validates template syntax using the template engine during compilation
+        to catch errors early with proper file/line/column information.
+        """
+        start_line = self.pos + 1  # Track line number for error reporting
         lines: List[str] = []
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -1354,6 +1509,23 @@ class AIParserMixin(ParserBase):
             text = stripped[3:-3].strip("\n")
         if not text:
             raise self._error("Prompt template cannot be empty", self.pos, "")
+        
+        # Compile-time template validation
+        if TEMPLATE_VALIDATION_AVAILABLE:
+            try:
+                engine = get_default_engine()
+                # Compile the template to catch syntax errors
+                # Use validation=True to also check for security issues
+                engine.compile(text, name=f"<template at line {start_line}>", validate=True)
+            except TemplateCompilationError as e:
+                # Re-raise as parser error with proper context
+                error_line = start_line + (e.line_number or 1) - 1
+                raise self._error(
+                    f"Template compilation error: {str(e)}",
+                    error_line,
+                    self.lines[error_line - 1] if 0 < error_line <= len(self.lines) else ""
+                )
+        
         return text
 
     def _parse_prompt_field_type(self, raw: Optional[str]) -> Tuple[str, List[str]]:

@@ -2,6 +2,7 @@
 
 from .engine import (
     CompiledTemplate,
+    StructuredCompiledTemplate,
     PromptTemplateEngine,
     TemplateCompilationError,
     TemplateError,
@@ -13,6 +14,7 @@ from .engine import (
 
 __all__ = [
     "CompiledTemplate",
+    "StructuredCompiledTemplate",
     "PromptTemplateEngine",
     "TemplateCompilationError",
     "TemplateError",

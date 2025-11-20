@@ -193,6 +193,8 @@ class BackendState:
 	metrics: Dict[str, Dict[str, Any]]
 	guardrails: Dict[str, Dict[str, Any]]
 	eval_suites: Dict[str, Dict[str, Any]]
+	queries: Dict[str, Dict[str, Any]]  # Logic queries
+	knowledge_modules: Dict[str, Dict[str, Any]]  # Knowledge bases
 	pages: List[PageSpec]
 	env_keys: List[str]
 
@@ -327,6 +329,14 @@ def build_backend_state(app: App) -> BackendState:
 		for suite in app.eval_suites:
 			eval_suites[suite.name] = _encode_eval_suite(suite)
 
+		queries: Dict[str, Dict[str, Any]] = {}
+		for query in app.queries:
+			queries[query.name] = _encode_logic_query(query, env_keys)
+
+		knowledge_modules: Dict[str, Dict[str, Any]] = {}
+		for module in app.knowledge_modules:
+			knowledge_modules[module.name] = _encode_knowledge_module(module, env_keys)
+
 		pages: List[PageSpec] = []
 		for index, page in enumerate(app.pages):
 			pages.append(_encode_page(index, page, env_keys, prompt_lookup))
@@ -367,6 +377,8 @@ def build_backend_state(app: App) -> BackendState:
 			metrics=metrics,
 			guardrails=guardrails,
 			eval_suites=eval_suites,
+			queries=queries,
+			knowledge_modules=knowledge_modules,
 			pages=pages,
 			env_keys=sorted_env_keys,
 		)
@@ -2182,4 +2194,76 @@ def _encode_graph(graph: GraphDefinition, env_keys: Set[str]) -> Dict[str, Any]:
 		),
 		"max_hops": graph.max_hops,
 		"timeout_ms": graph.timeout_ms,
+	}
+
+
+def _encode_logic_term(term: Any) -> Dict[str, Any]:
+	"""Encode a LogicTerm to a serializable dict."""
+	from namel3ss.ast.logic import (
+		LogicVar, LogicAtom, LogicNumber, LogicString, LogicStruct, LogicList
+	)
+	
+	if isinstance(term, LogicVar):
+		return {"type": "var", "name": term.name}
+	elif isinstance(term, LogicAtom):
+		return {"type": "atom", "value": term.value}
+	elif isinstance(term, LogicNumber):
+		return {"type": "number", "value": term.value}
+	elif isinstance(term, LogicString):
+		return {"type": "string", "value": term.value}
+	elif isinstance(term, LogicStruct):
+		return {
+			"type": "struct",
+			"functor": term.functor,
+			"args": [_encode_logic_term(arg) for arg in term.args],
+		}
+	elif isinstance(term, LogicList):
+		return {
+			"type": "list",
+			"elements": [_encode_logic_term(el) for el in term.elements],
+			"tail": _encode_logic_term(term.tail) if term.tail else None,
+		}
+	else:
+		# Fallback for unknown term types
+		return {"type": "unknown", "value": str(term)}
+
+
+def _encode_logic_fact(fact: Any) -> Dict[str, Any]:
+	"""Encode a LogicFact to a serializable dict."""
+	return {
+		"head": _encode_logic_term(fact.head),
+		"metadata": fact.metadata,
+	}
+
+
+def _encode_logic_rule(rule: Any) -> Dict[str, Any]:
+	"""Encode a LogicRule to a serializable dict."""
+	return {
+		"head": _encode_logic_term(rule.head),
+		"body": [_encode_logic_term(goal) for goal in rule.body],
+		"metadata": rule.metadata,
+	}
+
+
+def _encode_knowledge_module(module: Any, env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a KnowledgeModule to a serializable dict."""
+	return {
+		"name": module.name,
+		"facts": [_encode_logic_fact(fact) for fact in module.facts],
+		"rules": [_encode_logic_rule(rule) for rule in module.rules],
+		"imports": list(module.imports),
+		"metadata": module.metadata,
+		"description": module.description,
+	}
+
+
+def _encode_logic_query(query: Any, env_keys: Set[str]) -> Dict[str, Any]:
+	"""Encode a LogicQuery to a serializable dict."""
+	return {
+		"name": query.name,
+		"knowledge_sources": list(query.knowledge_sources),
+		"goals": [_encode_logic_term(goal) for goal in query.goals],
+		"limit": query.limit,
+		"variables": list(query.variables) if query.variables else None,
+		"metadata": query.metadata,
 	}

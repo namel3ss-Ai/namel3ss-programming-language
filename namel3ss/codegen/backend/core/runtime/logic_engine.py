@@ -115,6 +115,133 @@ def occurs_check(var: LogicVar, term: LogicTerm, subst: Substitution) -> bool:
         return False
 
 
+def _unify_lists(list1: LogicList, list2: LogicList, subst: Substitution) -> Optional[Substitution]:
+    """
+    Unify two list terms with full Prolog-style pattern matching support.
+    
+    Handles patterns like:
+    - [H|T] unifies with [a,b,c] → H=a, T=[b,c]
+    - [H1,H2|T] unifies with [a,b,c,d] → H1=a, H2=b, T=[c,d]
+    - [H|[]] unifies with [a] → H=a
+    - [] unifies with []
+    
+    Args:
+        list1: First list term (may be a pattern)
+        list2: Second list term (may be a pattern or concrete list)
+        subst: Current substitution
+        
+    Returns:
+        Updated substitution if unification succeeds, None otherwise
+    """
+    # Normalize lists: convert to (elements, tail) representation
+    # where tail is None for closed lists or a term for open lists
+    elements1 = list1.elements
+    tail1 = list1.tail
+    
+    elements2 = list2.elements
+    tail2 = list2.tail
+    
+    # Case 1: Both are closed lists (no tail variables)
+    if tail1 is None and tail2 is None:
+        # Must have same length
+        if len(elements1) != len(elements2):
+            return None
+        
+        # Unify elements pairwise
+        current_subst = subst
+        for elem1, elem2 in zip(elements1, elements2):
+            current_subst = unify(elem1, elem2, current_subst)
+            if current_subst is None:
+                return None
+        
+        return current_subst
+    
+    # Case 2: list1 has tail, list2 is closed
+    if tail1 is not None and tail2 is None:
+        # list1 is a pattern like [H1, H2, ..., Hn | T]
+        # list2 is a concrete list [a, b, c, ...]
+        
+        n = len(elements1)
+        m = len(elements2)
+        
+        # Concrete list must have at least as many elements as the pattern's head
+        if m < n:
+            return None
+        
+        # Unify head elements
+        current_subst = subst
+        for i in range(n):
+            current_subst = unify(elements1[i], elements2[i], current_subst)
+            if current_subst is None:
+                return None
+        
+        # Bind tail to remaining elements of list2
+        remaining = elements2[n:]
+        tail_list = LogicList(
+            elements=remaining,
+            tail=None,  # Closed list
+            line=list2.line,
+            column=list2.column
+        )
+        
+        current_subst = unify(tail1, tail_list, current_subst)
+        return current_subst
+    
+    # Case 3: list1 is closed, list2 has tail
+    if tail1 is None and tail2 is not None:
+        # Symmetric to case 2 - swap arguments
+        return _unify_lists(list2, list1, subst)
+    
+    # Case 4: Both have tails
+    if tail1 is not None and tail2 is not None:
+        # Both are patterns like [H1, H2|T1] and [X1, X2|T2]
+        
+        n1 = len(elements1)
+        n2 = len(elements2)
+        
+        # Determine how to align the patterns
+        if n1 == n2:
+            # Same number of head elements - unify pairwise
+            current_subst = subst
+            for elem1, elem2 in zip(elements1, elements2):
+                current_subst = unify(elem1, elem2, current_subst)
+                if current_subst is None:
+                    return None
+            
+            # Unify tails
+            current_subst = unify(tail1, tail2, current_subst)
+            return current_subst
+        
+        elif n1 < n2:
+            # list1 has fewer head elements
+            # Pattern: [H1, ..., Hn | T1] with [X1, ..., Xm | T2] where n < m
+            # Unify first n elements of list1 with first n of list2
+            current_subst = subst
+            for i in range(n1):
+                current_subst = unify(elements1[i], elements2[i], current_subst)
+                if current_subst is None:
+                    return None
+            
+            # T1 must unify with [X(n+1), ..., Xm | T2]
+            remaining_elements = elements2[n1:]
+            tail_pattern = LogicList(
+                elements=remaining_elements,
+                tail=tail2,
+                line=list2.line,
+                column=list2.column
+            )
+            
+            current_subst = unify(tail1, tail_pattern, current_subst)
+            return current_subst
+        
+        else:  # n1 > n2
+            # list1 has more head elements - symmetric to above
+            return _unify_lists(list2, list1, subst)
+    
+    # Should not reach here
+    return None
+
+
 def unify(term1: LogicTerm, term2: LogicTerm, subst: Substitution) -> Optional[Substitution]:
     """
     Unify two terms under the given substitution.
@@ -167,41 +294,9 @@ def unify(term1: LogicTerm, term2: LogicTerm, subst: Substitution) -> Optional[S
                 return None
         return current_subst
     
-    # Case 7: List unification
+    # Case 7: List unification with full Prolog-style pattern matching
     if isinstance(term1, LogicList) and isinstance(term2, LogicList):
-        # Handle list patterns [H|T]
-        if term1.tail or term2.tail:
-            # TODO: Implement full list pattern matching
-            # For now, require both to be patterns or neither
-            if bool(term1.tail) != bool(term2.tail):
-                return None
-            
-            # Unify elements
-            if len(term1.elements) != len(term2.elements):
-                return None
-            
-            current_subst = subst
-            for elem1, elem2 in zip(term1.elements, term2.elements):
-                current_subst = unify(elem1, elem2, current_subst)
-                if current_subst is None:
-                    return None
-            
-            # Unify tails if present
-            if term1.tail and term2.tail:
-                current_subst = unify(term1.tail, term2.tail, current_subst)
-            
-            return current_subst
-        
-        # Regular lists: must have same length
-        if len(term1.elements) != len(term2.elements):
-            return None
-        
-        current_subst = subst
-        for elem1, elem2 in zip(term1.elements, term2.elements):
-            current_subst = unify(elem1, elem2, current_subst)
-            if current_subst is None:
-                return None
-        return current_subst
+        return _unify_lists(term1, term2, subst)
     
     # Different types don't unify
     return None

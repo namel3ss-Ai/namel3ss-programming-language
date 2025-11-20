@@ -94,6 +94,67 @@ class CompiledTemplate:
             )
 
 
+@dataclass
+class StructuredCompiledTemplate:
+    """
+    Represents a compiled structured template for JSON-serializable outputs.
+    
+    Structured templates generate Python dicts/lists that can be serialized
+    to JSON for provider API calls (function calling, tool use, etc.).
+    """
+    
+    name: str
+    source: str
+    template: Any  # jinja2.Template
+    required_vars: Set[str]
+    optional_vars: Set[str]
+    
+    def render(self, variables: Dict[str, Any]) -> Any:
+        """
+        Render structured template with provided variables.
+        
+        Args:
+            variables: Variable context for rendering
+            
+        Returns:
+            JSON-serializable Python object (dict, list, str, int, float, bool, None)
+            
+        Raises:
+            TemplateRenderError: If rendering fails or result not JSON-serializable
+        """
+        try:
+            rendered_str = self.template.render(**variables)
+            # Parse the rendered string as JSON
+            result = json.loads(rendered_str)
+            # Validate JSON-serializable
+            json.dumps(result)  # Will raise if not serializable
+            return result
+        except UndefinedError as e:
+            raise TemplateRenderError(
+                f"Undefined variable in structured template: {e}",
+                template_name=self.name,
+                original_error=e,
+            )
+        except json.JSONDecodeError as e:
+            raise TemplateRenderError(
+                f"Structured template did not produce valid JSON: {e}",
+                template_name=self.name,
+                original_error=e,
+            )
+        except TypeError as e:
+            raise TemplateRenderError(
+                f"Structured template result not JSON-serializable: {e}",
+                template_name=self.name,
+                original_error=e,
+            )
+        except Exception as e:
+            raise TemplateRenderError(
+                f"Structured template rendering failed: {e}",
+                template_name=self.name,
+                original_error=e,
+            )
+
+
 # Custom filters for AI prompts
 def _filter_format_date(value: Any, format_str: str = "%Y-%m-%d") -> str:
     """Format datetime objects or ISO strings as dates."""
@@ -304,6 +365,75 @@ class PromptTemplateEngine:
         except Exception as e:
             raise TemplateCompilationError(
                 f"Failed to compile template: {e}",
+                template_name=name,
+                original_error=e,
+            )
+    
+    def compile_struct(
+        self,
+        source: str,
+        *,
+        name: str = "<structured_template>",
+        validate: bool = True,
+    ) -> StructuredCompiledTemplate:
+        """
+        Compile a structured template for JSON-serializable outputs.
+        
+        Structured templates generate Python dicts/lists that can be serialized
+        to JSON for provider API calls (function calling, tool use, etc.).
+        
+        The template should render to valid JSON. Example:
+            {
+                "type": "{{ action_type }}",
+                "parameters": {
+                    "name": "{{ param_name }}",
+                    "value": {{ param_value | json_encode }}
+                }
+            }
+        
+        Args:
+            source: Template source code (should render to valid JSON)
+            name: Template identifier for error messages
+            validate: Perform validation during compilation
+            
+        Returns:
+            StructuredCompiledTemplate ready for rendering
+            
+        Raises:
+            TemplateCompilationError: If compilation fails
+            TemplateSecurityError: If template contains unsafe constructs
+        """
+        try:
+            # Parse AST to extract variables
+            ast = self.env.parse(source)
+            
+            # Extract undeclared variables
+            required_vars = find_undeclared_variables(ast)
+            
+            # Compile template
+            template = self.env.from_string(source)
+            
+            if validate:
+                self._validate_template_safety(source, name)
+            
+            return StructuredCompiledTemplate(
+                name=name,
+                source=source,
+                template=template,
+                required_vars=required_vars,
+                optional_vars=set(),
+            )
+            
+        except TemplateSyntaxError as e:
+            raise TemplateCompilationError(
+                f"Structured template syntax error: {e.message}",
+                template_name=name,
+                line_number=e.lineno,
+                original_error=e,
+            )
+        except Exception as e:
+            raise TemplateCompilationError(
+                f"Failed to compile structured template: {e}",
                 template_name=name,
                 original_error=e,
             )

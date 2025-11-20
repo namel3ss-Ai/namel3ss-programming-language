@@ -16,6 +16,49 @@ class LLMResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class StreamChunk:
+    """
+    Incremental streaming chunk from LLM provider.
+    
+    Represents a single token or content delta during streaming.
+    """
+    
+    content: str
+    """The incremental content (token/text delta)"""
+    
+    finish_reason: Optional[str] = None
+    """Completion reason if this is the final chunk"""
+    
+    model: Optional[str] = None
+    """Model identifier"""
+    
+    usage: Optional[Dict[str, int]] = None
+    """Token usage (typically only present in final chunk)"""
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    """Additional provider-specific metadata"""
+
+
+@dataclass
+class StreamConfig:
+    """
+    Configuration for streaming behavior and backpressure control.
+    """
+    
+    stream_timeout: Optional[float] = 30.0
+    """Maximum time to wait for the entire stream (seconds)"""
+    
+    chunk_timeout: Optional[float] = 5.0
+    """Maximum idle time between chunks before timeout (seconds)"""
+    
+    max_chunks: Optional[int] = None
+    """Maximum number of chunks to receive (None = unlimited)"""
+    
+    buffer_size: int = 100
+    """Internal buffer size for chunk queue"""
+
+
 class LLMError(Exception):
     """Base exception for LLM provider errors."""
     
@@ -25,6 +68,17 @@ class LLMError(Exception):
         self.provider = provider
         self.status_code = status_code
         self.original_error = original_error
+
+
+class ProviderStreamingNotSupportedError(LLMError):
+    """Raised when provider does not support streaming."""
+    
+    def __init__(self, provider: str, model: str):
+        super().__init__(
+            f"Provider '{provider}' with model '{model}' does not support streaming",
+            provider=provider
+        )
+        self.model = model
 
 
 class LLMProvider(ABC):
@@ -77,25 +131,41 @@ class LLMProvider(ABC):
     
     @abstractmethod
     async def agenerate(self, prompt: str, *, system: Optional[str] = None, **kwargs) -> LLMResponse:
-        """Async version of generate()."""
-        pass
-    
-    @abstractmethod
-    def stream_generate(self, prompt: str, *, system: Optional[str] = None, 
-                       **kwargs) -> AsyncIterator[str]:
         """
-        Stream a completion for the given prompt.
+        Async version of generate().
         
         Args:
             prompt: The user prompt
             system: Optional system message
             **kwargs: Additional generation parameters
             
+        Returns:
+            LLMResponse with the generated content
+            
+        Raises:
+            LLMError: If generation fails
+        """
+        pass
+    
+    @abstractmethod
+    async def stream_generate(self, prompt: str, *, system: Optional[str] = None, 
+                             stream_config: Optional[StreamConfig] = None,
+                             **kwargs) -> AsyncIterator[StreamChunk]:
+        """
+        Stream a completion for the given prompt with SSE.
+        
+        Args:
+            prompt: The user prompt
+            system: Optional system message
+            stream_config: Streaming configuration (timeouts, backpressure)
+            **kwargs: Additional generation parameters
+            
         Yields:
-            Content chunks as they are generated
+            StreamChunk instances with incremental content
             
         Raises:
             LLMError: If streaming fails
+            ProviderStreamingNotSupportedError: If provider doesn't support streaming
         """
         pass
     

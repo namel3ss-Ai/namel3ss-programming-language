@@ -1,4 +1,4 @@
-"""Anthropic LLM provider implementation with full async + streaming support."""
+"""Cohere LLM provider implementation with full async + streaming support."""
 
 import asyncio
 import json
@@ -24,9 +24,9 @@ from .base import (
 logger = get_logger(__name__)
 
 
-class AnthropicProvider(LLMProvider):
+class CohereProvider(LLMProvider):
     """
-    Anthropic LLM provider with production-grade async + streaming support.
+    Cohere LLM provider with production-grade async + streaming support.
     
     Features:
     - Real async HTTP requests via httpx.AsyncClient
@@ -35,37 +35,35 @@ class AnthropicProvider(LLMProvider):
     - Cancellation propagation and cleanup
     - Concurrency control via semaphore
     - Retry logic with jitter backoff
+    
+    Supports models: command, command-light, command-nightly, command-r, command-r-plus
     """
     
-    DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
-    DEFAULT_VERSION = "2023-06-01"
+    DEFAULT_BASE_URL = "https://api.cohere.ai/v1"
     
     def __init__(self, *, model: str, api_key: Optional[str] = None, 
-                 base_url: Optional[str] = None, api_version: Optional[str] = None,
-                 max_concurrent: int = 10, **kwargs):
+                 base_url: Optional[str] = None, max_concurrent: int = 10, **kwargs):
         """
-        Initialize Anthropic provider.
+        Initialize Cohere provider.
         
         Args:
-            model: Model name (e.g., "claude-3-5-sonnet-20241022")
-            api_key: API key (defaults to ANTHROPIC_API_KEY env var)
+            model: Model name (e.g., "command", "command-r-plus")
+            api_key: API key (defaults to COHERE_API_KEY env var)
             base_url: Base URL for API
-            api_version: API version header
             max_concurrent: Maximum concurrent requests
             **kwargs: Additional parameters passed to LLMProvider
         """
         super().__init__(model=model, **kwargs)
         
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        self.api_key = api_key or os.environ.get("COHERE_API_KEY")
         if not self.api_key:
             raise LLMError(
-                "Anthropic API key not provided. Set ANTHROPIC_API_KEY environment variable "
+                "Cohere API key not provided. Set COHERE_API_KEY environment variable "
                 "or pass api_key parameter.",
-                provider="anthropic"
+                provider="cohere"
             )
         
-        self.base_url = base_url or os.environ.get("ANTHROPIC_BASE_URL", self.DEFAULT_BASE_URL)
-        self.api_version = api_version or self.DEFAULT_VERSION
+        self.base_url = base_url or os.environ.get("COHERE_BASE_URL", self.DEFAULT_BASE_URL)
         self.retry_config = RetryConfig(
             max_attempts=3,
             base_delay=1.0,
@@ -94,74 +92,74 @@ class AnthropicProvider(LLMProvider):
             self._client = None
     
     def _build_headers(self) -> Dict[str, str]:
-        """Build HTTP headers for Anthropic API."""
+        """Build HTTP headers for Cohere API."""
         return {
-            "x-api-key": self.api_key,
-            "anthropic-version": self.api_version,
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
     
     def _build_request_body(self, prompt: str, *, system: Optional[str] = None,
                            stream: bool = False, **kwargs) -> Dict:
-        """Build request body for Anthropic messages API."""
-        messages = [{"role": "user", "content": prompt}]
-        
+        """Build request body for Cohere chat API."""
+        # Cohere uses preamble for system prompt
         body = {
             "model": self.model,
-            "messages": messages,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "message": prompt,
             "temperature": kwargs.get("temperature", self.temperature),
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "stream": stream,
         }
         
         if system:
-            body["system"] = system
+            body["preamble"] = system
         
         if self.top_p is not None:
-            body["top_p"] = self.top_p
+            body["p"] = self.top_p  # Cohere uses 'p' instead of 'top_p'
         
-        # Add any additional parameters
-        for key in ("top_k", "stop_sequences", "metadata"):
-            if key in kwargs:
-                body[key] = kwargs[key]
+        # Cohere specific parameters
+        if "k" in kwargs:  # top_k
+            body["k"] = kwargs["k"]
+        
+        if "stop_sequences" in kwargs:
+            body["stop_sequences"] = kwargs["stop_sequences"]
+        
+        if self.frequency_penalty is not None:
+            body["frequency_penalty"] = self.frequency_penalty
+        
+        if self.presence_penalty is not None:
+            body["presence_penalty"] = self.presence_penalty
         
         return body
     
     def _parse_response(self, response_data: Dict) -> LLMResponse:
-        """Parse Anthropic API response into LLMResponse."""
+        """Parse Cohere API response into LLMResponse."""
         try:
-            content_blocks = response_data.get("content", [])
-            if not content_blocks:
-                raise ValueError("No content in response")
+            content = response_data.get("text", "")
             
-            # Extract text from content blocks
-            content = "".join(
-                block.get("text", "") 
-                for block in content_blocks 
-                if block.get("type") == "text"
-            )
+            # Cohere usage metadata
+            meta = response_data.get("meta", {})
+            billed_units = meta.get("billed_units", {})
             
-            usage = response_data.get("usage", {})
             usage_dict = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                "prompt_tokens": billed_units.get("input_tokens", 0),
+                "completion_tokens": billed_units.get("output_tokens", 0),
+                "total_tokens": billed_units.get("input_tokens", 0) + billed_units.get("output_tokens", 0),
             }
             
             return LLMResponse(
                 content=content,
-                model=response_data.get("model", self.model),
+                model=response_data.get("generation_id", self.model),
                 usage=usage_dict,
-                finish_reason=response_data.get("stop_reason"),
+                finish_reason=response_data.get("finish_reason"),
                 metadata={
-                    "response_id": response_data.get("id"),
-                    "stop_reason": response_data.get("stop_reason"),
+                    "generation_id": response_data.get("generation_id"),
+                    "response_id": response_data.get("response_id"),
                 }
             )
         except (KeyError, ValueError) as e:
             raise LLMError(
-                f"Failed to parse Anthropic response: {e}",
-                provider="anthropic",
+                f"Failed to parse Cohere response: {e}",
+                provider="cohere",
                 original_error=e
             )
     
@@ -176,7 +174,7 @@ class AnthropicProvider(LLMProvider):
             # We're in an async context, should use agenerate instead
             raise LLMError(
                 "Cannot call synchronous generate() from async context. Use agenerate() instead.",
-                provider="anthropic"
+                provider="cohere"
             )
         except RuntimeError:
             # No running loop, we can create one
@@ -184,7 +182,7 @@ class AnthropicProvider(LLMProvider):
     
     async def agenerate(self, prompt: str, *, system: Optional[str] = None, **kwargs) -> LLMResponse:
         """
-        Generate completion using Anthropic API (async).
+        Generate completion using Cohere API (async).
         
         Implements:
         - Real async HTTP via httpx.AsyncClient
@@ -192,11 +190,11 @@ class AnthropicProvider(LLMProvider):
         - Timeout control
         - Concurrency limiting via semaphore
         """
-        url = f"{self.base_url}/messages"
+        url = f"{self.base_url}/chat"
         headers = self._build_headers()
         body = self._build_request_body(prompt, system=system, stream=False, **kwargs)
         
-        logger.info(f"Anthropic agenerate: model={self.model}, prompt_len={len(prompt)}")
+        logger.info(f"Cohere agenerate: model={self.model}, prompt_len={len(prompt)}")
         
         async with self._semaphore:
             client = await self._get_client()
@@ -220,11 +218,11 @@ class AnthropicProvider(LLMProvider):
                         
                         # Record metrics
                         record_metric("llm.generation.success", 1, 
-                                    tags={"provider": "anthropic", "model": self.model})
+                                    tags={"provider": "cohere", "model": self.model})
                         record_metric("llm.tokens.total", llm_response.usage.get("total_tokens", 0),
-                                    tags={"provider": "anthropic", "model": self.model})
+                                    tags={"provider": "cohere", "model": self.model})
                         
-                        logger.info(f"Anthropic agenerate complete: tokens={llm_response.usage.get('total_tokens')}")
+                        logger.info(f"Cohere agenerate complete: tokens={llm_response.usage.get('total_tokens')}")
                         return llm_response
                     
                     # Handle retryable status codes
@@ -233,16 +231,16 @@ class AnthropicProvider(LLMProvider):
                         if attempt < self.retry_config.max_attempts:
                             delay = self.retry_config.compute_delay(attempt)
                             logger.warning(
-                                f"Anthropic API error {response.status_code}, retrying in {delay}s "
+                                f"Cohere API error {response.status_code}, retrying in {delay}s "
                                 f"(attempt {attempt}/{self.retry_config.max_attempts})"
                             )
                             await asyncio.sleep(delay)
                             continue
                     
                     # Non-retryable error
-                    error_msg = f"Anthropic API error: {response.status_code} - {response.text}"
+                    error_msg = f"Cohere API error: {response.status_code} - {response.text}"
                     logger.error(error_msg)
-                    raise LLMError(error_msg, provider="anthropic", status_code=response.status_code)
+                    raise LLMError(error_msg, provider="cohere", status_code=response.status_code)
                 
                 except (httpx.TimeoutException, httpx.TransportError) as e:
                     last_error = e
@@ -250,7 +248,7 @@ class AnthropicProvider(LLMProvider):
                     if attempt < self.retry_config.max_attempts:
                         delay = self.retry_config.compute_delay(attempt)
                         logger.warning(
-                            f"Anthropic network error: {e}, retrying in {delay}s "
+                            f"Cohere network error: {e}, retrying in {delay}s "
                             f"(attempt {attempt}/{self.retry_config.max_attempts})"
                         )
                         await asyncio.sleep(delay)
@@ -258,26 +256,26 @@ class AnthropicProvider(LLMProvider):
                     break
                 
                 except asyncio.CancelledError:
-                    logger.info("Anthropic agenerate cancelled")
+                    logger.info("Cohere agenerate cancelled")
                     raise
                 
                 except Exception as e:
                     record_metric("llm.generation.error", 1, 
-                                tags={"provider": "anthropic", "model": self.model})
+                                tags={"provider": "cohere", "model": self.model})
                     if isinstance(e, LLMError):
                         raise
                     raise LLMError(
-                        f"Anthropic request failed: {e}",
-                        provider="anthropic",
+                        f"Cohere request failed: {e}",
+                        provider="cohere",
                         original_error=e
                     )
             
             # All retries exhausted
             record_metric("llm.generation.error", 1, 
-                        tags={"provider": "anthropic", "model": self.model})
+                        tags={"provider": "cohere", "model": self.model})
             raise LLMError(
-                f"Anthropic request failed after {self.retry_config.max_attempts} attempts: {last_error}",
-                provider="anthropic",
+                f"Cohere request failed after {self.retry_config.max_attempts} attempts: {last_error}",
+                provider="cohere",
                 original_error=last_error
             )
     
@@ -285,7 +283,7 @@ class AnthropicProvider(LLMProvider):
                              stream_config: Optional[StreamConfig] = None,
                              **kwargs) -> AsyncIterator[StreamChunk]:
         """
-        Stream completion using Anthropic API with SSE.
+        Stream completion using Cohere API with SSE.
         
         Implements:
         - True SSE token streaming
@@ -294,20 +292,19 @@ class AnthropicProvider(LLMProvider):
         - Backpressure control (max chunks)
         - Clean cancellation and connection closure
         """
-        url = f"{self.base_url}/messages"
+        url = f"{self.base_url}/chat"
         headers = self._build_headers()
         body = self._build_request_body(prompt, system=system, stream=True, **kwargs)
         
         config = stream_config or StreamConfig()
         
-        logger.info(f"Anthropic stream_generate: model={self.model}, prompt_len={len(prompt)}")
+        logger.info(f"Cohere stream_generate: model={self.model}, prompt_len={len(prompt)}")
         
         async with self._semaphore:
             client = await self._get_client()
             
             chunk_count = 0
             start_time = asyncio.get_event_loop().time()
-            accumulated_text = ""
             
             try:
                 async with client.stream(
@@ -324,9 +321,9 @@ class AnthropicProvider(LLMProvider):
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
-                        error_msg = f"Anthropic streaming error: {response.status_code} - {error_text.decode()}"
+                        error_msg = f"Cohere streaming error: {response.status_code} - {error_text.decode()}"
                         logger.error(error_msg)
-                        raise LLMError(error_msg, provider="anthropic", status_code=response.status_code)
+                        raise LLMError(error_msg, provider="cohere", status_code=response.status_code)
                     
                     # Parse SSE stream
                     async for line in response.aiter_lines():
@@ -334,21 +331,16 @@ class AnthropicProvider(LLMProvider):
                         if config.stream_timeout:
                             elapsed = asyncio.get_event_loop().time() - start_time
                             if elapsed > config.stream_timeout:
-                                logger.warning(f"Anthropic stream timeout after {elapsed}s")
+                                logger.warning(f"Cohere stream timeout after {elapsed}s")
                                 raise asyncio.TimeoutError(f"Stream exceeded timeout of {config.stream_timeout}s")
                         
                         # Check max chunks
                         if config.max_chunks and chunk_count >= config.max_chunks:
-                            logger.info(f"Anthropic stream reached max chunks: {config.max_chunks}")
+                            logger.info(f"Cohere stream reached max chunks: {config.max_chunks}")
                             return
                         
-                        # Parse SSE format
+                        # Cohere uses SSE format with event types
                         if not line.strip():
-                            continue
-                        
-                        # Anthropic uses "event: <type>" and "data: <json>"
-                        if line.startswith("event: "):
-                            event_type = line[7:].strip()
                             continue
                         
                         if line.startswith("data: "):
@@ -356,142 +348,85 @@ class AnthropicProvider(LLMProvider):
                             
                             try:
                                 event_data = json.loads(data)
-                                event_type = event_data.get("type")
+                                event_type = event_data.get("event_type")
                                 
-                                # Handle different event types
-                                if event_type == "content_block_delta":
-                                    delta = event_data.get("delta", {})
-                                    if delta.get("type") == "text_delta":
-                                        content = delta.get("text", "")
-                                        
-                                        if content:
-                                            accumulated_text += content
-                                            chunk_count += 1
-                                            yield StreamChunk(
-                                                content=content,
-                                                finish_reason=None,
-                                                model=self.model,
-                                                metadata={"event_type": event_type}
-                                            )
-                                
-                                elif event_type == "message_delta":
-                                    # Final chunk with stop reason
-                                    delta = event_data.get("delta", {})
-                                    stop_reason = delta.get("stop_reason")
+                                # Handle text generation events
+                                if event_type == "text-generation":
+                                    content = event_data.get("text", "")
                                     
-                                    if stop_reason:
-                                        logger.info(f"Anthropic stream finished: reason={stop_reason}, chunks={chunk_count}")
+                                    if content:
+                                        chunk_count += 1
                                         yield StreamChunk(
-                                            content="",
-                                            finish_reason=stop_reason,
+                                            content=content,
+                                            finish_reason=None,
                                             model=self.model,
                                             metadata={"event_type": event_type}
                                         )
                                 
-                                elif event_type == "message_stop":
-                                    logger.info(f"Anthropic stream complete: chunks={chunk_count}")
+                                elif event_type == "stream-end":
+                                    # Final event with finish reason
+                                    finish_reason = event_data.get("finish_reason")
+                                    response_data = event_data.get("response", {})
+                                    
+                                    # Get usage from final event
+                                    meta = response_data.get("meta", {})
+                                    billed_units = meta.get("billed_units", {})
+                                    usage = {
+                                        "prompt_tokens": billed_units.get("input_tokens", 0),
+                                        "completion_tokens": billed_units.get("output_tokens", 0),
+                                        "total_tokens": billed_units.get("input_tokens", 0) + billed_units.get("output_tokens", 0),
+                                    }
+                                    
+                                    logger.info(f"Cohere stream finished: reason={finish_reason}, chunks={chunk_count}")
+                                    yield StreamChunk(
+                                        content="",
+                                        finish_reason=finish_reason,
+                                        model=self.model,
+                                        usage=usage,
+                                        metadata={"event_type": event_type}
+                                    )
                                     return
                                 
                                 elif event_type == "error":
-                                    error_msg = event_data.get("error", {}).get("message", "Unknown error")
+                                    error_msg = event_data.get("message", "Unknown error")
                                     raise LLMError(
-                                        f"Anthropic streaming error: {error_msg}",
-                                        provider="anthropic"
+                                        f"Cohere streaming error: {error_msg}",
+                                        provider="cohere"
                                     )
                             
                             except json.JSONDecodeError as e:
-                                logger.warning(f"Failed to parse Anthropic SSE chunk: {e}")
+                                logger.warning(f"Failed to parse Cohere SSE chunk: {e}")
                                 continue
                 
                 # Record success
                 record_metric("llm.streaming.success", 1,
-                            tags={"provider": "anthropic", "model": self.model})
+                            tags={"provider": "cohere", "model": self.model})
                 record_metric("llm.streaming.chunks", chunk_count,
-                            tags={"provider": "anthropic", "model": self.model})
+                            tags={"provider": "cohere", "model": self.model})
             
             except asyncio.CancelledError:
-                logger.info(f"Anthropic stream cancelled after {chunk_count} chunks")
+                logger.info(f"Cohere stream cancelled after {chunk_count} chunks")
                 record_metric("llm.streaming.cancelled", 1,
-                            tags={"provider": "anthropic", "model": self.model})
+                            tags={"provider": "cohere", "model": self.model})
                 raise
             
             except asyncio.TimeoutError as e:
                 record_metric("llm.streaming.timeout", 1,
-                            tags={"provider": "anthropic", "model": self.model})
+                            tags={"provider": "cohere", "model": self.model})
                 raise LLMError(
-                    f"Anthropic stream timeout: {e}",
-                    provider="anthropic",
+                    f"Cohere stream timeout: {e}",
+                    provider="cohere",
                     original_error=e
                 )
             
             except Exception as e:
                 record_metric("llm.streaming.error", 1,
-                            tags={"provider": "anthropic", "model": self.model})
+                            tags={"provider": "cohere", "model": self.model})
                 if isinstance(e, LLMError):
                     raise
                 raise LLMError(
-                    f"Anthropic streaming failed: {e}",
-                    provider="anthropic",
-                    original_error=e
-                )
-    
-    async def chat(self, messages, **kwargs) -> LLMResponse:
-        """Generate completion for conversation (async)."""
-        url = f"{self.base_url}/messages"
-        headers = self._build_headers()
-        
-        # Convert messages to Anthropic format if needed
-        anthropic_messages = []
-        system_prompt = None
-        
-        for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content")
-            
-            if role == "system":
-                system_prompt = content
-            else:
-                anthropic_messages.append({"role": role, "content": content})
-        
-        body = {
-            "model": self.model,
-            "messages": anthropic_messages,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            "temperature": kwargs.get("temperature", self.temperature),
-        }
-        
-        if system_prompt:
-            body["system"] = system_prompt
-        
-        if self.top_p is not None:
-            body["top_p"] = self.top_p
-        
-        async with self._semaphore:
-            client = await self._get_client()
-            
-            try:
-                response = await client.post(
-                    url,
-                    headers=headers,
-                    json=body,
-                    timeout=self.retry_config.timeout
-                )
-                
-                if response.status_code != 200:
-                    raise LLMError(
-                        f"Anthropic API error: {response.status_code} - {response.text}",
-                        provider="anthropic",
-                        status_code=response.status_code
-                    )
-                
-                return self._parse_response(response.json())
-            
-            except Exception as e:
-                if isinstance(e, LLMError):
-                    raise
-                raise LLMError(
-                    f"Anthropic chat request failed: {e}",
-                    provider="anthropic",
+                    f"Cohere streaming failed: {e}",
+                    provider="cohere",
                     original_error=e
                 )
     
