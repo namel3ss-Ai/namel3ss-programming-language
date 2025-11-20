@@ -14,23 +14,69 @@ from namel3ss.ast import (
     ToastOperation,
     UpdateOperation,
 )
+# KeywordRegistry import removed - class does not exist
 
 from .datasets import DatasetParserMixin
 
 
 class ActionParserMixin(DatasetParserMixin):
-    """Parsing logic for action declarations inside pages."""
+    """
+    Parse action declarations with centralized validation.
+    
+    Handles parsing of interactive actions triggered by user events:
+    - Database operations: update, insert
+    - UI operations: show toast, go to page
+    - Python integrations: call python module/method
+    - Connector operations: ask connector with arguments
+    - AI operations: run chain, run prompt
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     def _parse_action(self, line: str, base_indent: int) -> Action:
+        """
+        Parse action definition with operations.
+        
+        Syntax:
+            action "Name" [effect EFFECT]:
+                when EVENT:
+                    operation1
+                    operation2
+        
+        Example:
+            action "Save Record":
+                when button_click:
+                    update users set name = form.name where id = current_user
+                    show toast "Saved successfully"
+        """
         line_no = self.pos
         stripped_line = line.strip()
         match = re.match(r'action\s+"([^"]+)"(?:\s+effect\s+([\w\-]+))?\s*:?$', stripped_line, flags=re.IGNORECASE)
         if not match:
-            raise self._error("Expected: action \"Name\":", self.pos, line)
+            raise self._error(
+                'Expected: action "Name":',
+                self.pos,
+                line,
+                hint='Action definitions must have a name in quotes'
+            )
         name = match.group(1)
         declared_effect = self._parse_effect_annotation(match.group(2), line_no, line)
         trigger: Optional[str] = None
         operations: List[ActionOperationType] = []
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'action "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Action "{name}" requires an indented block with operations',
+                line_no,
+                line,
+                hint='Add indented operations like "update", "show toast", etc.'
+            )
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -110,6 +156,14 @@ class ActionParserMixin(DatasetParserMixin):
         return ToastOperation(message=stripped)
 
     def _parse_call_python_operation(self, line: str, base_indent: int) -> CallPythonOperation:
+        """
+        Parse Python function call operation.
+        
+        Syntax:
+            call python "module.py" method "function" [with:]
+                arg1 = value1
+                arg2 = value2
+        """
         stripped = line.strip()
         match = re.match(r'call\s+python\s+"([^\"]+)"\s+method\s+"([^\"]+)"(?:\s+with)?\s*:?', stripped)
         if not match:
@@ -117,6 +171,7 @@ class ActionParserMixin(DatasetParserMixin):
                 'Expected: call python "module.py" method "function" [with:]',
                 self.pos,
                 line,
+                hint='Python calls need both module and method names in quotes'
             )
         module = match.group(1)
         method = match.group(2)
@@ -126,6 +181,13 @@ class ActionParserMixin(DatasetParserMixin):
         return CallPythonOperation(module=module, method=method, arguments=arguments)
 
     def _parse_ask_connector_operation(self, line: str, base_indent: int) -> AskConnectorOperation:
+        """
+        Parse connector invocation operation.
+        
+        Syntax:
+            ask connector NAME [with:]
+                arg1 = value1
+        """
         stripped = line.strip()
         match = re.match(r'ask\s+connector\s+([\w\.\-]+)(?:\s+with)?\s*:?', stripped)
         if not match:
@@ -133,6 +195,7 @@ class ActionParserMixin(DatasetParserMixin):
                 'Expected: ask connector NAME [with:]',
                 self.pos,
                 line,
+                hint='Connector operations need the connector name'
             )
         name = match.group(1)
         arguments = {}
@@ -141,6 +204,13 @@ class ActionParserMixin(DatasetParserMixin):
         return AskConnectorOperation(connector_name=name, arguments=arguments)
 
     def _parse_run_chain_operation(self, line: str, base_indent: int) -> RunChainOperation:
+        """
+        Parse AI chain execution operation.
+        
+        Syntax:
+            run chain NAME [with:]
+                input = value
+        """
         stripped = line.strip()
         match = re.match(r'(?:run|execute)\s+chain\s+([\w\.\-]+)(?:\s+with)?\s*:?', stripped)
         if not match:
@@ -148,6 +218,7 @@ class ActionParserMixin(DatasetParserMixin):
                 'Expected: run chain NAME [with:]',
                 self.pos,
                 line,
+                hint='Chain operations need the chain name'
             )
         name = match.group(1)
         inputs = {}
@@ -156,6 +227,13 @@ class ActionParserMixin(DatasetParserMixin):
         return RunChainOperation(chain_name=name, inputs=inputs)
 
     def _parse_run_prompt_operation(self, line: str, base_indent: int) -> RunPromptOperation:
+        """
+        Parse AI prompt execution operation.
+        
+        Syntax:
+            run prompt NAME [with:]
+                arg1 = value1
+        """
         stripped = line.strip()
         match = re.match(r'(?:run|execute)\s+prompt\s+([\w\.\-]+)(?:\s+with)?\s*:?', stripped)
         if not match:
@@ -163,6 +241,7 @@ class ActionParserMixin(DatasetParserMixin):
                 'Expected: run prompt NAME [with:]',
                 self.pos,
                 line,
+                hint='Prompt operations need the prompt name'
             )
         name = match.group(1)
         arguments = {}
@@ -171,6 +250,11 @@ class ActionParserMixin(DatasetParserMixin):
         return RunPromptOperation(prompt_name=name, arguments=arguments)
 
     def _parse_argument_block(self, parent_indent: int) -> Dict[str, Any]:
+        """
+        Parse indented block of name=value arguments.
+        
+        Validates that each line follows the 'name = expression' pattern.
+        """
         arguments: Dict[str, Any] = {}
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -189,6 +273,7 @@ class ActionParserMixin(DatasetParserMixin):
                     "Expected 'name = expression' inside argument block",
                     self.pos + 1,
                     nxt,
+                    hint='Arguments use key = value syntax'
                 )
             key = match.group(1)
             expr_text = match.group(2).strip()

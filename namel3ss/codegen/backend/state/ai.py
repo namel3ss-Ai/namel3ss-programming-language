@@ -1,0 +1,434 @@
+"""AI resource encoding for backend state translation."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+
+from namel3ss.plugins.utils import normalize_plugin_category
+
+from .expressions import _collect_template_markers, _encode_value, _expression_to_runtime, _expression_to_source
+from .utils import _validate_chain_memory_options
+
+if TYPE_CHECKING:
+    from ....ast import (
+        AIModel,
+        Chain,
+        ChainStep,
+        Connector,
+        Memory,
+        OutputField,
+        OutputFieldType,
+        OutputSchema,
+        Prompt,
+        PromptField,
+        Template,
+        WorkflowForBlock,
+        WorkflowIfBlock,
+        WorkflowNode,
+        WorkflowWhileBlock,
+    )
+    from ....ast.agents import LLMDefinition, ToolDefinition
+    from ....ast.rag import IndexDefinition, RagPipelineDefinition
+
+
+def _encode_ai_connector(connector: "Connector", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode an AI connector definition."""
+    config_encoded = _encode_value(connector.config, env_keys)
+    if isinstance(config_encoded, dict):
+        config_payload = config_encoded
+    else:
+        config_payload = connector.config
+    encoded: Dict[str, Any] = {
+        "name": connector.name,
+        "type": connector.connector_type,
+        "category": normalize_plugin_category(connector.connector_type),
+        "config": config_payload,
+    }
+    if connector.provider:
+        encoded["provider"] = connector.provider
+    if connector.description:
+        encoded["description"] = connector.description
+    return encoded
+
+
+def _encode_template(template: "Template", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a template definition."""
+    metadata_encoded = _encode_value(template.metadata, env_keys)
+    if isinstance(metadata_encoded, dict):
+        metadata_payload = metadata_encoded
+    else:
+        metadata_payload = template.metadata
+    return {
+        "name": template.name,
+        "prompt": template.prompt,
+        "metadata": metadata_payload,
+    }
+
+
+def _encode_memory(memory: "Memory", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a memory definition."""
+    config_encoded = _encode_value(memory.config, env_keys)
+    if not isinstance(config_encoded, dict):
+        config_encoded = {"value": config_encoded} if config_encoded is not None else {}
+    metadata_encoded = _encode_value(memory.metadata, env_keys)
+    if not isinstance(metadata_encoded, dict):
+        metadata_encoded = {"value": metadata_encoded} if metadata_encoded is not None else {}
+    payload: Dict[str, Any] = {
+        "name": memory.name,
+        "scope": memory.scope,
+        "kind": memory.kind,
+        "config": config_encoded,
+        "metadata": metadata_encoded,
+    }
+    if memory.max_items is not None:
+        payload["max_items"] = int(memory.max_items)
+    return payload
+
+
+def _encode_ai_model(model: "AIModel", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode an AI model definition."""
+    config_payload = _encode_value(model.config, env_keys)
+    metadata_value = _encode_value(model.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    return {
+        "name": model.name,
+        "provider": model.provider,
+        "model": model.model_name,
+        "config": config_payload if isinstance(config_payload, dict) else model.config,
+        "description": model.description,
+        "metadata": metadata_value,
+    }
+
+
+def _encode_prompt(prompt: "Prompt", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a prompt definition."""
+    _collect_template_markers(prompt.template, env_keys)
+    parameters_value = _encode_value(prompt.parameters, env_keys)
+    if not isinstance(parameters_value, dict):
+        parameters_value = {"value": parameters_value} if parameters_value is not None else {}
+    metadata_value = _encode_value(prompt.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    
+    # Encode structured prompt args
+    args_list = []
+    if prompt.args:
+        for arg in prompt.args:
+            arg_dict = {
+                "name": arg.name,
+                "type": arg.arg_type,
+                "required": arg.required,
+            }
+            if arg.default is not None:
+                arg_dict["default"] = _encode_value(arg.default, env_keys)
+            if arg.description:
+                arg_dict["description"] = arg.description
+            args_list.append(arg_dict)
+    
+    # Encode structured output schema
+    output_schema_dict = None
+    if prompt.output_schema:
+        output_schema_dict = _encode_output_schema(prompt.output_schema, env_keys)
+    
+    result = {
+        "name": prompt.name,
+        "model": prompt.model,
+        "template": prompt.template,
+        "input": [_encode_prompt_field(field, env_keys) for field in prompt.input_fields],
+        "output": [_encode_prompt_field(field, env_keys) for field in prompt.output_fields],
+        "parameters": parameters_value,
+        "metadata": metadata_value,
+        "description": prompt.description,
+    }
+    
+    # Add structured prompt fields if present
+    if args_list:
+        result["args"] = args_list
+    if output_schema_dict:
+        result["output_schema"] = output_schema_dict
+    
+    return result
+
+
+def _encode_prompt_field(field: "PromptField", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a prompt field definition."""
+    metadata_value = _encode_value(field.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    payload: Dict[str, Any] = {
+        "name": field.name,
+        "type": field.field_type,
+        "required": field.required,
+        "enum": list(field.enum or []),
+        "description": field.description,
+        "metadata": metadata_value,
+    }
+    if field.default is not None:
+        payload["default"] = _encode_value(field.default, env_keys)
+    return payload
+
+
+def _encode_output_field_type(field_type: "OutputFieldType") -> Dict[str, Any]:
+    """Encode an OutputFieldType to a dictionary for runtime."""
+    result = {
+        "base_type": field_type.base_type,
+        "nullable": field_type.nullable,
+    }
+    
+    if field_type.enum_values:
+        result["enum_values"] = field_type.enum_values
+    
+    if field_type.element_type:
+        result["element_type"] = _encode_output_field_type(field_type.element_type)
+    
+    if field_type.nested_fields:
+        result["nested_fields"] = [
+            {
+                "name": field.name,
+                "field_type": _encode_output_field_type(field.field_type),
+                "required": field.required,
+                "description": field.description,
+            }
+            for field in field_type.nested_fields
+        ]
+    
+    return result
+
+
+def _encode_output_schema(schema: "OutputSchema", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode an OutputSchema to a dictionary for runtime."""
+    return {
+        "fields": [
+            {
+                "name": field.name,
+                "field_type": _encode_output_field_type(field.field_type),
+                "required": field.required,
+                "description": field.description,
+            }
+            for field in schema.fields
+        ]
+    }
+
+
+def _encode_llm(llm: "LLMDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a first-class LLM definition for the backend runtime."""
+    config_value = _encode_value(llm.config, env_keys)
+    if not isinstance(config_value, dict):
+        config_value = {"value": config_value} if config_value is not None else {}
+    metadata_value = _encode_value(llm.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    payload: Dict[str, Any] = {
+        "name": llm.name,
+        "provider": llm.provider,
+        "model": llm.model,
+        "temperature": llm.temperature,
+        "max_tokens": llm.max_tokens,
+        "config": config_value,
+        "metadata": metadata_value,
+    }
+    if llm.top_p is not None:
+        payload["top_p"] = llm.top_p
+    if llm.frequency_penalty is not None:
+        payload["frequency_penalty"] = llm.frequency_penalty
+    if llm.presence_penalty is not None:
+        payload["presence_penalty"] = llm.presence_penalty
+    return payload
+
+
+def _encode_tool(tool: "ToolDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a first-class Tool definition for the backend runtime."""
+    input_schema_value = _encode_value(tool.input_schema, env_keys)
+    if not isinstance(input_schema_value, dict):
+        input_schema_value = {"value": input_schema_value} if input_schema_value is not None else {}
+    output_schema_value = _encode_value(tool.output_schema, env_keys)
+    if not isinstance(output_schema_value, dict):
+        output_schema_value = {"value": output_schema_value} if output_schema_value is not None else {}
+    headers_value = _encode_value(tool.headers, env_keys)
+    if not isinstance(headers_value, dict):
+        headers_value = {"value": headers_value} if headers_value is not None else {}
+    config_value = _encode_value(tool.config, env_keys)
+    if not isinstance(config_value, dict):
+        config_value = {"value": config_value} if config_value is not None else {}
+    metadata_value = _encode_value(tool.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    payload: Dict[str, Any] = {
+        "name": tool.name,
+        "type": tool.type,
+        "method": tool.method,
+        "input_schema": input_schema_value,
+        "output_schema": output_schema_value,
+        "headers": headers_value,
+        "timeout": tool.timeout,
+        "config": config_value,
+        "metadata": metadata_value,
+    }
+    if tool.endpoint:
+        payload["endpoint"] = tool.endpoint
+    return payload
+
+
+def _encode_chain(chain: "Chain", env_keys: Set[str], memory_names: Set[str]) -> Dict[str, Any]:
+    """Encode a chain definition."""
+    encoded_steps = [
+        _encode_workflow_node(node, env_keys, memory_names, chain.name) for node in chain.steps
+    ]
+    metadata_encoded = _encode_value(chain.metadata, env_keys)
+    if not isinstance(metadata_encoded, dict):
+        metadata_encoded = {"value": metadata_encoded}
+    return {
+        "name": chain.name,
+        "input_key": chain.input_key,
+        "steps": encoded_steps,
+        "metadata": metadata_encoded,
+    }
+
+
+def _encode_workflow_node(
+    node: "WorkflowNode",
+    env_keys: Set[str],
+    memory_names: Set[str],
+    chain_name: str,
+) -> Dict[str, Any]:
+    """Encode a workflow node (step, if, for, while)."""
+    from ....ast import ChainStep, WorkflowForBlock, WorkflowIfBlock, WorkflowWhileBlock
+    
+    if isinstance(node, ChainStep):
+        return _encode_chain_step(node, env_keys, memory_names, chain_name)
+    if isinstance(node, WorkflowIfBlock):
+        payload: Dict[str, Any] = {
+            "type": "if",
+            "condition": _expression_to_runtime(node.condition),
+            "condition_source": _expression_to_source(node.condition),
+            "then": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.then_steps],
+            "elif": [
+                {
+                    "condition": _expression_to_runtime(branch_condition),
+                    "condition_source": _expression_to_source(branch_condition),
+                    "steps": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in branch_steps],
+                }
+                for branch_condition, branch_steps in node.elif_steps
+            ],
+            "else": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.else_steps],
+        }
+        return payload
+    if isinstance(node, WorkflowForBlock):
+        payload: Dict[str, Any] = {
+            "type": "for",
+            "loop_var": node.loop_var,
+            "source_kind": node.source_kind,
+            "body": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.body],
+        }
+        if node.source_name:
+            payload["source_name"] = node.source_name
+        if node.source_expression is not None:
+            payload["source_expression"] = _expression_to_runtime(node.source_expression)
+            payload["source_expression_source"] = _expression_to_source(node.source_expression)
+        if node.max_iterations:
+            payload["max_iterations"] = int(node.max_iterations)
+        return payload
+    if isinstance(node, WorkflowWhileBlock):
+        payload = {
+            "type": "while",
+            "condition": _expression_to_runtime(node.condition),
+            "condition_source": _expression_to_source(node.condition),
+            "body": [_encode_workflow_node(child, env_keys, memory_names, chain_name) for child in node.body],
+        }
+        if node.max_iterations:
+            payload["max_iterations"] = int(node.max_iterations)
+        return payload
+    raise TypeError(f"Unsupported workflow node '{type(node).__name__}' in chain '{chain_name}'")
+
+
+def _encode_chain_step(
+    step: "ChainStep",
+    env_keys: Set[str],
+    memory_names: Set[str],
+    chain_name: str,
+) -> Dict[str, Any]:
+    """Encode a chain step."""
+    options_encoded = _encode_value(step.options, env_keys)
+    if not isinstance(options_encoded, dict):
+        options_encoded = {"value": options_encoded}
+    _validate_chain_memory_options(step.options, memory_names, chain_name, step.kind, step.target)
+    payload: Dict[str, Any] = {
+        "type": "step",
+        "kind": step.kind,
+        "target": step.target,
+        "options": options_encoded,
+        "stop_on_error": bool(step.stop_on_error),
+    }
+    if step.name:
+        payload["name"] = step.name
+    if step.evaluation:
+        evaluation_payload: Dict[str, Any] = {
+            "evaluators": list(step.evaluation.evaluators),
+        }
+        if step.evaluation.guardrail:
+            evaluation_payload["guardrail"] = step.evaluation.guardrail
+        payload["evaluation"] = evaluation_payload
+    return payload
+
+
+def _encode_index(index: "IndexDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a RAG index definition for the backend runtime."""
+    config_value = _encode_value(index.config, env_keys)
+    if not isinstance(config_value, dict):
+        config_value = {"value": config_value} if config_value is not None else {}
+    metadata_value = _encode_value(index.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    
+    payload: Dict[str, Any] = {
+        "name": index.name,
+        "source_dataset": index.source_dataset,
+        "embedding_model": index.embedding_model,
+        "chunk_size": index.chunk_size,
+        "overlap": index.overlap,
+        "backend": index.backend,
+        "config": config_value,
+        "metadata": metadata_value,
+    }
+    
+    if index.namespace is not None:
+        payload["namespace"] = index.namespace
+    if index.collection is not None:
+        payload["collection"] = index.collection
+    if index.table_name is not None:
+        payload["table_name"] = index.table_name
+    if index.metadata_fields is not None:
+        payload["metadata_fields"] = index.metadata_fields
+    
+    return payload
+
+
+def _encode_rag_pipeline(pipeline: "RagPipelineDefinition", env_keys: Set[str]) -> Dict[str, Any]:
+    """Encode a RAG pipeline definition for the backend runtime."""
+    config_value = _encode_value(pipeline.config, env_keys)
+    if not isinstance(config_value, dict):
+        config_value = {"value": config_value} if config_value is not None else {}
+    metadata_value = _encode_value(pipeline.metadata, env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    filters_value = _encode_value(pipeline.filters, env_keys)
+    if not isinstance(filters_value, dict):
+        filters_value = {"value": filters_value} if filters_value is not None else {}
+    
+    payload: Dict[str, Any] = {
+        "name": pipeline.name,
+        "query_encoder": pipeline.query_encoder,
+        "index": pipeline.index,
+        "top_k": pipeline.top_k,
+        "distance_metric": pipeline.distance_metric,
+        "config": config_value,
+        "metadata": metadata_value,
+    }
+    
+    if pipeline.reranker is not None:
+        payload["reranker"] = pipeline.reranker
+    if pipeline.filters is not None:
+        payload["filters"] = filters_value
+    
+    return payload

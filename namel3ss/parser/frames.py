@@ -13,23 +13,69 @@ from namel3ss.ast import (
     FrameRelationship,
     FrameSourceDef,
 )
+# KeywordRegistry import removed - class does not exist
 
 from .datasets import DatasetParserMixin
 
 
 class FrameParserMixin(DatasetParserMixin):
-    """Parsing helpers for N3Frame declarations."""
+    """
+    Parse Frame (data schema) declarations with centralized validation.
+    
+    Handles parsing of structured data frame definitions including:
+    - Schema definition with columns, types, and constraints
+    - Relationships between frames (foreign keys)
+    - Indexes for query optimization
+    - Access policies and permissions
+    - Validation rules and constraints
+    - Source configuration (file/SQL)
+    
+    Syntax:
+        frame "Users" from dataset user_data:
+            description: "User records"
+            column id integer required
+            column name string:
+                description: "Full name"
+                validations:
+                    min_length: 2
+            index "idx_email" on email:
+                unique: true
+            relationship "UserPosts" to frame Posts:
+                local_key: id
+                remote_key: user_id
+            access:
+                public: false
+                roles: [admin, user]
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     def _parse_frame(self, line: str, line_no: int, base_indent: int) -> Frame:
+        """
+        Parse frame definition with schema and configuration.
+        
+        Validates frame name, source, and processes columns, indexes,
+        relationships, and constraints.
+        """
         stripped = line.strip()
         if stripped.endswith(':'):
             stripped = stripped[:-1].rstrip()
         try:
             tokens = shlex.split(stripped)
         except ValueError as exc:
-            raise self._error(f"Unable to parse frame declaration: {exc}", line_no, line)
+            raise self._error(
+                f"Unable to parse frame declaration: {exc}",
+                line_no,
+                line,
+                hint='Check for unmatched quotes or special characters'
+            )
         if len(tokens) < 2 or tokens[0].lower() != 'frame':
-            raise self._error('Expected: frame "Name" [from dataset <source>]:', line_no, line)
+            raise self._error(
+                'Expected: frame "Name" [from dataset <source>]:',
+                line_no,
+                line,
+                hint='Frame declarations must have a name in quotes'
+            )
 
         name = self._strip_quotes(tokens[1])
         source_type = 'dataset'
@@ -57,6 +103,16 @@ class FrameParserMixin(DatasetParserMixin):
             source = name
 
         frame = Frame(name=name, source_type=source_type, source=source)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'frame "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            # Frame without configuration is allowed, return early
+            return frame
 
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -136,10 +192,25 @@ class FrameParserMixin(DatasetParserMixin):
                 source_config = self._parse_frame_source_config(block_indent)
                 frame.source_config = source_config
             else:
-                raise self._error("Expected frame property, column, index, relationship, or constraint", self.pos + 1, nxt)
+                raise self._error(
+                    "Expected frame property, column, index, relationship, or constraint",
+                    self.pos + 1,
+                    nxt,
+                    hint='Valid frame elements: description, column, index, relationship, constraint, access, metadata'
+                )
         return frame
 
     def _parse_frame_column(self, header_line: str, header_indent: int) -> FrameColumn:
+        """
+        Parse frame column definition with type and constraints.
+        
+        Syntax:
+            column name [dtype] [required|optional]:
+                description: "..."
+                default: value
+                validations:
+                    min_length: 2
+        """
         stripped = header_line.strip()
         has_block = stripped.endswith(':')
         header = stripped[:-1] if has_block else stripped
@@ -148,7 +219,12 @@ class FrameParserMixin(DatasetParserMixin):
         except ValueError as exc:
             raise self._error(f"Unable to parse column declaration: {exc}", self.pos, header_line)
         if len(tokens) < 2 or tokens[0].lower() != 'column':
-            raise self._error("Expected: column name [dtype]", self.pos, header_line)
+            raise self._error(
+                "Expected: column name [dtype]",
+                self.pos,
+                header_line,
+                hint='Columns need at least a name, optionally followed by data type'
+            )
         name = self._strip_quotes(tokens[1])
         dtype = 'string'
         nullable = True
@@ -234,6 +310,14 @@ class FrameParserMixin(DatasetParserMixin):
         return validations
 
     def _parse_frame_index(self, header_line: str, header_indent: int) -> FrameIndex:
+        """
+        Parse frame index definition for query optimization.
+        
+        Syntax:
+            index "Name" on column1, column2:
+                unique: true
+                method: btree
+        """
         stripped = header_line.strip()
         has_block = stripped.endswith(':')
         header = stripped[:-1] if has_block else stripped
@@ -242,7 +326,12 @@ class FrameParserMixin(DatasetParserMixin):
         except ValueError as exc:
             raise self._error(f"Unable to parse index declaration: {exc}", self.pos, header_line)
         if len(tokens) < 2 or tokens[0].lower() != 'index':
-            raise self._error('Expected: index "Name" [on columns]', self.pos, header_line)
+            raise self._error(
+                'Expected: index "Name" [on columns]',
+                self.pos,
+                header_line,
+                hint='Indexes need a name and optionally columns to index'
+            )
         name = self._strip_quotes(tokens[1])
         inline_columns: List[str] = []
         for idx, token in enumerate(tokens[2:], start=2):
@@ -267,6 +356,15 @@ class FrameParserMixin(DatasetParserMixin):
         return FrameIndex(name=name, columns=columns, unique=unique, method=method, options=options)
 
     def _parse_frame_relationship(self, header_line: str, header_indent: int) -> FrameRelationship:
+        """
+        Parse frame relationship (foreign key) definition.
+        
+        Syntax:
+            relationship "Name" to frame OtherFrame:
+                local_key: id
+                remote_key: user_id
+                cardinality: one_to_many
+        """
         stripped = header_line.strip()
         has_block = stripped.endswith(':')
         header = stripped[:-1] if has_block else stripped
@@ -275,7 +373,12 @@ class FrameParserMixin(DatasetParserMixin):
         except ValueError as exc:
             raise self._error(f"Unable to parse relationship declaration: {exc}", self.pos, header_line)
         if len(tokens) < 2 or tokens[0].lower() != 'relationship':
-            raise self._error('Expected: relationship "Name"', self.pos, header_line)
+            raise self._error(
+                'Expected: relationship "Name"',
+                self.pos,
+                header_line,
+                hint='Relationships define connections between frames'
+            )
 
         name = self._strip_quotes(tokens[1])
         target_frame: Optional[str] = None
@@ -324,6 +427,15 @@ class FrameParserMixin(DatasetParserMixin):
         )
 
     def _parse_frame_constraint(self, header_line: str, header_indent: int) -> FrameConstraint:
+        """
+        Parse frame-level constraint definition.
+        
+        Syntax:
+            constraint "Name":
+                expression: column > 0
+                message: "Value must be positive"
+                severity: error
+        """
         stripped = header_line.strip()
         has_block = stripped.endswith(':')
         header = stripped[:-1] if has_block else stripped
@@ -332,7 +444,12 @@ class FrameParserMixin(DatasetParserMixin):
         except ValueError as exc:
             raise self._error(f"Unable to parse constraint declaration: {exc}", self.pos, header_line)
         if len(tokens) < 2 or tokens[0].lower() != 'constraint':
-            raise self._error('Expected: constraint "Name"', self.pos, header_line)
+            raise self._error(
+                'Expected: constraint "Name"',
+                self.pos,
+                header_line,
+                hint='Constraints validate data at the frame level'
+            )
         name = self._strip_quotes(tokens[1])
 
         config: Dict[str, Any] = {}

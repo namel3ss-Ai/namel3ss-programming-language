@@ -13,23 +13,67 @@ from namel3ss.ast import (
     ModelMonitoringSpec,
     ModelServingSpec,
 )
+# KeywordRegistry import removed - class does not exist
 
 from .base import ParserBase
 
 
 class ModelParserMixin(ParserBase):
-    """Parsing logic for model declarations."""
+    """
+    Parse ML model declarations with centralized validation.
+    
+    Handles parsing of machine learning model specifications including:
+    - Training configuration (datasets, features, hyperparameters)
+    - Model framework and engine selection
+    - Feature engineering specifications
+    - Monitoring and alerting setup
+    - Serving endpoints and deployment targets
+    - Registry metadata and versioning
+    
+    Syntax:
+        model "MyModel" using xgboost:
+            from dataset train_data
+            target: churn
+            features: age, income, tenure
+            hyperparameters:
+                learning_rate: 0.1
+                max_depth: 6
+            monitoring:
+                schedule: daily
+                metrics:
+                    accuracy: { threshold: 0.8 }
+            serving:
+                endpoints: [api.example.com]
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     def _parse_model(self, line: str, line_no: int, base_indent: int) -> Model:
+        """
+        Parse model definition with training and serving configuration.
+        
+        Validates model name, type, engine, and processes training specs,
+        monitoring, and deployment configuration.
+        """
         raw = line.strip()
         if raw.endswith(':'):
             raw = raw[:-1]
         try:
             parts = shlex.split(raw)
         except ValueError as exc:
-            raise self._error(f"Unable to parse model declaration: {exc}", line_no, line)
+            raise self._error(
+                f"Unable to parse model declaration: {exc}",
+                line_no,
+                line,
+                hint='Check for unmatched quotes or special characters'
+            )
         if len(parts) < 2 or parts[0] != 'model':
-            raise self._error("Expected: model \"Name\" using TYPE", line_no, line)
+            raise self._error(
+                "Expected: model \"Name\" using TYPE",
+                line_no,
+                line,
+                hint='Model declarations must have a name and optionally a type'
+            )
 
         name = parts[1]
         model_type = 'custom'
@@ -38,17 +82,37 @@ class ModelParserMixin(ParserBase):
         if idx < len(parts) and parts[idx].lower() == 'using':
             idx += 1
             if idx >= len(parts):
-                raise self._error("Model type required after 'using'", line_no, line)
+                raise self._error(
+                    "Model type required after 'using'",
+                    line_no,
+                    line,
+                    hint='Specify model type like xgboost, sklearn, tensorflow'
+                )
             model_type = parts[idx]
             idx += 1
         if idx < len(parts) and parts[idx].lower() == 'engine':
             idx += 1
             if idx >= len(parts):
-                raise self._error("Engine name required after 'engine'", line_no, line)
+                raise self._error(
+                    "Engine name required after 'engine'",
+                    line_no,
+                    line,
+                    hint='Specify execution engine for the model'
+                )
             engine = parts[idx]
             idx += 1
 
         model = Model(name=name, model_type=model_type, engine=engine)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'model "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            # Model without configuration is allowed, return early
+            return model
 
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -215,7 +279,12 @@ class ModelParserMixin(ParserBase):
                 metadata = self._parse_kv_block(block_indent)
                 model.metadata.update(metadata)
             else:
-                raise self._error("Unknown directive inside model block", self.pos + 1, nxt)
+                raise self._error(
+                    "Unknown directive inside model block",
+                    self.pos + 1,
+                    nxt,
+                    hint='Valid model directives: from, target, features, framework, hyperparameters, monitoring, serving, etc.'
+                )
 
         return model
 
@@ -292,7 +361,12 @@ class ModelParserMixin(ParserBase):
         except ValueError as exc:
             raise self._error(f"Unable to parse model feature declaration: {exc}", self.pos, header_line)
         if len(tokens) < 2 or tokens[0].lower() != 'feature':
-            raise self._error("Expected: feature \"Name\"", self.pos, header_line)
+            raise self._error(
+                "Expected: feature \"Name\"",
+                self.pos,
+                header_line,
+                hint='Feature specifications must have a name in quotes'
+            )
 
         name = self._strip_quotes(tokens[1])
         config: Dict[str, Any] = {}

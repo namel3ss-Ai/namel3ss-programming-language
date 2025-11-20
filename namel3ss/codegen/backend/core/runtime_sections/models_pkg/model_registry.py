@@ -1,0 +1,33 @@
+def _register_default_model_hooks() -> None:
+    register_model_loader("generic", _generic_loader)
+    register_model_loader("python", _generic_loader)
+    register_model_loader("pytorch", _pytorch_loader)
+    register_model_loader("torch", _pytorch_loader)
+    register_model_loader("sklearn", _sklearn_loader)
+    register_model_loader("scikit-learn", _sklearn_loader)
+    register_model_loader("tensorflow", _tensorflow_loader)
+    register_model_loader("tf", _tensorflow_loader)
+    register_model_loader("onnx", _onnx_loader)
+    register_model_loader("onnxruntime", _onnx_loader)
+
+    register_model_runner("generic", _generic_runner)
+    register_model_runner("callable", _generic_runner)
+    register_model_runner("pytorch", _pytorch_runner)
+    register_model_runner("torch", _pytorch_runner)
+    register_model_runner("sklearn", _sklearn_runner)
+    register_model_runner("scikit-learn", _sklearn_runner)
+    register_model_runner("tensorflow", _tensorflow_runner)
+    register_model_runner("tf", _tensorflow_runner)
+    register_model_runner("onnx", _onnx_runner)
+    register_model_runner("onnxruntime", _onnx_runner)
+
+    register_model_explainer("generic", _default_explainer)
+    register_model_explainer("pytorch", _default_explainer)
+    register_model_explainer("torch", _default_explainer)
+    register_model_explainer("tensorflow", _default_explainer)
+    register_model_explainer("tf", _default_explainer)
+    register_model_explainer("onnx", _default_explainer)
+    register_model_explainer("onnxruntime", _default_explainer)
+
+
+_register_default_model_hooks()

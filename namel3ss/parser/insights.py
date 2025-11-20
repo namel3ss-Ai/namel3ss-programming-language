@@ -21,15 +21,103 @@ from namel3ss.ast import (
 )
 
 from .expressions import ExpressionParserMixin
+# KeywordRegistry import removed - class does not exist
 
 
 class InsightParserMixin(ExpressionParserMixin):
-    """Parsing logic for insight declarations."""
+    """
+    Mixin for parsing business insight declarations.
+    
+    This parser handles comprehensive insight definitions that combine data analysis,
+    metric computation, threshold monitoring, narrative generation, and multi-channel
+    delivery. Insights transform raw data into actionable business intelligence.
+    
+    Syntax Example:
+        insight "Sales Performance" from dataset sales:
+            logic:
+                select sales where region = "North"
+                total_revenue = sum(amount)
+            
+            metrics:
+                revenue:
+                    value: total_revenue
+                    format: currency
+                    target: 100000
+                growth:
+                    value: (current - baseline) / baseline
+                    format: percentage
+            
+            thresholds:
+                low_revenue:
+                    metric: revenue
+                    operator: <
+                    value: 50000
+                    level: warning
+                    message: "Revenue below target"
+            
+            narratives:
+                summary:
+                    template: "Total revenue is {revenue} with {growth} growth"
+            
+            audiences:
+                executives:
+                    persona: executive
+                    channels: dashboard, email
+            
+            channels:
+                dashboard:
+                    kind: web
+                    target: /sales-dashboard
+    
+    Features:
+        - Data logic with selections, filters, and computations
+        - Computed metrics with formatting and baselines
+        - Alert thresholds with configurable operators
+        - Natural language narrative templates
+        - Audience targeting and persona management
+        - Multi-channel delivery (dashboard, email, slack, etc.)
+        - Dataset references and transformations
+        - Parameter configuration
+    
+    Supported Constructs:
+        - logic: Data processing and computation steps
+        - compute: Variable assignments and calculations
+        - metrics: Key performance indicators
+        - thresholds/alerts: Monitoring rules
+        - narratives: Text generation templates
+        - expose: Public interface for insight data
+        - datasets: Additional data source references
+        - parameters: Configuration parameters
+        - audiences: Target user groups
+        - channels: Delivery mechanisms
+        - tags: Categorization metadata
+    """
 
     def _parse_insight(self, line: str, line_no: int, base_indent: int) -> Insight:
+        """
+        Parse an insight declaration.
+        
+        Insights analyze datasets and generate actionable intelligence with
+        metrics, alerts, narratives, and delivery configurations.
+        
+        Syntax: insight "Name" from dataset DATASET:
+        
+        Args:
+            line: The insight declaration line
+            line_no: Current line number
+            base_indent: Indentation level of the insight declaration
+        
+        Returns:
+            Insight AST node
+        """
         match = re.match(r'insight\s+"([^"]+)"\s+from\s+dataset\s+([^:\s]+)\s*:?', line.strip())
         if not match:
-            raise self._error("Expected: insight \"Name\" from dataset DATASET:", line_no, line)
+            raise self._error(
+                "Expected: insight \"Name\" from dataset DATASET:",
+                line_no,
+                line,
+                hint='Insights require a name and source dataset, e.g., insight "Sales Analysis" from dataset sales:'
+            )
         name = match.group(1)
         source_dataset = match.group(2)
         insight = Insight(name=name, source_dataset=source_dataset)
@@ -45,6 +133,15 @@ class InsightParserMixin(ExpressionParserMixin):
                 continue
             if indent <= base_indent:
                 break
+            
+            # Centralized indentation validation
+            self._expect_indent_greater_than(
+                base_indent,
+                nxt,
+                line_no,
+                context="insight body",
+                hint="Insight directives (logic, metrics, thresholds, etc.) must be indented under the insight declaration"
+            )
             lowered = stripped.lower()
             if lowered.startswith('logic:'):
                 block_indent = indent
@@ -143,11 +240,22 @@ class InsightParserMixin(ExpressionParserMixin):
                 metadata = self._parse_kv_block(block_indent)
                 insight.metadata.update(metadata)
             else:
-                raise self._error("Unknown directive inside insight block", self.pos + 1, nxt)
+                raise self._error(
+                    "Unknown directive inside insight block",
+                    self.pos + 1,
+                    nxt,
+                    hint='Valid insight directives: logic, compute, metrics, thresholds, narratives, emit narrative, expose, datasets, parameters, audiences, channels, tags, metadata'
+                )
 
         return insight
 
     def _parse_insight_metrics(self, parent_indent: int) -> List[InsightMetric]:
+        """
+        Parse insight metrics configuration.
+        
+        Metrics define key performance indicators with values, formatting,
+        baselines, targets, and time windows.
+        """
         raw_mapping = self._parse_kv_block(parent_indent)
         metrics: List[InsightMetric] = []
         for name, raw in raw_mapping.items():
@@ -188,6 +296,12 @@ class InsightParserMixin(ExpressionParserMixin):
         return metrics
 
     def _parse_insight_thresholds(self, parent_indent: int) -> List[InsightThreshold]:
+        """
+        Parse insight threshold/alert configurations.
+        
+        Thresholds monitor metrics and trigger alerts when conditions are met,
+        supporting operators like >=, <=, >, <, ==, !=.
+        """
         raw_mapping = self._parse_kv_block(parent_indent)
         thresholds: List[InsightThreshold] = []
         for name, raw in raw_mapping.items():
@@ -219,6 +333,11 @@ class InsightParserMixin(ExpressionParserMixin):
         return thresholds
 
     def _parse_insight_datasets(self, parent_indent: int) -> List[InsightDatasetRef]:
+        """
+        Parse additional dataset references for insights.
+        
+        Datasets can include transforms and role specifications (source, lookup, etc.).
+        """
         mapping = self._parse_kv_block(parent_indent)
         refs: List[InsightDatasetRef] = []
         for key, raw in mapping.items():
@@ -253,6 +372,11 @@ class InsightParserMixin(ExpressionParserMixin):
         return refs
 
     def _parse_insight_audiences(self, parent_indent: int) -> List[InsightAudience]:
+        """
+        Parse audience targeting configuration.
+        
+        Audiences define user personas with specific needs and preferred channels.
+        """
         mapping = self._parse_kv_block(parent_indent)
         audiences: List[InsightAudience] = []
         for name, raw in mapping.items():
@@ -280,6 +404,12 @@ class InsightParserMixin(ExpressionParserMixin):
         return audiences
 
     def _parse_insight_channels(self, parent_indent: int) -> List[InsightDeliveryChannel]:
+        """
+        Parse delivery channel configurations.
+        
+        Channels define how insights are delivered (dashboard, email, slack, etc.)
+        with scheduling and targeting options.
+        """
         mapping = self._parse_kv_block(parent_indent)
         channels: List[InsightDeliveryChannel] = []
         for name, raw in mapping.items():
@@ -349,6 +479,12 @@ class InsightParserMixin(ExpressionParserMixin):
         return steps
 
     def _parse_insight_narratives(self, parent_indent: int) -> List[InsightNarrative]:
+        """
+        Parse narrative text templates.
+        
+        Narratives convert metrics into natural language descriptions with
+        template interpolation and styling options.
+        """
         raw_mapping = self._parse_kv_block(parent_indent)
         narratives: List[InsightNarrative] = []
         for name, raw in raw_mapping.items():
@@ -376,6 +512,12 @@ class InsightParserMixin(ExpressionParserMixin):
         return narratives
 
     def _parse_insight_compute(self, parent_indent: int) -> List[InsightAssignment]:
+        """
+        Parse compute block with variable assignments.
+        
+        Compute blocks define calculations using assignment syntax:
+        variable_name = expression
+        """
         assignments: List[InsightAssignment] = []
         while self.pos < len(self.lines):
             line = self._peek()
@@ -389,10 +531,20 @@ class InsightParserMixin(ExpressionParserMixin):
             if indent <= parent_indent:
                 break
             if '=' not in stripped:
-                raise self._error("Expected assignment inside compute block", self.pos + 1, line)
+                raise self._error(
+                    "Expected assignment inside compute block",
+                    self.pos + 1,
+                    line,
+                    hint='Use assignment syntax: variable_name = expression'
+                )
             eq_index = stripped.find('=')
             if eq_index <= 0:
-                raise self._error("Invalid assignment syntax inside compute block", self.pos + 1, line)
+                raise self._error(
+                    "Invalid assignment syntax inside compute block",
+                    self.pos + 1,
+                    line,
+                    hint='Ensure variable name comes before = sign'
+                )
             name = stripped[:eq_index].strip()
             expression_text = stripped[eq_index + 1:].strip()
             expression = self._parse_expression(expression_text)
@@ -401,6 +553,11 @@ class InsightParserMixin(ExpressionParserMixin):
         return assignments
 
     def _parse_insight_emit_block(self, parent_indent: int, *, kind: str) -> List[InsightEmit]:
+        """
+        Parse emit block for narrative or data output.
+        
+        Emit blocks generate output content to be delivered through channels.
+        """
         emits: List[InsightEmit] = []
         while self.pos < len(self.lines):
             line = self._peek()
@@ -419,6 +576,14 @@ class InsightParserMixin(ExpressionParserMixin):
         return emits
 
     def _parse_insight_logic(self, parent_indent: int) -> List[InsightLogicStep]:
+        """
+        Parse insight logic block with data operations.
+        
+        Logic blocks support:
+        - Assignments: variable = expression
+        - Selections: select DATASET where CONDITION order by COLUMNS limit N
+        - Emissions: emit KIND content
+        """
         steps: List[InsightLogicStep] = []
         while self.pos < len(self.lines):
             line = self._peek()
@@ -493,13 +658,23 @@ class InsightParserMixin(ExpressionParserMixin):
                 emit_body = stripped[5:]
                 parts = shlex.split(emit_body)
                 if not parts:
-                    raise self._error("Emit statements must specify a kind", self.pos + 1, line)
+                    raise self._error(
+                        "Emit statements must specify a kind",
+                        self.pos + 1,
+                        line,
+                        hint='Use: emit narrative "text" or emit data variable_name'
+                    )
                 kind = parts[0]
                 content = ' '.join(parts[1:]) if len(parts) > 1 else ''
                 steps.append(InsightEmit(kind=kind, content=content))
                 self._advance()
                 continue
 
-            raise self._error("Unknown insight logic directive", self.pos + 1, line)
+            raise self._error(
+                "Unknown insight logic directive",
+                self.pos + 1,
+                line,
+                hint='Valid logic operations: assignments (var = expr), select statements, emit statements'
+            )
 
         return steps

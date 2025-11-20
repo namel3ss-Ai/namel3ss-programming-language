@@ -27,13 +27,43 @@ from namel3ss.ast.logic import (
     KnowledgeModule,
 )
 from namel3ss.parser.base import ParserBase
+# KeywordRegistry import removed - class does not exist
 
 
 class LogicParserMixin(ParserBase):
     """
     Mixin for parsing logic programming constructs.
     
-    This parser handles Prolog-style syntax for facts, rules, and queries.
+    This parser handles Prolog-style syntax for declarative knowledge representation,
+    including facts, rules, queries, and knowledge modules. The logic system supports
+    symbolic reasoning and inference over structured data.
+    
+    Syntax Example:
+        knowledge "family":
+            fact parent(alice, bob).
+            fact parent(bob, carol).
+            rule ancestor(X, Y) :- parent(X, Y).
+            rule ancestor(X, Z) :- parent(X, Y), ancestor(Y, Z).
+        
+        query "find_ancestors":
+            from knowledge "family":
+                goal ancestor(X, carol).
+                limit: 10
+    
+    Features:
+        - Prolog-style terms: variables (X, _Var), atoms (alice), numbers (42), strings ("text")
+        - Compound structures: functor(arg1, arg2, ...)
+        - Lists with pattern matching: [H|T], [1, 2, 3]
+        - Facts: ground truths (parent(alice, bob))
+        - Rules: inference patterns (ancestor(X, Y) :- parent(X, Y))
+        - Queries: goal-directed search with knowledge sources
+        - Knowledge modules: organized collections of facts and rules
+    
+    Supported Constructs:
+        - knowledge module declarations
+        - fact statements
+        - rule definitions with body goals
+        - query specifications with goals and constraints
     """
     
     # ========================================================================
@@ -233,11 +263,21 @@ class LogicParserMixin(ParserBase):
         """
         Parse a knowledge module block.
         
-        Example:
-            knowledge "family":
+        Knowledge modules are containers for facts and rules that define
+        a logical knowledge base for reasoning and inference.
+        
+        Syntax:
+            knowledge "module_name":
                 fact parent(alice, bob).
-                fact parent(bob, carol).
                 rule ancestor(X, Y) :- parent(X, Y).
+        
+        Args:
+            line: The knowledge declaration line
+            line_no: Current line number
+            base_indent: Indentation level of the knowledge declaration
+        
+        Returns:
+            KnowledgeModule AST node
         """
         # Extract module name
         match = re.match(r'knowledge\s+"([^"]+)":', line.strip())
@@ -245,7 +285,12 @@ class LogicParserMixin(ParserBase):
             match = re.match(r'knowledge\s+([a-z_][a-z0-9_]*):', line.strip())
         
         if not match:
-            raise self._error('Expected: knowledge "name":', line_no, line)
+            raise self._error(
+                'Expected: knowledge "name":',
+                line_no,
+                line,
+                hint='Knowledge modules require a name in quotes, e.g., knowledge "family":'
+            )
         
         name = match.group(1)
         module = KnowledgeModule(name=name, line=line_no)
@@ -266,6 +311,15 @@ class LogicParserMixin(ParserBase):
             if indent <= base_indent:
                 break
             
+            # Centralized indentation validation
+            self._expect_indent_greater_than(
+                base_indent,
+                nxt,
+                line_no,
+                context="knowledge module body",
+                hint="Knowledge elements (facts, rules) must be indented under the knowledge declaration"
+            )
+            
             # Parse fact or rule
             if stripped.startswith('fact '):
                 fact = self._parse_fact(nxt, line_no, indent)
@@ -284,13 +338,23 @@ class LogicParserMixin(ParserBase):
                     module.imports.append(import_match.group(1))
                     self._advance()
                 else:
-                    raise self._error('Expected: import "module_name"', line_no, nxt)
+                    raise self._error(
+                        'Expected: import "module_name"',
+                        line_no,
+                        nxt,
+                        hint='Import other knowledge modules with: import "module_name"'
+                    )
             elif stripped.startswith('description:'):
                 desc_text = stripped[len('description:'):].strip()
                 module.description = desc_text
                 self._advance()
             else:
-                raise self._error(f"Expected 'fact' or 'rule', got: {stripped}", line_no, nxt)
+                raise self._error(
+                    f"Expected 'fact' or 'rule', got: {stripped}",
+                    line_no,
+                    nxt,
+                    hint='Valid knowledge directives: fact, rule, import, description'
+                )
         
         return module
     
@@ -374,10 +438,23 @@ class LogicParserMixin(ParserBase):
         """
         Parse a query block.
         
-        Example:
-            query "find_ancestors":
-                from knowledge "family":
-                    goal ancestor(X, carol).
+        Queries define goal-directed searches over knowledge bases,
+        with optional constraints and result limits.
+        
+        Syntax:
+            query "query_name":
+                from knowledge "module":
+                    goal functor(Var1, Var2).
+                    limit: 10
+                    variables: X, Y, Z
+        
+        Args:
+            line: The query declaration line
+            line_no: Current line number
+            base_indent: Indentation level of the query declaration
+        
+        Returns:
+            LogicQuery AST node
         """
         # Extract query name
         match = re.match(r'query\s+"([^"]+)":', line.strip())
@@ -385,7 +462,12 @@ class LogicParserMixin(ParserBase):
             match = re.match(r'query\s+([a-z_][a-z0-9_]*):', line.strip())
         
         if not match:
-            raise self._error('Expected: query "name":', line_no, line)
+            raise self._error(
+                'Expected: query "name":',
+                line_no,
+                line,
+                hint='Queries require a name in quotes, e.g., query "find_ancestors":'
+            )
         
         name = match.group(1)
         query = LogicQuery(name=name, line=line_no)
@@ -406,6 +488,15 @@ class LogicParserMixin(ParserBase):
             if indent <= base_indent:
                 break
             
+            # Centralized indentation validation
+            self._expect_indent_greater_than(
+                base_indent,
+                nxt,
+                line_no,
+                context="query body",
+                hint="Query directives (from knowledge, goal, limit, variables) must be indented under the query declaration"
+            )
+            
             # Parse query directives
             if stripped.startswith('from knowledge '):
                 # Knowledge source
@@ -416,7 +507,12 @@ class LogicParserMixin(ParserBase):
                     query.knowledge_sources.append(source_match.group(1))
                     self._advance()
                 else:
-                    raise self._error('Expected: from knowledge "name":', line_no, nxt)
+                    raise self._error(
+                        'Expected: from knowledge "name":',
+                        line_no,
+                        nxt,
+                        hint='Specify knowledge sources with: from knowledge "module_name":'
+                    )
             elif stripped.startswith('goal '):
                 # Parse goal
                 goal_text = stripped[5:].strip()
@@ -425,7 +521,12 @@ class LogicParserMixin(ParserBase):
                 
                 goal = self._parse_logic_term(goal_text, line_no)
                 if not isinstance(goal, LogicStruct):
-                    raise self._error(f"Goal must be a structure: {goal_text}", line_no, nxt)
+                    raise self._error(
+                        f"Goal must be a structure: {goal_text}",
+                        line_no,
+                        nxt,
+                        hint='Goals must be structured terms like: goal ancestor(X, Y).'
+                    )
                 query.goals.append(goal)
                 self._advance()
             elif stripped.startswith('limit:'):
@@ -434,7 +535,12 @@ class LogicParserMixin(ParserBase):
                 try:
                     query.limit = int(limit_text)
                 except ValueError:
-                    raise self._error(f"Invalid limit value: {limit_text}", line_no, nxt)
+                    raise self._error(
+                        f"Invalid limit value: {limit_text}",
+                        line_no,
+                        nxt,
+                        hint='Limit must be an integer, e.g., limit: 10'
+                    )
                 self._advance()
             elif stripped.startswith('variables:'):
                 # Parse variable list
@@ -442,7 +548,12 @@ class LogicParserMixin(ParserBase):
                 query.variables = [v.strip() for v in vars_text.split(',') if v.strip()]
                 self._advance()
             else:
-                raise self._error(f"Unknown query directive: {stripped}", line_no, nxt)
+                raise self._error(
+                    f"Unknown query directive: {stripped}",
+                    line_no,
+                    nxt,
+                    hint='Valid query directives: from knowledge, goal, limit, variables'
+                )
         
         return query
 

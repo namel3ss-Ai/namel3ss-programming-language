@@ -2,6 +2,7 @@
 
 from .application import App, Page
 from .crud import CrudResource
+from .source_location import SourceLocation
 from .base import (
     AttributeRef,
     BinaryOp,
@@ -111,30 +112,39 @@ from .models import (
     ModelServingSpec,
     ModelTrainingSpec,
 )
-from .ai import (
-    AIModel,
-    Chain,
-    ChainStep,
-    Connector,
-    EarlyStoppingSpec,
+# AI-related imports (modularized from ai.py)
+from .ai_connectors import Connector
+from .ai_models import AIModel
+from .ai_templates import Template
+from .ai_memory import Memory
+from .ai_prompts import (
     EnumType,
-    HyperparamSpec,
-    Memory,
     OutputField,
     OutputFieldType,
     OutputSchema,
     Prompt,
     PromptArgument,
     PromptField,
+)
+from .ai_workflows import (
+    Chain,
+    ChainStep,
     StepEvaluationConfig,
-    Template,
+    WorkflowForBlock,
+    WorkflowIfBlock,
+    WorkflowNode,
+    WorkflowWhileBlock,
+)
+from .ai_training import (
+    EarlyStoppingSpec,
+    HyperparamSpec,
     TrainingComputeSpec,
     TrainingJob,
     TuningJob,
-    WorkflowIfBlock,
-    WorkflowForBlock,
-    WorkflowWhileBlock,
-    WorkflowNode,
+)
+from .ai_tools import (
+    LLMDefinition,
+    ToolDefinition,
 )
 from .modules import ImportedName, Import, ModuleSpec
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
@@ -191,6 +201,7 @@ __all__ = [
     "App",
     "Page",
     "Theme",
+    "SourceLocation",
     "Expression",
     "Literal",
     "NameRef",
@@ -300,6 +311,13 @@ __all__ = [
     "WorkflowForBlock",
     "WorkflowWhileBlock",
     "WorkflowNode",
+    "PromptArgument",
+    "EnumType",
+    "OutputFieldType",
+    "OutputField",
+    "OutputSchema",
+    "LLMDefinition",
+    "ToolDefinition",
     "Import",
     "ImportedName",
     "ModuleSpec",

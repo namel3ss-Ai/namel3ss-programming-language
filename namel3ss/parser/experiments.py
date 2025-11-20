@@ -5,21 +5,67 @@ import shlex
 from typing import Any, Dict, List
 
 from namel3ss.ast import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
+# KeywordRegistry import removed - class does not exist
 
 from .base import ParserBase
 
 
 class ExperimentParserMixin(ParserBase):
-    """Parsing logic for experiment declarations."""
+    """
+    Parse experiment declarations with centralized validation.
+    
+    Handles parsing of ML/AI experiment specifications including:
+    - Experiment metadata and configuration
+    - Variant definitions (different models/chains to compare)
+    - Evaluation metrics and datasets
+    - Comparison specifications (baseline vs challengers)
+    - Training and tuning job references
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     _EXPERIMENT_HEADER = re.compile(r'^experiment\s+"([^"]+)"\s*:?', re.IGNORECASE)
 
     def _parse_experiment(self, line: str, line_no: int, base_indent: int) -> Experiment:
+        """
+        Parse experiment definition with variants and metrics.
+        
+        Syntax:
+            experiment "Name":
+                description: "..."
+                variants:
+                    variant_a uses model model_a
+                    variant_b uses chain chain_b
+                metrics:
+                    accuracy from evaluator eval_1 goal maximize
+                compare:
+                    baseline: variant_a
+                    challengers: [variant_b]
+        """
         match = self._EXPERIMENT_HEADER.match(line.strip())
         if not match:
-            raise self._error('Expected: experiment "Name":', line_no, line)
+            raise self._error(
+                'Expected: experiment "Name":',
+                line_no,
+                line,
+                hint='Experiment definitions must have a name in quotes'
+            )
         name = match.group(1)
         experiment = Experiment(name=name)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'experiment "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Experiment "{name}" requires an indented configuration block',
+                line_no,
+                line,
+                hint='Add indented lines with variants, metrics, etc.'
+            )
 
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -100,6 +146,15 @@ class ExperimentParserMixin(ParserBase):
         return experiment
 
     def _parse_experiment_variants(self, parent_indent: int) -> List[ExperimentVariant]:
+        """
+        Parse experiment variant specifications.
+        
+        Each variant specifies a model or chain to include in the experiment.
+        
+        Example:
+            variant_a uses model gpt4
+            variant_b uses chain my_chain with temperature=0.7
+        """
         variants: List[ExperimentVariant] = []
         while self.pos < len(self.lines):
             line = self._peek()
@@ -124,9 +179,19 @@ class ExperimentParserMixin(ParserBase):
         return variants
 
     def _parse_variant_line(self, text: str, line_no: int, raw_line: str) -> ExperimentVariant:
+        """
+        Parse a single variant specification line.
+        
+        Format: <name> uses model|chain <target> [with key=value ...]
+        """
         match = re.match(r'^([A-Za-z0-9_\-]+)\s+uses\s+(model|chain)\s+([A-Za-z0-9_\-\.]+)(?:\s+(.*))?$', text)
         if not match:
-            raise self._error("Expected '<name> uses model|chain <target>'", line_no, raw_line)
+            raise self._error(
+                "Expected '<name> uses model|chain <target>'",
+                line_no,
+                raw_line,
+                hint='Variants specify what model or chain to test'
+            )
         name = match.group(1)
         target_type = match.group(2)
         target_name = match.group(3)
@@ -160,6 +225,15 @@ class ExperimentParserMixin(ParserBase):
         return assignments
 
     def _parse_experiment_metrics(self, parent_indent: int) -> List[ExperimentMetric]:
+        """
+        Parse experiment metric specifications.
+        
+        Metrics define how to evaluate variant performance.
+        
+        Example:
+            accuracy from evaluator eval_1 goal maximize
+            latency from evaluator eval_2 goal minimize
+        """
         metrics: List[ExperimentMetric] = []
         while self.pos < len(self.lines):
             line = self._peek()
@@ -184,6 +258,11 @@ class ExperimentParserMixin(ParserBase):
         return metrics
 
     def _parse_experiment_comparison(self, data: Dict[str, Any]) -> ExperimentComparison:
+        """
+        Parse comparison specification from key-value data.
+        
+        Defines baseline model and challenger variants for comparison.
+        """
         baseline = data.pop('baseline_model', data.pop('baseline', None))
         best_of = data.pop('best_of', data.pop('select', None))
         challengers = data.pop('challengers', data.pop('compare', []))
@@ -205,9 +284,19 @@ class ExperimentParserMixin(ParserBase):
         )
 
     def _parse_metric_line(self, text: str, line_no: int, raw_line: str) -> ExperimentMetric:
+        """
+        Parse a single metric specification line.
+        
+        Format: <name> [from <kind> <source>] [goal <maximize|minimize>] [with ...]
+        """
         tokens = text.split()
         if not tokens:
-            raise self._error("Empty metric definition", line_no, raw_line)
+            raise self._error(
+                "Empty metric definition",
+                line_no,
+                raw_line,
+                hint='Metrics need at least a name'
+            )
         name = tokens[0]
         source_kind = None
         source_name = None

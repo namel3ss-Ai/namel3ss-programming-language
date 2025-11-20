@@ -4,21 +4,81 @@ import re
 from typing import Any, Dict, List
 
 from namel3ss.ast import Evaluator, Metric, Guardrail, EvalSuiteDefinition, EvalMetricSpec
+# KeywordRegistry import removed - class does not exist
 
 from .base import ParserBase, N3SyntaxError
 
 
 class EvaluationParserMixin(ParserBase):
-    """Parser helpers for evaluator, metric, guardrail, and eval_suite declarations."""
+    """
+    Parse evaluation system declarations with centralized validation.
+    
+    Handles parsing of AI/ML evaluation constructs:
+    - Evaluators: LLM-based or rule-based evaluation functions
+    - Metrics: Aggregated evaluation measurements
+    - Guardrails: Safety checks with actions on failure
+    - Eval Suites: Complete evaluation specifications with datasets and metrics
+    
+    Syntax examples:
+        evaluator "Accuracy":
+            kind: classification
+            provider: sklearn
+            
+        metric "F1 Score":
+            evaluator: accuracy_eval
+            aggregation: mean
+            
+        guardrail "Content Safety":
+            evaluators: [toxicity_check, pii_detector]
+            action: block
+            
+        eval_suite test_suite:
+            dataset: test_data
+            target_chain: my_chain
+            metrics:
+                - { name: "accuracy", type: "classification" }
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     def _parse_evaluator(self, line: str, line_no: int, base_indent: int) -> Evaluator:
+        """
+        Parse evaluator definition with kind and provider.
+        
+        Syntax:
+            evaluator "Name":
+                kind: classification
+                provider: sklearn
+                config:
+                    threshold: 0.5
+        """
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
         match = re.match(r'evaluator\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
         if not match:
-            raise self._error('Expected: evaluator "Name":', line_no, line)
+            raise self._error(
+                'Expected: evaluator "Name":',
+                line_no,
+                line,
+                hint='Evaluator definitions must have a name in quotes'
+            )
         name = match.group(1)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'evaluator "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Evaluator "{name}" requires an indented configuration block',
+                line_no,
+                line,
+                hint='Add indented lines with kind, provider, and config'
+            )
+        
         block = self._parse_kv_block(base_indent)
         kind_raw = block.get("kind")
         provider_raw = block.get("provider")
@@ -36,13 +96,43 @@ class EvaluationParserMixin(ParserBase):
         )
 
     def _parse_metric(self, line: str, line_no: int, base_indent: int) -> Metric:
+        """
+        Parse metric definition with evaluator reference.
+        
+        Syntax:
+            metric "Name":
+                evaluator: evaluator_name
+                aggregation: mean
+                params:
+                    threshold: 0.8
+        """
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
         match = re.match(r'metric\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
         if not match:
-            raise self._error('Expected: metric "Name":', line_no, line)
+            raise self._error(
+                'Expected: metric "Name":',
+                line_no,
+                line,
+                hint='Metric definitions must have a name in quotes'
+            )
         name = match.group(1)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'metric "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Metric "{name}" requires an indented configuration block',
+                line_no,
+                line,
+                hint='Add indented "evaluator:" line'
+            )
+        
         block = self._parse_kv_block(base_indent)
         evaluator_name = block.get("evaluator")
         if evaluator_name is None:
@@ -58,13 +148,42 @@ class EvaluationParserMixin(ParserBase):
         )
 
     def _parse_guardrail(self, line: str, line_no: int, base_indent: int) -> Guardrail:
+        """
+        Parse guardrail definition with evaluators and action.
+        
+        Syntax:
+            guardrail "Name":
+                evaluators: [check1, check2]
+                action: block
+                message: "Safety check failed"
+        """
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
         match = re.match(r'guardrail\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
         if not match:
-            raise self._error('Expected: guardrail "Name":', line_no, line)
+            raise self._error(
+                'Expected: guardrail "Name":',
+                line_no,
+                line,
+                hint='Guardrail definitions must have a name in quotes'
+            )
         name = match.group(1)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'guardrail "{name}"',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Guardrail "{name}" requires an indented configuration block',
+                line_no,
+                line,
+                hint='Add indented lines with evaluators and action'
+            )
+        
         block = self._parse_kv_block(base_indent)
         evaluators_raw = block.get("evaluators")
         evaluators: List[str] = []
@@ -86,14 +205,45 @@ class EvaluationParserMixin(ParserBase):
         )
 
     def _parse_eval_suite(self, line: str, line_no: int, base_indent: int) -> EvalSuiteDefinition:
-        """Parse an eval_suite block."""
+        """
+        Parse eval_suite definition with comprehensive evaluation specification.
+        
+        Syntax:
+            eval_suite test_suite:
+                dataset: test_data
+                target_chain: my_chain
+                judge_llm: gpt4
+                rubric: '''Evaluation criteria...'''
+                metrics:
+                    - { name: "accuracy", type: "classification" }
+                    - { name: "latency", type: "performance" }
+        """
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
         match = re.match(r'eval_suite\s+(\w+)', stripped, flags=re.IGNORECASE)
         if not match:
-            raise self._error('Expected: eval_suite <identifier>', line_no, line)
+            raise self._error(
+                'Expected: eval_suite <identifier>',
+                line_no,
+                line,
+                hint='Eval suite names must be valid identifiers'
+            )
         name = match.group(1)
+        
+        # Validate indented block
+        indent_info = self._expect_indent_greater_than(
+            base_indent,
+            context=f'eval_suite {name}',
+            line_no=line_no
+        )
+        if not indent_info:
+            raise self._error(
+                f'Eval suite {name} requires an indented configuration block',
+                line_no,
+                line,
+                hint='Add indented lines with dataset, target_chain, and metrics'
+            )
         
         dataset_name: str = ""
         target_chain_name: str = ""
@@ -215,7 +365,14 @@ class EvaluationParserMixin(ParserBase):
         )
     
     def _parse_eval_metrics_list(self, base_indent: int) -> List[EvalMetricSpec]:
-        """Parse a list of metric specifications."""
+        """
+        Parse list of metric specifications in eval suite.
+        
+        Supports both inline and block formats:
+            - { name: "accuracy", type: "classification" }
+            - name: accuracy
+              type: classification
+        """
         metrics: List[EvalMetricSpec] = []
         
         while self.pos < len(self.lines):

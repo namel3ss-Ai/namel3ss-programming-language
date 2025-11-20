@@ -21,15 +21,74 @@ from namel3ss.ast import (
 
 from .actions import ActionParserMixin
 from .base import N3SyntaxError
+# KeywordRegistry import removed - class does not exist
 
 
 class ComponentParserMixin(ActionParserMixin):
-    """Parsing helpers for component-level statements within pages."""
+    """
+    Mixin for parsing UI component statements within pages.
+    
+    This parser handles visual display components including text displays,
+    tables, charts, forms, predictions, and variable assignments. These
+    components define the interactive elements and data visualizations
+    presented to users on N3 pages.
+    
+    Syntax Example:
+        show text "Welcome to Dashboard":
+            color: blue
+            font size: 18px
+        
+        show table "Sales Data" from dataset sales:
+            columns: product, quantity, revenue
+            filter by: quantity > 0
+            sort by: revenue desc
+        
+        show chart "Revenue Trend" from table sales:
+            type: line
+            x: month
+            y: revenue
+            color: region
+        
+        show form "Add Product":
+            fields: name:text, price:number, category:select
+            on submit:
+                create record in table products
+        
+        predict using model sales_forecast with dataset recent_sales into variable forecast
+    
+    Features:
+        - Text displays with styling options
+        - Data tables with filtering, sorting, column selection
+        - Charts with multiple types (bar, line, pie, scatter) and configurations
+        - Forms with field definitions and submit actions
+        - ML predictions with model inference
+        - Variable assignments for data manipulation
+    
+    Supported Components:
+        - show text: Display text with styling
+        - show table: Tabular data display
+        - show chart: Data visualizations
+        - show form: Input forms with validation
+        - predict: ML model inference
+        - set: Variable assignment
+    """
 
     def _parse_show_text(self, line: str, base_indent: int) -> ShowText:
+        """
+        Parse a text display component.
+        
+        Syntax: show text "Message"
+        
+        Optional styling properties can be specified in indented block.
+        """
         match = re.match(r'show\s+text\s+"([^"]+)"\s*$', line.strip())
         if not match:
-            raise self._error("Expected: show text \"Message\"", self.pos, line)
+            raise self._error(
+                "Expected: show text \"Message\"",
+                self.pos,
+                line,
+                hint='Text components require a message in quotes, e.g., show text "Hello World"'
+            )
         text = match.group(1)
         styles: Dict[str, str] = {}
         while self.pos < len(self.lines):
@@ -43,6 +102,15 @@ class ComponentParserMixin(ActionParserMixin):
                 continue
             if indent <= base_indent:
                 break
+            
+            # Centralized indentation validation
+            self._expect_indent_greater_than(
+                base_indent,
+                nxt,
+                self.pos,
+                context="show text style properties",
+                hint="Style properties must be indented under the show text declaration"
+            )
             match_style = re.match(r'([\w\s]+):\s*(.+)', stripped)
             if not match_style:
                 break
@@ -53,6 +121,13 @@ class ComponentParserMixin(ActionParserMixin):
         return ShowText(text=text, styles=styles)
 
     def _parse_show_table(self, line: str, base_indent: int) -> ShowTable:
+        """
+        Parse a table display component.
+        
+        Syntax: show table "Title" from table|dataset|frame SOURCE
+        
+        Supports columns, filtering, sorting, styling, and layout configuration.
+        """
         match = re.match(
             r'show\s+table\s+"([^\"]+)"\s+from\s+(table|dataset|frame)\s+([^\s]+)\s*$',
             line.strip(),
@@ -62,6 +137,7 @@ class ComponentParserMixin(ActionParserMixin):
                 "Expected: show table \"Title\" from table|dataset|frame SOURCE",
                 self.pos,
                 line,
+                hint='Table components require a title and data source, e.g., show table "Sales" from dataset sales'
             )
         title = match.group(1)
         source_type = match.group(2)
@@ -120,6 +196,7 @@ class ComponentParserMixin(ActionParserMixin):
                         "Expected table property ('columns:', 'filter by:', 'sort by:' or style)",
                         self.pos + 1,
                         nxt,
+                        hint='Valid table properties: columns, filter by, sort by, style, layout, insight'
                     )
                 key = match_style.group(1).strip()
                 value = self._coerce_scalar(match_style.group(2).strip())
@@ -144,6 +221,14 @@ class ComponentParserMixin(ActionParserMixin):
         )
 
     def _parse_show_chart(self, line: str, base_indent: int) -> ShowChart:
+        """
+        Parse a chart display component.
+        
+        Syntax: show chart "Title" from table|dataset|frame|file SOURCE
+        
+        Supports chart types (bar, line, pie, scatter), axes mapping,
+        styling, legends, and layout configuration.
+        """
         match = re.match(
             r'show\s+chart\s+"([^\"]+)"\s+from\s+(table|dataset|frame|file)\s+([^\s]+)\s*$',
             line.strip(),
@@ -153,6 +238,7 @@ class ComponentParserMixin(ActionParserMixin):
                 "Expected: show chart \"Title\" from table|dataset|frame|file SOURCE",
                 self.pos,
                 line,
+                hint='Chart components require a title and data source, e.g., show chart "Revenue" from dataset sales'
             )
         heading = match.group(1)
         source_type = match.group(2)
@@ -264,6 +350,7 @@ class ComponentParserMixin(ActionParserMixin):
                         "Expected chart property ('type:', 'x:', 'y:', 'color:', 'title:', 'legend:', 'colors:', 'axes:', 'style:' or layout)",
                         self.pos + 1,
                         nxt,
+                        hint='Valid chart properties: type, x, y, color, title, legend, colors, axes, style, layout, insight'
                     )
                 key = match_style.group(1).strip()
                 value = self._coerce_scalar(match_style.group(2).strip())
@@ -294,9 +381,21 @@ class ComponentParserMixin(ActionParserMixin):
         )
 
     def _parse_show_form(self, line: str, base_indent: int) -> ShowForm:
+        """
+        Parse a form input component.
+        
+        Syntax: show form "Title":
+        
+        Forms include field definitions and submit action handlers.
+        """
         match = re.match(r'show\s+form\s+"([^\"]+)"\s*:?', line.strip())
         if not match:
-            raise self._error("Expected: show form \"Title\":", self.pos, line)
+            raise self._error(
+                "Expected: show form \"Title\":",
+                self.pos,
+                line,
+                hint='Form components require a title in quotes, e.g., show form "User Registration":'
+            )
         title = match.group(1)
         fields: List[FormField] = []
         on_submit_ops: List[ActionOperationType] = []
@@ -351,6 +450,7 @@ class ComponentParserMixin(ActionParserMixin):
                         "Expected form property ('fields:', 'on submit:' or style)",
                         self.pos + 1,
                         nxt,
+                        hint='Valid form properties: fields, on submit, layout, and style properties'
                     )
                 key = match_style.group(1).strip()
                 value = match_style.group(2).strip()
@@ -365,22 +465,49 @@ class ComponentParserMixin(ActionParserMixin):
         )
 
     def _parse_predict_statement(self, line: str, base_indent: int) -> PredictStatement:
+        """
+        Parse a prediction statement for ML model inference.
+        
+        Syntax: predict using model MODEL_NAME with dataset|table|payload|variables SOURCE into variable|dataset|insight TARGET
+        
+        Executes ML model predictions on input data and stores results.
+        """
         stripped = line.strip()
         try:
             tokens = shlex.split(stripped)
         except ValueError as exc:
-            raise self._error(f"Unable to parse predict statement: {exc}", self.pos, line)
+            raise self._error(
+                f"Unable to parse predict statement: {exc}",
+                self.pos,
+                line,
+                hint='Check for unmatched quotes in predict statement'
+            )
         if not tokens or tokens[0] != 'predict':
-            raise self._error("Predict statements must start with 'predict'", self.pos, line)
+            raise self._error(
+                "Predict statements must start with 'predict'",
+                self.pos,
+                line,
+                hint='Use: predict using model MODEL_NAME with dataset SOURCE'
+            )
 
         idx = 1
         if idx < len(tokens) and tokens[idx].lower() == 'using':
             idx += 1
         if idx >= len(tokens) or tokens[idx].lower() != 'model':
-            raise self._error("Predict statements require 'using model'", self.pos, line)
+            raise self._error(
+                "Predict statements require 'using model'",
+                self.pos,
+                line,
+                hint='Syntax: predict using model MODEL_NAME'
+            )
         idx += 1
         if idx >= len(tokens):
-            raise self._error("Model name is required for predict statements", self.pos, line)
+            raise self._error(
+                "Model name is required for predict statements",
+                self.pos,
+                line,
+                hint='Specify the model to use, e.g., predict using model sales_forecast'
+            )
         model_name = tokens[idx]
         idx += 1
 
@@ -452,28 +579,52 @@ class ComponentParserMixin(ActionParserMixin):
         )
 
     def _parse_variable_assignment(self, line: str, line_no: int, base_indent: int) -> VariableAssignment:
+        """
+        Parse a variable assignment statement.
+        
+        Syntax: set variable_name = expression
+        
+        Variables store computed values for later use in the page.
+        """
         stripped = line.strip()
         if not stripped.startswith('set '):
-            raise self._error("Expected 'set' at start of variable assignment", line_no, line)
+            raise self._error(
+                "Expected 'set' at start of variable assignment",
+                line_no,
+                line,
+                hint='Variable assignments must start with "set", e.g., set total = price * quantity'
+            )
         assignment = stripped[4:].strip()
         if '=' not in assignment:
             raise self._error(
                 "Expected '=' in variable assignment: set name = expression",
                 line_no,
                 line,
+                hint='Use assignment syntax: set variable_name = value_expression'
             )
         parts = assignment.split('=', 1)
         if len(parts) != 2:
-            raise self._error("Invalid variable assignment syntax", line_no, line)
+            raise self._error(
+                "Invalid variable assignment syntax",
+                line_no,
+                line,
+                hint='Use: set variable_name = expression'
+            )
         var_name = parts[0].strip()
         expr_text = parts[1].strip()
         if not var_name:
-            raise self._error("Variable name cannot be empty", line_no, line)
+            raise self._error(
+                "Variable name cannot be empty",
+                line_no,
+                line,
+                hint='Provide a variable name before the = sign'
+            )
         if not (var_name[0].isalpha() or var_name[0] == '_'):
             raise self._error(
                 f"Variable name must start with letter or underscore: '{var_name}'",
                 line_no,
                 line,
+                hint='Valid variable names: result, _temp, user_count (start with letter or underscore)'
             )
         for ch in var_name:
             if not (ch.isalnum() or ch == '_'):
@@ -481,9 +632,15 @@ class ComponentParserMixin(ActionParserMixin):
                     f"Variable name can only contain letters, numbers, and underscores: '{var_name}'",
                     line_no,
                     line,
+                    hint='Use only letters, numbers, and underscores in variable names'
                 )
         if not expr_text:
-            raise self._error("Expression cannot be empty in variable assignment", line_no, line)
+            raise self._error(
+                "Expression cannot be empty in variable assignment",
+                line_no,
+                line,
+                hint='Provide a value or expression after the = sign'
+            )
         try:
             expression = self._parse_expression(expr_text)
         except N3SyntaxError:

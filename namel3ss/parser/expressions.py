@@ -22,10 +22,79 @@ from namel3ss.ast import (
 )
 
 from .base import N3SyntaxError, ParserBase
+# KeywordRegistry import removed - not used in this module
 
 
 class ExpressionParserMixin(ParserBase):
-    """Expression parsing utilities."""
+    """
+    Mixin for parsing N3 expressions using recursive descent with operator precedence.
+    
+    This parser handles both traditional expressions (arithmetic, logical, comparisons)
+    and advanced frame-based data transformations. It integrates with the symbolic
+    expression parser for functional programming constructs.
+    
+    Expression Types:
+        Literals:
+            - Numbers: 42, 3.14
+            - Strings: "text", 'value'
+            - Booleans: true, false
+            - Null: null, None
+        
+        Context References:
+            - ctx:user.name (context scope)
+            - env:API_KEY (environment scope)
+        
+        Arithmetic Operations:
+            - Addition/Subtraction: price + tax, total - discount
+            - Multiplication/Division: quantity * price, amount / count
+            - Unary negation: -value
+        
+        Logical Operations:
+            - Conjunction: condition1 and condition2
+            - Disjunction: condition1 or condition2
+            - Negation: not condition
+        
+        Comparisons:
+            - Equality: value == target, value != other
+            - Ordering: age > 18, score <= 100, price >= 50, count < 10
+        
+        Frame Operations (Data Transformations):
+            - Filter: sales.filter(revenue > 1000)
+            - Select: customers.select(name, email, city)
+            - Order: products.order_by(price, descending=true)
+            - Group: orders.group_by(customer_id)
+            - Summarize: data.summarise(total=sum(amount), avg_price=mean(price))
+            - Join: orders.join(customers, on=customer_id, how=left)
+        
+        Function Calls:
+            - sum(values), count(items), mean(scores)
+            - format(value, pattern), round(number, 2)
+        
+        Symbolic Constructs (delegated to SymbolicExpressionParser):
+            - fn: Anonymous functions
+            - match: Pattern matching
+            - let: Variable binding
+            - if: Conditional expressions
+            - query: Logic queries
+    
+    Operator Precedence (highest to lowest):
+        1. Primary (literals, names, calls, parentheses)
+        2. Unary (not, -)
+        3. Multiplicative (*, /)
+        4. Additive (+, -)
+        5. Comparison (==, !=, <, >, <=, >=)
+        6. Logical AND
+        7. Logical OR
+    
+    Features:
+        - Recursive descent parsing with proper precedence handling
+        - String escape sequence support
+        - Attribute access chaining (obj.attr1.attr2)
+        - Function call argument parsing
+        - Frame DSL method chaining for data pipelines
+        - Integration with symbolic expression parser
+        - Comprehensive error messages with position tracking
+    """
 
     _expr_text: str
     _expr_pos: int
@@ -33,11 +102,21 @@ class ExpressionParserMixin(ParserBase):
     _FRAME_DSL_METHODS = {"filter", "select", "order_by", "group_by", "summarise", "join"}
 
     def _parse_expression(self, text: str) -> Expression:
-        """Parse an expression from text using recursive descent with precedence.
+        """
+        Parse an expression from text using recursive descent with precedence.
         
-        If the expression contains symbolic constructs (fn, match, let, if, query),
-        delegate to the symbolic expression parser. Otherwise use the legacy parser
-        for backward compatibility.
+        Automatically detects symbolic constructs (fn, match, let, if, query, =>)
+        and delegates to the symbolic expression parser when found. Otherwise
+        uses the legacy parser for backward compatibility with standard expressions.
+        
+        Args:
+            text: Expression text to parse
+        
+        Returns:
+            Expression AST node
+        
+        Raises:
+            N3SyntaxError: If expression syntax is invalid
         """
         stripped = text.strip()
         
@@ -183,7 +262,12 @@ class ExpressionParserMixin(ParserBase):
                 else:
                     self._expr_pos += 1
             if self._expr_pos >= len(self._expr_text):
-                raise self._error("Unterminated string in expression", self.pos, self._expr_text)
+                raise self._error(
+                    "Unterminated string in expression",
+                    self.pos,
+                    self._expr_text,
+                    hint='Strings must be closed with matching quotes'
+                )
             value = self._expr_text[start:self._expr_pos]
             self._expr_pos += 1
             return Literal(value=value)
@@ -208,10 +292,20 @@ class ExpressionParserMixin(ParserBase):
                         break
                 path_text = self._expr_text[start:self._expr_pos]
                 if not path_text:
-                    raise self._error("Expected context path after prefix", self.pos, self._expr_text)
+                    raise self._error(
+                        "Expected context path after prefix",
+                        self.pos,
+                        self._expr_text,
+                        hint='Use context references like ctx:user.name or env:API_KEY'
+                    )
                 path = [segment for segment in path_text.split('.') if segment]
                 if not path:
-                    raise self._error("Context path cannot be empty", self.pos, self._expr_text)
+                    raise self._error(
+                        "Context path cannot be empty",
+                        self.pos,
+                        self._expr_text,
+                        hint='Provide a valid path after the colon, e.g., ctx:user.id'
+                    )
                 return ContextValue(scope=scope, path=path)
 
         if self._expr_pos < len(self._expr_text) and (
@@ -274,7 +368,12 @@ class ExpressionParserMixin(ParserBase):
                         base_name = current.name if isinstance(current, NameRef) else f"{current.base}.{current.attr}"
                         current = AttributeRef(base=base_name, attr=attr)
                         continue
-                    raise self._error("Expected attribute name after '.'", self.pos, self._expr_text)
+                    raise self._error(
+                        "Expected attribute name after '.'",
+                        self.pos,
+                        self._expr_text,
+                        hint='Attribute names must start with a letter or underscore'
+                    )
                 break
 
             while True:
@@ -303,7 +402,12 @@ class ExpressionParserMixin(ParserBase):
                         ):
                             self._expr_pos += 1
                             break
-                        raise self._error("Expected ',' or ')' in function call", self.pos, self._expr_text)
+                        raise self._error(
+                            "Expected ',' or ')' in function call",
+                            self.pos,
+                            self._expr_text,
+                            hint='Separate function arguments with commas'
+                        )
                     current = CallExpression(function=current, arguments=args)
                     continue
                 break
@@ -314,6 +418,7 @@ class ExpressionParserMixin(ParserBase):
             f"Unexpected character in expression: '{self._expr_peek()}'",
             self.pos,
             self._expr_text,
+            hint='Check for invalid characters or missing operators/operands'
         )
 
     def _try_parse_frame_chain(self, root_name: str) -> Optional[FrameExpression]:
@@ -336,6 +441,7 @@ class ExpressionParserMixin(ParserBase):
                         f"Unknown frame operation '{method}'",
                         self.pos,
                         self._expr_text,
+                        hint='Valid frame operations: filter, select, order_by, group_by, summarise, join'
                     )
                 self._expr_pos = chain_start
                 return None
@@ -375,7 +481,12 @@ class ExpressionParserMixin(ParserBase):
         columns: List[str] = []
         self._expr_skip_whitespace()
         if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
-            raise self._error("Column list cannot be empty", self.pos, self._expr_text)
+            raise self._error(
+                "Column list cannot be empty",
+                self.pos,
+                self._expr_text,
+                hint='Provide at least one column name in select()'
+            )
         while True:
             column = self._expr_parse_identifier_or_string()
             columns.append(column)
@@ -406,7 +517,12 @@ class ExpressionParserMixin(ParserBase):
                 self._expr_skip_whitespace()
                 value_expr = self._parse_logical_or()
                 if keyword != 'descending':
-                    raise self._error("Only 'descending' keyword is supported in order_by", self.pos, self._expr_text)
+                    raise self._error(
+                        "Only 'descending' keyword is supported in order_by",
+                        self.pos,
+                        self._expr_text,
+                        hint='Use: .order_by(column1, column2, descending=true)'
+                    )
                 descending = self._expr_eval_bool_literal(value_expr)
             else:
                 columns.append(token)
@@ -417,7 +533,12 @@ class ExpressionParserMixin(ParserBase):
                 continue
             break
         if not parsed_any or not columns:
-            raise self._error("order_by requires at least one column", self.pos, self._expr_text)
+            raise self._error(
+                "order_by requires at least one column",
+                self.pos,
+                self._expr_text,
+                hint='Specify columns to sort by, e.g., .order_by(date, priority)'
+            )
         self._expr_consume(')')
         return columns, descending
 
@@ -427,7 +548,12 @@ class ExpressionParserMixin(ParserBase):
         aggregations: Dict[str, Expression] = {}
         self._expr_skip_whitespace()
         if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == ')':
-            raise self._error("summarise requires at least one aggregation", self.pos, self._expr_text)
+            raise self._error(
+                "summarise requires at least one aggregation",
+                self.pos,
+                self._expr_text,
+                hint='Define aggregations like: .summarise(total=sum(amount), count=count())'
+            )
         while True:
             name = self._expr_parse_identifier_token()
             self._expr_skip_whitespace()
@@ -468,12 +594,27 @@ class ExpressionParserMixin(ParserBase):
                 how_value = self._expr_eval_identifier_like(value_expr)
                 how_value_lower = how_value.lower()
                 if how_value_lower not in {'inner', 'left', 'right', 'outer'}:
-                    raise self._error("join how must be inner|left|right|outer", self.pos, self._expr_text)
+                    raise self._error(
+                        "join how must be inner|left|right|outer",
+                        self.pos,
+                        self._expr_text,
+                        hint='Valid join types: inner (default), left, right, outer'
+                    )
                 how = how_value_lower
             else:
-                raise self._error(f"Unsupported join keyword '{keyword}'", self.pos, self._expr_text)
+                raise self._error(
+                    f"Unsupported join keyword '{keyword}'",
+                    self.pos,
+                    self._expr_text,
+                    hint='Valid join parameters: on (required), how (optional)'
+                )
         if not on_columns:
-            raise self._error("join requires 'on' column", self.pos, self._expr_text)
+            raise self._error(
+                "join requires 'on' column",
+                self.pos,
+                self._expr_text,
+                hint='Specify join column with: .join(other_table, on=column_name)'
+            )
         self._expr_consume(')')
         return target, on_columns, how
 

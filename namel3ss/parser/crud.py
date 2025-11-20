@@ -6,6 +6,7 @@ import re
 from typing import Dict, List, Optional
 
 from namel3ss.ast import CrudResource
+# KeywordRegistry import removed - class does not exist
 
 from .base import ParserBase
 
@@ -21,7 +22,25 @@ _OPERATION_ALIASES = {
 
 
 class CrudParserMixin(ParserBase):
-    """Parse ``enable crud`` declarations at the top level."""
+    """
+    Parse CRUD resource declarations with centralized validation.
+    
+    Handles parsing of RESTful CRUD endpoint definitions:
+    - Resource configuration for tables/datasets
+    - Allowed operations (list, retrieve, create, update, delete)
+    - Field selection and mutability
+    - Tenant isolation and pagination
+    - Read-only restrictions
+    
+    Syntax:
+        enable crud for table users as "Users":
+            select: id, name, email
+            mutable: name, email
+            primary key: id
+            allow: list, retrieve, update
+    
+    Uses centralized indentation validation for consistent error messages.
+    """
 
     _RESOURCE_PATTERN = re.compile(
     r"^enable\s+crud\s+for\s+(table|dataset)\s+([\w\.]+?)(?:\s+as\s+\"([^\"]+)\")?([:.])?$",
@@ -29,12 +48,19 @@ class CrudParserMixin(ParserBase):
     )
 
     def _parse_crud_resource(self, line: str, line_no: int, base_indent: int) -> CrudResource:
+        """
+        Parse CRUD resource declaration with configuration options.
+        
+        Validates resource name, source type, and parses optional configuration
+        block with field selections, operations, and constraints.
+        """
         match = self._RESOURCE_PATTERN.match(line.strip())
         if not match:
             raise self._error(
                 "Expected: enable crud for table <name> [as \"Slug\"]:",
                 line_no,
                 line,
+                hint='CRUD declarations must specify source type and name'
             )
 
         source_type = match.group(1).lower()
@@ -48,7 +74,17 @@ class CrudParserMixin(ParserBase):
 
         options: Dict[str, object] = {}
         if has_block:
-            options = self._parse_crud_options_block(base_indent)
+            # Validate indented block if colon present
+            indent_info = self._expect_indent_greater_than(
+                base_indent,
+                context=f'crud for {source_type} {source_name}',
+                line_no=line_no
+            )
+            if indent_info:
+                options = self._parse_crud_options_block(base_indent)
+            else:
+                # Colon present but no indented block - warning but continue
+                options = {}
         options = self._normalise_option_keys(options)
 
         slug_override = self._option_value(options, "slug", "name")
@@ -120,6 +156,12 @@ class CrudParserMixin(ParserBase):
     # Helpers
     # ------------------------------------------------------------------
     def _parse_crud_options_block(self, parent_indent: int) -> Dict[str, object]:
+        """
+        Parse indented configuration block for CRUD resource.
+        
+        Supports nested options and key-value pairs for configuring
+        resource behavior, fields, and constraints.
+        """
         options: Dict[str, object] = {}
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -134,7 +176,12 @@ class CrudParserMixin(ParserBase):
                 break
             match = re.match(r"([\w\s]+):\s*(.*)$", stripped)
             if not match:
-                raise self._error("Expected 'key: value' inside CRUD block", self.pos + 1, nxt)
+                raise self._error(
+                    "Expected 'key: value' inside CRUD block",
+                    self.pos + 1,
+                    nxt,
+                    hint='CRUD configuration uses key: value syntax'
+                )
             key = match.group(1).strip().lower()
             remainder = match.group(2)
             self._advance()
