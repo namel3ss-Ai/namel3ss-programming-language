@@ -22,6 +22,12 @@ class IndexDefinition:
             backend: "pgvector"
             namespace: "docs"
             metadata_fields: ["category", "product_id"]
+            
+            # Multimodal support
+            extract_images: true
+            extract_audio: false
+            image_model: "openai/clip-vit-base-patch32"
+            audio_model: "openai/whisper-base"
         }
     """
     name: str
@@ -34,6 +40,13 @@ class IndexDefinition:
     collection: Optional[str] = None
     table_name: Optional[str] = None
     metadata_fields: List[str] = field(default_factory=list)
+    
+    # Multimodal fields
+    extract_images: bool = False
+    extract_audio: bool = False
+    image_model: Optional[str] = None
+    audio_model: Optional[str] = None
+    
     config: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     location: Optional[Any] = None  # SourceLocation
@@ -52,6 +65,15 @@ class RagPipelineDefinition:
             reranker: "bge-reranker"
             distance_metric: "cosine"
             filters: {category: "support"}
+            
+            # Hybrid search
+            enable_hybrid: true
+            sparse_model: "bm25"
+            dense_weight: 0.7
+            sparse_weight: 0.3
+            
+            # Reranking
+            reranker_type: "cross_encoder"  # or "colbert"
         }
     """
     name: str
@@ -61,6 +83,14 @@ class RagPipelineDefinition:
     reranker: Optional[str] = None
     distance_metric: str = "cosine"
     filters: Optional[Expression] = None
+    
+    # Hybrid search fields
+    enable_hybrid: bool = False
+    sparse_model: str = "bm25"
+    dense_weight: float = 0.7
+    sparse_weight: float = 0.3
+    reranker_type: str = "cross_encoder"
+    
     config: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     location: Optional[Any] = None  # SourceLocation

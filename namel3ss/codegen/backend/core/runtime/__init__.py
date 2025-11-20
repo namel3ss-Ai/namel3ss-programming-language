@@ -13,6 +13,7 @@ from .llm_init import render_llm_initialization_block
 from .tool_init import render_tool_initialization_block
 from .prompt_init import render_prompt_initialization_block
 from .pages import _page_handlers_block, _page_to_dict, _render_page_function
+from .rag_init import generate_rag_initialization
 from .realtime import render_broadcast_block
 from .registries import render_registries_block
 from .sections import collect_runtime_sections
@@ -51,6 +52,11 @@ def _render_runtime_module(
     parts.append(render_llm_initialization_block(state))
     parts.append(render_tool_initialization_block(state))
     parts.append(render_prompt_initialization_block(state))
+    
+    # Add RAG initialization if RAG pipelines are present
+    if state.rag_pipelines:
+        parts.append(generate_rag_initialization(state))
+    
     parts.extend(collect_runtime_sections())
 
     for page in state.pages:

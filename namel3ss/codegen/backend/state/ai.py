@@ -401,6 +401,16 @@ def _encode_index(index: "IndexDefinition", env_keys: Set[str]) -> Dict[str, Any
     if index.metadata_fields is not None:
         payload["metadata_fields"] = index.metadata_fields
     
+    # Multimodal fields
+    if hasattr(index, 'extract_images') and index.extract_images:
+        payload["extract_images"] = index.extract_images
+    if hasattr(index, 'extract_audio') and index.extract_audio:
+        payload["extract_audio"] = index.extract_audio
+    if hasattr(index, 'image_model') and index.image_model:
+        payload["image_model"] = index.image_model
+    if hasattr(index, 'audio_model') and index.audio_model:
+        payload["audio_model"] = index.audio_model
+    
     return payload
 
 
@@ -430,5 +440,17 @@ def _encode_rag_pipeline(pipeline: "RagPipelineDefinition", env_keys: Set[str]) 
         payload["reranker"] = pipeline.reranker
     if pipeline.filters is not None:
         payload["filters"] = filters_value
+    
+    # Hybrid search fields
+    if hasattr(pipeline, 'enable_hybrid') and pipeline.enable_hybrid:
+        payload["enable_hybrid"] = pipeline.enable_hybrid
+    if hasattr(pipeline, 'sparse_model') and pipeline.sparse_model:
+        payload["sparse_model"] = pipeline.sparse_model
+    if hasattr(pipeline, 'dense_weight') and pipeline.dense_weight is not None:
+        payload["dense_weight"] = pipeline.dense_weight
+    if hasattr(pipeline, 'sparse_weight') and pipeline.sparse_weight is not None:
+        payload["sparse_weight"] = pipeline.sparse_weight
+    if hasattr(pipeline, 'reranker_type') and pipeline.reranker_type:
+        payload["reranker_type"] = pipeline.reranker_type
     
     return payload

@@ -1,0 +1,104 @@
+app "Graph Editor Demo"
+
+# Language Models
+llm gpt4:
+  provider: openai
+  model: gpt-4
+  temperature: 0.7
+  max_tokens: 2000
+
+llm claude:
+  provider: anthropic
+  model: claude-3-sonnet-20240229
+  temperature: 0.8
+
+# Tools
+tool search_docs:
+  type: http
+  endpoint: "https://api.example.com/search"
+
+tool calculator:
+  type: function
+  endpoint: "/api/calculate"
+
+# Datasets
+dataset product_docs:
+  source: "data/docs/*.txt"
+
+dataset customer_feedback:
+  source: "data/feedback/*.json"
+
+# Vector Indices
+index docs_index:
+  source_dataset: product_docs
+  embedding_model: text-embedding-3-small
+  chunk_size: 512
+  overlap: 64
+  backend: pgvector
+  namespace: docs
+  metadata_fields: [category, product_id]
+
+# RAG Pipelines
+rag_pipeline support_rag:
+  query_encoder: text-embedding-3-small
+  index: docs_index
+  top_k: 8
+  reranker: bge-reranker
+  distance_metric: cosine
+
+# Prompts
+prompt summarize_text:
+  input:
+    - text: text
+    - max_length: int
+  template: "Summarize the following text in {max_length} words:\n\n{text}"
+
+prompt answer_question:
+  input:
+    - question: text
+    - context: text
+  template: "Question: {question}\n\nContext: {context}\n\nAnswer:"
+  output:
+    answer: text
+    confidence: float
+
+# Memory
+memory conversation_history:
+  scope: session
+  kind: list
+  max_items: 20
+
+# Chains
+chain support_pipeline:
+  input -> rag support_rag -> prompt answer_question -> llm gpt4
+
+chain analysis_workflow:
+  input -> prompt summarize_text -> llm claude -> memory conversation_history
+
+# Agents
+agent researcher:
+  llm: gpt4
+  tools: [search_docs]
+  memory: conversation_history
+  goal: "Find accurate information and provide well-researched answers"
+  system_prompt: "You are a research assistant specialized in finding and synthesizing information."
+  max_turns: 10
+  temperature: 0.7
+
+agent support_agent:
+  llm: claude
+  tools: [search_docs, calculator]
+  memory: conversation_history
+  goal: "Provide helpful customer support using available documentation"
+  max_turns: 15
+
+# Pages
+page "Home" at "/":
+  show text "Welcome to Graph Editor Demo"
+  show table "Feedback" from dataset customer_feedback
+
+page "Dashboard" at "/dashboard":
+  if user.role == "admin":
+    show text "Admin Dashboard"
+  else:
+    show text "User Dashboard"

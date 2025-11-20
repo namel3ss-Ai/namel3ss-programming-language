@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: n3_graphs
+      POSTGRES_USER: n3
+      POSTGRES_PASSWORD: n3password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n3"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://n3:n3password@postgres:5432/n3_graphs
+      OTLP_ENDPOINT: http://jaeger:4317
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn n3_server.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  yjs-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.yjs
+    ports:
+      - "1234:1234"
+    environment:
+      PORT: 1234
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000/api
+      VITE_YJS_URL: ws://localhost:1234
+    depends_on:
+      - backend
+      - yjs-server
+    command: npm run dev -- --host 0.0.0.0
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+
+volumes:
+  postgres_data:

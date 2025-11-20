@@ -1,0 +1,85 @@
+name: Lint & Format
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  python-lint:
+    name: Python Linting (Ruff)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Ruff
+        run: pip install ruff
+      
+      - name: Run Ruff linter
+        run: ruff check . --output-format=github
+      
+      - name: Run Ruff formatter check
+        run: ruff format --check .
+  
+  frontend-lint:
+    name: Frontend Linting (ESLint)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'src/web/graph-editor/package-lock.json'
+      
+      - name: Install frontend dependencies
+        working-directory: src/web/graph-editor
+        run: npm ci
+      
+      - name: Run ESLint
+        working-directory: src/web/graph-editor
+        run: npm run lint
+      
+      - name: Run TypeScript type check
+        working-directory: src/web/graph-editor
+        run: npm run type-check
+  
+  markdown-lint:
+    name: Markdown Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Lint markdown files
+        uses: DavidAnson/markdownlint-cli2-action@v14
+        with:
+          globs: '**/*.md'
+  
+  yaml-lint:
+    name: YAML Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install yamllint
+        run: pip install yamllint
+      
+      - name: Lint YAML files
+        run: yamllint -f github .github/ docker-compose.yml

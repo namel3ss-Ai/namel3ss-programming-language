@@ -12,6 +12,14 @@ from namel3ss.ast.rag import IndexDefinition, RagPipelineDefinition
 
 class RAGParserMixin:
     """Mixin providing rag index and pipeline parsing."""
+    
+    def _parse_bool(self, value) -> bool:
+        """Parse boolean value from various types."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', 'yes', '1', 'on')
+        return bool(value)
 
     def _parse_index(self, line: _Line) -> None:
         """
@@ -53,6 +61,12 @@ class RAGParserMixin:
         collection = properties.get('collection')
         table_name = properties.get('table_name')
         
+        # Multimodal fields
+        extract_images = self._parse_bool(properties.get('extract_images', False))
+        extract_audio = self._parse_bool(properties.get('extract_audio', False))
+        image_model = properties.get('image_model')
+        audio_model = properties.get('audio_model')
+        
         # Parse metadata_fields if present (can be list or comma-separated string)
         metadata_fields = None
         if 'metadata_fields' in properties:
@@ -69,7 +83,8 @@ class RAGParserMixin:
         # Build config from remaining properties
         config = {k: v for k, v in properties.items() 
                   if k not in {'source_dataset', 'embedding_model', 'chunk_size', 'overlap', 
-                               'backend', 'namespace', 'collection', 'table_name', 'metadata_fields'}}
+                               'backend', 'namespace', 'collection', 'table_name', 'metadata_fields',
+                               'extract_images', 'extract_audio', 'image_model', 'audio_model'}}
         
         index = IndexDefinition(
             name=name,
@@ -82,6 +97,10 @@ class RAGParserMixin:
             collection=collection,
             table_name=table_name,
             metadata_fields=metadata_fields,
+            extract_images=extract_images,
+            extract_audio=extract_audio,
+            image_model=image_model,
+            audio_model=audio_model,
             config=config,
         )
         
@@ -122,6 +141,13 @@ class RAGParserMixin:
         reranker = properties.get('reranker')
         distance_metric = properties.get('distance_metric', 'cosine')
         
+        # Hybrid search fields
+        enable_hybrid = self._parse_bool(properties.get('enable_hybrid', False))
+        sparse_model = properties.get('sparse_model', 'bm25')
+        dense_weight = float(properties.get('dense_weight', 0.7))
+        sparse_weight = float(properties.get('sparse_weight', 0.3))
+        reranker_type = properties.get('reranker_type', 'cross_encoder')
+        
         # Parse filters if present
         filters = None
         if 'filters' in properties:
@@ -139,10 +165,24 @@ class RAGParserMixin:
         # Build config from remaining properties
         config = {k: v for k, v in properties.items() 
                   if k not in {'query_encoder', 'index', 'top_k', 'reranker', 
-                               'distance_metric', 'filters'}}
+                               'distance_metric', 'filters', 'enable_hybrid', 'sparse_model',
+                               'dense_weight', 'sparse_weight', 'reranker_type'}}
         
         rag_pipeline = RagPipelineDefinition(
             name=name,
+            query_encoder=query_encoder,
+            index=index,
+            top_k=top_k,
+            reranker=reranker,
+            distance_metric=distance_metric,
+            filters=filters,
+            enable_hybrid=enable_hybrid,
+            sparse_model=sparse_model,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+            reranker_type=reranker_type,
+            config=config,
+        )
             query_encoder=query_encoder,
             index=index,
             top_k=top_k,

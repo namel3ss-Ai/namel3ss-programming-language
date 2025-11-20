@@ -1,0 +1,19 @@
+{
+  "name": "n3-yjs-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for real-time collaboration using Yjs",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "yjs": "^13.6.10",
+    "y-websocket": "^1.5.0",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

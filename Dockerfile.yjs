@@ -1,0 +1,17 @@
+# Yjs Server Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY yjs-server/package*.json ./
+
+# Install dependencies
+RUN npm ci --production
+
+# Copy server code
+COPY yjs-server/server.js ./
+
+EXPOSE 1234
+
+CMD ["node", "server.js"]

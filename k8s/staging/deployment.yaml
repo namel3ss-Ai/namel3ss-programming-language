@@ -1,0 +1,333 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: n3-staging
+  labels:
+    environment: staging
+    app: n3-graph-editor
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n3-config
+  namespace: n3-staging
+data:
+  CORS_ORIGINS: '["https://staging.n3-graph-editor.com"]'
+  OTLP_ENDPOINT: "http://jaeger:4317"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: n3-secrets
+  namespace: n3-staging
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql+asyncpg://n3:n3password@postgres:5432/n3_graphs"
+  SECRET_KEY: "CHANGE_ME_IN_PRODUCTION"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: n3-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: n3_graphs
+        - name: POSTGRES_USER
+          value: n3
+        - name: POSTGRES_PASSWORD
+          value: n3password
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "n3"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "n3"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: n3-staging
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: n3-staging
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: n3-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      containers:
+      - name: backend
+        image: ghcr.io/ssebowadisan/namel3ss-programming-language-backend:IMAGE_TAG
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: n3-secrets
+              key: DATABASE_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: n3-secrets
+              key: SECRET_KEY
+        - name: CORS_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: n3-config
+              key: CORS_ORIGINS
+        - name: OTLP_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: n3-config
+              key: OTLP_ENDPOINT
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: n3-staging
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yjs-server
+  namespace: n3-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: yjs-server
+  template:
+    metadata:
+      labels:
+        app: yjs-server
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      containers:
+      - name: yjs-server
+        image: ghcr.io/ssebowadisan/namel3ss-programming-language-yjs-server:IMAGE_TAG
+        ports:
+        - containerPort: 1234
+        env:
+        - name: PORT
+          value: "1234"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yjs-server
+  namespace: n3-staging
+spec:
+  selector:
+    app: yjs-server
+  ports:
+  - port: 1234
+    targetPort: 1234
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: n3-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      containers:
+      - name: frontend
+        image: ghcr.io/ssebowadisan/namel3ss-programming-language-frontend:IMAGE_TAG
+        ports:
+        - containerPort: 3000
+        env:
+        - name: VITE_API_URL
+          value: "https://staging.n3-graph-editor.com/api"
+        - name: VITE_YJS_URL
+          value: "wss://staging.n3-graph-editor.com/yjs"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: n3-staging
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n3-ingress
+  namespace: n3-staging
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - staging.n3-graph-editor.com
+    secretName: n3-staging-tls
+  rules:
+  - host: staging.n3-graph-editor.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8000
+      - path: /yjs
+        pathType: Prefix
+        backend:
+          service:
+            name: yjs-server
+            port:
+              number: 1234
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: n3-staging
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
