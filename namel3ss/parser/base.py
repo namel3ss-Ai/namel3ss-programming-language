@@ -7,6 +7,7 @@ import tokenize
 from tokenize import TokenInfo
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union, Literal as TypingLiteral
 from pathlib import Path
+from dataclasses import dataclass
 
 _CONTEXT_SENTINEL = "__n3_ctx__"
 _WHITESPACE_TOKENS: Set[int] = {
@@ -47,6 +48,41 @@ from namel3ss.ast import (
 )
 from namel3ss.errors import N3SyntaxError
 
+
+# ============================================================================
+# Indentation Analysis Data Structures
+# ============================================================================
+
+@dataclass
+class IndentationInfo:
+    """
+    Detailed information about a line's indentation.
+    
+    This data structure provides comprehensive analysis of leading whitespace,
+    supporting robust detection of mixed tabs/spaces and inconsistent indentation.
+    
+    Attributes:
+        spaces: Number of leading spaces
+        tabs: Number of leading tabs
+        mixed: True if line has both tabs and spaces in leading whitespace
+        indent_style: Detected indentation style
+        effective_level: Effective indentation level for comparison (spaces + tabs*4)
+    
+    Examples:
+        >>> info = IndentationInfo(spaces=4, tabs=0, mixed=False, 
+        ...                        indent_style='spaces', effective_level=4)
+        >>> info.spaces
+        4
+        >>> info.indent_style
+        'spaces'
+    """
+    spaces: int
+    tabs: int
+    mixed: bool
+    indent_style: TypingLiteral['spaces', 'tabs', 'mixed', 'none']
+    effective_level: int
+
+
 class ParserBase:
     """Shared parser state and helper utilities."""
 
@@ -81,31 +117,380 @@ class ParserBase:
         self.pos += 1
         return line
 
+    # ========================================================================
+    # Indentation Analysis and Validation
+    # ========================================================================
+
+    def _compute_indent_details(self, line: str) -> IndentationInfo:
+        """
+        Analyze line indentation in comprehensive detail.
+        
+        This method performs robust analysis of leading whitespace, detecting:
+        - Number of spaces and tabs
+        - Mixed indentation (tabs + spaces)
+        - Predominant indentation style
+        
+        Args:
+            line: The line to analyze (must include leading whitespace)
+            
+        Returns:
+            IndentationInfo with complete indentation analysis
+            
+        Examples:
+            >>> info = parser._compute_indent_details("    code")
+            >>> info.spaces
+            4
+            >>> info.indent_style
+            'spaces'
+            
+            >>> info = parser._compute_indent_details("\\t\\tcode")
+            >>> info.tabs
+            2
+            >>> info.indent_style
+            'tabs'
+            
+            >>> info = parser._compute_indent_details("\\t  code")
+            >>> info.mixed
+            True
+        """
+        if not line:
+            return IndentationInfo(
+                spaces=0,
+                tabs=0,
+                mixed=False,
+                indent_style='none',
+                effective_level=0
+            )
+        
+        # Count leading whitespace
+        spaces = 0
+        tabs = 0
+        for char in line:
+            if char == ' ':
+                spaces += 1
+            elif char == '\t':
+                tabs += 1
+            else:
+                break  # Hit non-whitespace
+        
+        # Determine if mixed
+        mixed = spaces > 0 and tabs > 0
+        
+        # Determine style
+        if tabs > 0 and spaces == 0:
+            indent_style = 'tabs'
+        elif spaces > 0 and tabs == 0:
+            indent_style = 'spaces'
+        elif mixed:
+            indent_style = 'mixed'
+        else:
+            indent_style = 'none'
+        
+        # Compute effective level (tabs count as 4 spaces for comparison)
+        effective_level = spaces + (tabs * 4)
+        
+        return IndentationInfo(
+            spaces=spaces,
+            tabs=tabs,
+            mixed=mixed,
+            indent_style=indent_style,
+            effective_level=effective_level
+        )
+
+    def _expect_indent_greater_than(
+        self,
+        line: str,
+        base_indent: int,
+        line_no: int,
+        context: str = "block"
+    ) -> IndentationInfo:
+        """
+        Validate that line is indented more than base_indent.
+        
+        This method ensures that a line is properly indented for a nested block,
+        providing helpful error messages if indentation is insufficient.
+        
+        Args:
+            line: The line to check (with leading whitespace)
+            base_indent: The parent indentation level
+            line_no: Line number for error reporting
+            context: Human-readable context (e.g., "if block", "page body")
+            
+        Returns:
+            IndentationInfo for the line if validation passes
+            
+        Raises:
+            N3SyntaxError: If line is not properly indented with helpful hint
+            
+        Examples:
+            # Valid - indented more than parent
+            >>> info = parser._expect_indent_greater_than("    code", 0, 10, "page body")
+            >>> info.effective_level > 0
+            True
+            
+            # Invalid - not indented
+            >>> parser._expect_indent_greater_than("code", 0, 10, "page body")
+            N3SyntaxError: Expected indented block for page body...
+        """
+        info = self._compute_indent_details(line)
+        stripped = line.strip()
+        
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('#'):
+            return info
+        
+        # Check for mixed indentation
+        if info.mixed:
+            message = f"Mixed tabs and spaces in indentation"
+            hint = (
+                "Use either tabs or spaces consistently throughout your file.\n"
+                "Recommended: Use 4 spaces for indentation."
+            )
+            raise self._error(message, line_no, line, hint=hint)
+        
+        # Check if indented more than base
+        if info.effective_level <= base_indent:
+            message = f"Expected indented block for {context}"
+            if info.effective_level == 0:
+                hint = f"This line should be indented (e.g., 4 spaces) to be part of the {context}."
+            else:
+                hint = (
+                    f"This line has {info.effective_level} spaces, but needs more than {base_indent} "
+                    f"to be part of the {context}."
+                )
+            raise self._error(message, line_no, line, hint=hint)
+        
+        return info
+
+    def _validate_block_indent(
+        self,
+        line: str,
+        expected_indent: int,
+        line_no: int,
+        block_start_line: int,
+        context: str = "block"
+    ) -> IndentationInfo:
+        """
+        Validate that line matches expected block indentation.
+        
+        This method ensures consistent indentation within a block, detecting
+        when lines have inconsistent indentation compared to the block start.
+        
+        Args:
+            line: The line to check
+            expected_indent: Expected indentation level
+            line_no: Current line number
+            block_start_line: Line where block started (for error messages)
+            context: Human-readable context
+            
+        Returns:
+            IndentationInfo for the line if validation passes
+            
+        Raises:
+            N3SyntaxError: If indentation doesn't match with helpful hint
+            
+        Examples:
+            # Consistent indentation - OK
+            >>> info = parser._validate_block_indent("    stmt1", 4, 11, 10, "if body")
+            >>> info.effective_level
+            4
+            
+            # Inconsistent - error
+            >>> parser._validate_block_indent("  stmt2", 4, 12, 10, "if body")
+            N3SyntaxError: Inconsistent indentation in if body...
+        """
+        info = self._compute_indent_details(line)
+        stripped = line.strip()
+        
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('#'):
+            return info
+        
+        # Check for mixed indentation
+        if info.mixed:
+            message = f"Mixed tabs and spaces in indentation"
+            hint = (
+                "Use either tabs or spaces consistently throughout your file.\n"
+                "Recommended: Use 4 spaces for indentation."
+            )
+            raise self._error(message, line_no, line, hint=hint)
+        
+        # Check if indentation matches expected
+        if info.effective_level != expected_indent:
+            if info.effective_level < expected_indent:
+                # Less indentation might mean end of block - don't error here
+                # Caller will handle this as block termination
+                return info
+            
+            # More indentation than expected - inconsistent
+            message = f"Inconsistent indentation in {context}"
+            hint = (
+                f"This line uses {info.effective_level} spaces, "
+                f"but the {context} started with {expected_indent} spaces at line {block_start_line}.\n"
+                f"Hint: Use consistent indentation throughout each block."
+            )
+            raise self._error(message, line_no, line, hint=hint)
+        
+        return info
+
+    def _detect_indentation_issues(self, lines: Optional[List[str]] = None) -> Optional[str]:
+        """
+        Scan lines for common indentation problems.
+        
+        This diagnostic method scans source lines to detect common indentation
+        issues that might cause parsing problems:
+        - Mixed tabs and spaces across file
+        - Inconsistent indentation increments (mixing 2-space and 4-space)
+        - Tab usage (generally discouraged)
+        
+        Args:
+            lines: Lines to scan (defaults to self.lines)
+            
+        Returns:
+            Warning message string if issues found, None otherwise
+            
+        Note:
+            This is typically called during parser initialization for early
+            detection of indentation problems. It returns warnings, not errors.
+            
+        Examples:
+            >>> warning = parser._detect_indentation_issues()
+            >>> if warning:
+            ...     print(f"Warning: {warning}")
+        """
+        if lines is None:
+            lines = self.lines
+        
+        if not lines:
+            return None
+        
+        has_tabs = False
+        has_spaces = False
+        indent_levels: Set[int] = set()
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            info = self._compute_indent_details(line)
+            
+            if info.tabs > 0:
+                has_tabs = True
+            if info.spaces > 0:
+                has_spaces = True
+            
+            if info.mixed:
+                return (
+                    "Mixed tabs and spaces detected in file. "
+                    "Use either tabs or spaces consistently (recommended: 4 spaces)."
+                )
+            
+            if info.effective_level > 0:
+                indent_levels.add(info.effective_level)
+        
+        # Check for mixed tab/space usage across file
+        if has_tabs and has_spaces:
+            return (
+                "File mixes tab and space indentation on different lines. "
+                "Use either tabs or spaces consistently (recommended: 4 spaces)."
+            )
+        
+        # Check for inconsistent indentation increments
+        if len(indent_levels) > 1:
+            sorted_levels = sorted(indent_levels)
+            # Check if increments are consistent (all multiples of smallest)
+            smallest = sorted_levels[0]
+            if smallest > 0:
+                inconsistent = any(level % smallest != 0 for level in sorted_levels if level != smallest)
+                if inconsistent:
+                    return (
+                        f"Inconsistent indentation increments detected (found levels: {sorted(indent_levels)}). "
+                        f"Consider using consistent {smallest}-space indentation throughout."
+                    )
+        
+        # Warn if tabs are used (spaces are more portable)
+        if has_tabs and not has_spaces:
+            return (
+                "File uses tab indentation. "
+                "Consider using spaces for better portability (recommended: 4 spaces)."
+            )
+        
+        return None
+
     def _indent(self, line: str) -> int:
-        """Compute the indentation level (leading spaces) for *line*."""
-        return len(line) - len(line.lstrip(' '))
+        """
+        Compute the indentation level (leading spaces) for *line*.
+        
+        **BACKWARD COMPATIBILITY METHOD**
+        
+        This method is preserved for backward compatibility with existing parser code.
+        Returns effective indentation level (spaces count, with tabs counted as 4 spaces).
+        
+        New code should use _compute_indent_details() for robust indentation handling
+        with tab/space detection and better error messages.
+        
+        Args:
+            line: The line to analyze
+            
+        Returns:
+            Effective indentation level (number of spaces, tabs count as 4)
+            
+        Examples:
+            >>> parser._indent("    code")
+            4
+            >>> parser._indent("\\tcode")  # Tab counts as 4
+            4
+        """
+        return self._compute_indent_details(line).effective_level
 
     def _error(
         self,
         message: str,
         line_no: Optional[int] = None,
         line: Optional[str] = None,
+        hint: Optional[str] = None,
     ) -> N3SyntaxError:
-        """Create a consistent :class:`N3SyntaxError` instance."""
-
+        """
+        Create a comprehensive N3SyntaxError instance.
+        
+        Args:
+            message: Primary error message
+            line_no: Line number (1-indexed, defaults to current position)
+            line: The problematic line text (defaults to line at pos-1)
+            hint: Optional helpful hint for fixing the error
+            
+        Returns:
+            N3SyntaxError instance with all context
+            
+        Examples:
+            # Simple error
+            raise self._error("Expected ':' after if condition", line_no, line)
+            
+            # Error with hint
+            raise self._error(
+                "Inconsistent indentation detected",
+                line_no,
+                line,
+                hint="Use consistent indentation throughout each block"
+            )
+        """
         if line_no is None:
             line_no = min(self.pos, len(self.lines))
         if line is None and 0 <= self.pos - 1 < len(self.lines):
             line = self.lines[self.pos - 1]
         elif line is None:
             line = ""
-        line_hint = line.strip() or None
+        
+        # Use provided hint or fall back to line content
+        error_hint = hint if hint is not None else (line.strip() or None)
+        
         return N3SyntaxError(
             f"Syntax error: {message}",
             path=self.source_path or None,
             line=line_no,
             code="SYNTAX_ERROR",
-            hint=line_hint,
+            hint=error_hint,
         )
 
     def _default_app_name(self) -> str:
@@ -220,6 +605,237 @@ class ParserBase:
         if isinstance(value, Expression):
             return str(value)
         return str(value)
+
+    # ------------------------------------------------------------------
+    # Enhanced coercion helpers with contextual error messages
+    # ------------------------------------------------------------------
+
+    def _coerce_scalar_with_context(
+        self,
+        raw: Any,
+        field_name: str,
+        expected_type: Optional[str] = None,
+        line_no: Optional[int] = None,
+        line: Optional[str] = None
+    ) -> Any:
+        """
+        Coerce scalar value with contextual error messages.
+        
+        This enhanced version of _coerce_scalar provides better error messages
+        by including the field name and expected type in errors.
+        
+        Args:
+            raw: The raw value to coerce
+            field_name: Name of the field being parsed (for error messages)
+            expected_type: Expected type hint ('int', 'float', 'bool', 'string', None for any)
+            line_no: Line number for error reporting
+            line: Line text for error reporting
+            
+        Returns:
+            Coerced value
+            
+        Raises:
+            N3SyntaxError: If coercion fails with helpful context
+            
+        Examples:
+            # Good coercion
+            value = self._coerce_scalar_with_context("42", "page_size", "int", line_no, line)
+            # value = 42
+            
+            # Error with context
+            value = self._coerce_scalar_with_context("abc", "page_size", "int", line_no, line)
+            # Raises: Invalid value for page_size
+            #   → Expected int, got "abc"
+            #   Hint: page_size must be a positive integer
+        """
+        try:
+            result = self._coerce_scalar(raw)
+            
+            # Validate type if specified
+            if expected_type == 'int':
+                if not isinstance(result, int):
+                    raise ValueError(f"Expected integer, got {type(result).__name__}")
+            elif expected_type == 'float':
+                if not isinstance(result, (int, float)):
+                    raise ValueError(f"Expected number, got {type(result).__name__}")
+            elif expected_type == 'bool':
+                if not isinstance(result, bool):
+                    raise ValueError(f"Expected boolean, got {type(result).__name__}")
+            elif expected_type == 'string':
+                if not isinstance(result, str):
+                    raise ValueError(f"Expected string, got {type(result).__name__}")
+            
+            return result
+            
+        except (ValueError, TypeError) as exc:
+            message = f"Invalid value for {field_name}"
+            if expected_type:
+                message += f"\n  → Expected {expected_type}, got {repr(raw)}"
+            else:
+                message += f"\n  → Got {repr(raw)}"
+            
+            hint = self._coercion_hint(field_name, expected_type)
+            
+            raise self._error(message, line_no, line, hint=hint)
+
+    def _coerce_int_with_context(
+        self,
+        raw: Any,
+        field_name: str,
+        line_no: Optional[int] = None,
+        line: Optional[str] = None,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None
+    ) -> int:
+        """
+        Coerce value to integer with validation and context.
+        
+        Args:
+            raw: The raw value to coerce
+            field_name: Name of the field being parsed
+            line_no: Line number for error reporting
+            line: Line text for error reporting
+            min_value: Optional minimum allowed value
+            max_value: Optional maximum allowed value
+            
+        Returns:
+            Coerced integer value
+            
+        Raises:
+            N3SyntaxError: If coercion or validation fails
+            
+        Examples:
+            # Valid integer
+            value = self._coerce_int_with_context("42", "page_size", line_no, line, min_value=1)
+            # value = 42
+            
+            # Invalid - not a number
+            value = self._coerce_int_with_context("abc", "page_size", line_no, line)
+            # Raises: Invalid value for page_size
+            #   → Expected integer, got "abc"
+            
+            # Invalid - out of range
+            value = self._coerce_int_with_context("-5", "page_size", line_no, line, min_value=1)
+            # Raises: Invalid value for page_size
+            #   → Value -5 is less than minimum 1
+        """
+        result = self._coerce_int(raw)
+        
+        if result is None:
+            message = f"Invalid value for {field_name}"
+            message += f"\n  → Expected integer, got {repr(raw)}"
+            hint = self._coercion_hint(field_name, 'int')
+            raise self._error(message, line_no, line, hint=hint)
+        
+        # Validate range
+        if min_value is not None and result < min_value:
+            message = f"Invalid value for {field_name}"
+            message += f"\n  → Value {result} is less than minimum {min_value}"
+            hint = f"{field_name} must be at least {min_value}"
+            raise self._error(message, line_no, line, hint=hint)
+        
+        if max_value is not None and result > max_value:
+            message = f"Invalid value for {field_name}"
+            message += f"\n  → Value {result} is greater than maximum {max_value}"
+            hint = f"{field_name} must be at most {max_value}"
+            raise self._error(message, line_no, line, hint=hint)
+        
+        return result
+
+    def _coerce_bool_with_context(
+        self,
+        raw: Any,
+        field_name: str,
+        line_no: Optional[int] = None,
+        line: Optional[str] = None
+    ) -> bool:
+        """
+        Coerce value to boolean with context.
+        
+        Args:
+            raw: The raw value to coerce
+            field_name: Name of the field being parsed
+            line_no: Line number for error reporting
+            line: Line text for error reporting
+            
+        Returns:
+            Coerced boolean value
+            
+        Raises:
+            N3SyntaxError: If coercion fails
+        """
+        try:
+            if isinstance(raw, bool):
+                return raw
+            if isinstance(raw, str):
+                return self._parse_bool(raw)
+            # Try to coerce through scalar
+            result = self._coerce_scalar(raw)
+            if isinstance(result, bool):
+                return result
+            raise ValueError("Not a boolean")
+        except (ValueError, N3SyntaxError):
+            message = f"Invalid value for {field_name}"
+            message += f"\n  → Expected boolean, got {repr(raw)}"
+            hint = "Use true/false, yes/no, 1/0, or on/off"
+            raise self._error(message, line_no, line, hint=hint)
+
+    def _coercion_hint(self, field_name: str, expected_type: Optional[str]) -> Optional[str]:
+        """
+        Generate helpful hint for coercion errors.
+        
+        Provides field-specific or type-specific hints to help users
+        understand what values are acceptable.
+        
+        Args:
+            field_name: Name of field being coerced
+            expected_type: Expected type ('int', 'float', 'bool', 'string')
+            
+        Returns:
+            Hint string or None
+            
+        Examples:
+            >>> parser._coercion_hint('page_size', 'int')
+            'page_size must be a positive integer (e.g., 10, 20, 50)'
+            
+            >>> parser._coercion_hint('unknown_field', 'int')
+            'Must be a whole number (e.g., 1, 42, 100)'
+        """
+        # Field-specific hints for common configuration fields
+        field_hints = {
+            'page_size': 'page_size must be a positive integer (e.g., 10, 20, 50)',
+            'max_entries': 'max_entries must be a positive integer',
+            'max_pages': 'max_pages must be a positive integer',
+            'chunk_size': 'chunk_size must be a positive integer',
+            'ttl_seconds': 'ttl_seconds must be a positive integer (time in seconds)',
+            'ttl': 'ttl must be a positive integer (time in seconds)',
+            'temperature': 'temperature must be a number between 0.0 and 2.0',
+            'top_p': 'top_p must be a number between 0.0 and 1.0',
+            'max_tokens': 'max_tokens must be a positive integer',
+            'width': 'width must be a positive integer (pixels or grid units)',
+            'height': 'height must be a positive integer (pixels or grid units)',
+            'batch_size': 'batch_size must be a positive integer',
+            'epochs': 'epochs must be a positive integer',
+            'learning_rate': 'learning_rate must be a positive number (e.g., 0.001, 0.01)',
+            'timeout': 'timeout must be a positive number (seconds)',
+            'retry_count': 'retry_count must be a non-negative integer',
+            'port': 'port must be an integer between 1 and 65535',
+        }
+        
+        if field_name in field_hints:
+            return field_hints[field_name]
+        
+        # Generic type hints
+        if expected_type == 'int':
+            return 'Must be a whole number (e.g., 1, 42, 100)'
+        elif expected_type == 'float':
+            return 'Must be a number (e.g., 1.5, 3.14, 0.5)'
+        elif expected_type == 'bool':
+            return 'Must be true/false, yes/no, or 1/0'
+        elif expected_type == 'string':
+            return 'Must be a text value (optionally in quotes)'
+        
+        return None
 
     # ------------------------------------------------------------------
     # Block helpers
