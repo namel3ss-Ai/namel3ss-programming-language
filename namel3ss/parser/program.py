@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from namel3ss.ast import (
     App,
@@ -15,6 +15,10 @@ from namel3ss.ast import (
     Page,
     Theme,
     VariableAssignment,
+)
+from namel3ss.lang import (
+    TOP_LEVEL_KEYWORDS,
+    suggest_keyword,
 )
 
 from .ai import AIParserMixin
@@ -46,7 +50,23 @@ class LegacyProgramParser(
     AIParserMixin,
     EvaluationParserMixin,
 ):
-    """Compatibility parser that retains the legacy line-by-line behavior."""
+    """
+    Top-level program parser with keyword validation and helpful error messages.
+    
+    Parses N3 programs consisting of:
+    - Module declarations and imports
+    - App configuration
+    - Top-level constructs (page, model, dataset, etc.)
+    - AI/ML components (prompts, connectors, experiments)
+    - Logic programming (knowledge, query)
+    - Evaluation components (evaluator, metric, guardrail)
+    
+    Features:
+    - Keyword validation with fuzzy matching suggestions
+    - Context-aware error messages
+    - Maintains backward compatibility
+    - Production-ready error handling
+    """
 
     def parse(self) -> Module:
         imports_allowed = True
@@ -63,7 +83,12 @@ class LegacyProgramParser(
                 continue
             indent = self._indent(line)
             if indent != 0:
-                raise self._error("Top level statements must not be indented", line_no, line)
+                raise self._error(
+                    "Top-level statements must not be indented",
+                    line_no,
+                    line,
+                    hint="Top-level constructs (app, page, model, etc.) should start at column 0"
+                )
             if stripped.startswith('module '):
                 if not imports_allowed:
                     raise self._error("Module declaration must appear before other statements", line_no, line)
@@ -212,11 +237,23 @@ class LegacyProgramParser(
                 assignment = self._parse_variable_assignment(line, line_no, indent)
                 self.app.variables.append(assignment)
             else:
-                raise self._error(
-                    "Expected 'app', 'theme', 'dataset', 'connector', 'insight', 'model', 'experiment', 'evaluator', 'metric', 'guardrail', 'eval_suite', 'enable crud', or 'page'",
-                    line_no,
-                    line,
-                )
+                # Unknown top-level construct - provide helpful suggestion
+                first_word = stripped.split()[0] if stripped.split() else stripped
+                suggestion = suggest_keyword(first_word, 'top-level')
+                
+                # Build list of common top-level keywords
+                common_keywords = [
+                    'app', 'page', 'model', 'dataset', 'connector', 'insight',
+                    'prompt', 'experiment', 'evaluator', 'theme', 'knowledge', 'query'
+                ]
+                
+                error_msg = f"Unknown top-level construct: '{first_word}'"
+                if suggestion and suggestion != first_word and suggestion in TOP_LEVEL_KEYWORDS:
+                    hint = f"Did you mean '{suggestion}'? Common keywords: {', '.join(common_keywords)}"
+                else:
+                    hint = f"Valid top-level keywords: {', '.join(common_keywords)} (and others)"
+                
+                raise self._error(error_msg, line_no, line, hint=hint)
         body: List[Any] = []
         if self.app is not None:
             body.append(self.app)
