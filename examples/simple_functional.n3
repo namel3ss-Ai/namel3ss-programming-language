@@ -1,11 +1,14 @@
 // Simple Symbolic Expression Example
 // Demonstrates basic functional programming in N3
 
-app "Functional Demo".
+app "Functional Demo" {
+  description: "Functional programming demo"
+}
 
 // Dataset with functional filter
-dataset "active_users" from postgres users:
-  filter by: fn(user) => user.active == true and user.last_login_days < 30
+dataset "active_users" from table users {
+  filter: fn(user) => user.active == true and user.last_login_days < 30
+}
 
 // Simple helper functions
 fn double(x) => x * 2
@@ -24,15 +27,16 @@ fn describe_list(lst) =>
   }
 
 // Page using expressions
-page "Home" at "/":
-  show text:
+page "Home" at "/" {
+  show text {
     title: "Welcome"
     content: fn() =>
       let users = dataset("active_users") in
       let count = length(users) in
       "Active users: " + str(count)
+  }
   
-  show table:
+  show table {
     title: "User List"
     source: dataset("active_users")
     transform: fn(users) =>
@@ -40,3 +44,5 @@ page "Home" at "/":
         ...u,
         greeting: greet(u.name)
       }, users)
+  }
+}

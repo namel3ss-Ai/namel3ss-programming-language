@@ -93,5 +93,5 @@ class SymbolicExpressionParser(
         """Initialize parser with source code."""
         super().__init__(code)
         # Token-based parsing state
-        self.tokens: List[str] = []
+        self.tokens: List[str] = self._tokenize(code)
         self.token_pos: int = 0

@@ -3,15 +3,33 @@
 This module defines the unified provider abstraction for all LLM backends.
 N3Provider wraps the existing BaseLLM interface with additional capabilities
 for streaming, batching, and unified configuration.
+
+Key Classes:
+    - N3Provider: Abstract base class for all provider implementations
+    - ProviderResponse: Normalized response from any provider
+    - ProviderMessage: Type alias for ChatMessage
+    - ProviderError: Base exception for provider errors
+    - BaseLLMAdapter: Adapter for existing BaseLLM implementations
+
+Example:
+    >>> from namel3ss.providers import N3Provider, ProviderResponse
+    >>> 
+    >>> class MyProvider(N3Provider):
+    ...     async def generate(self, messages, **kwargs):
+    ...         # Implementation
+    ...         return ProviderResponse(...)
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterable, Dict, List, Optional, Union
+from typing import Any, AsyncIterable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from namel3ss.llm.base import BaseLLM, ChatMessage, LLMResponse, LLMError
+
+if TYPE_CHECKING:
+    from .validation import validate_provider_name, validate_model_name
 
 
 # Type alias for provider messages (compatible with existing ChatMessage)
@@ -108,14 +126,31 @@ class N3Provider(ABC):
             name: Logical provider instance name (e.g., "chat_gpt_4o")
             model: Model identifier (e.g., "gpt-4", "claude-3-opus")
             config: Provider-specific configuration including:
-                - temperature: Sampling temperature (default 0.7)
-                - max_tokens: Maximum tokens to generate
-                - top_p: Nucleus sampling parameter
+                - temperature: Sampling temperature (default 0.7, range 0-2)
+                - max_tokens: Maximum tokens to generate (must be positive)
+                - top_p: Nucleus sampling parameter (range 0-1)
                 - timeout: Request timeout in seconds
                 - api_key: API key (or use environment variable)
                 - base_url: Override default API base URL
                 - Additional provider-specific parameters
+        
+        Raises:
+            ProviderValidationError: If name or model is invalid
+        
+        Example:
+            >>> provider = MyProvider(
+            ...     name="my_gpt4",
+            ...     model="gpt-4",
+            ...     config={"temperature": 0.7, "max_tokens": 1000}
+            ... )
         """
+        # Lazy import to avoid circular dependency
+        from .validation import validate_provider_name, validate_model_name
+        
+        # Validate inputs
+        validate_provider_name(name)
+        validate_model_name(model)
+        
         self.name = name
         self.model = model
         self.config = config or {}

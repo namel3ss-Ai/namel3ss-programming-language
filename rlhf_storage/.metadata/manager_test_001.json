@@ -1,0 +1,16 @@
+{
+  "artifact_id": "manager_test_001",
+  "artifact_type": "checkpoint",
+  "job_name": "manager_test",
+  "algorithm": "dpo",
+  "created_at": "2025-11-21T09:29:47.808875",
+  "size_bytes": 9,
+  "storage_path": "test/checkpoint",
+  "base_model": null,
+  "peft_method": null,
+  "final_loss": null,
+  "total_steps": null,
+  "version": "1.0.0",
+  "parent_artifact_id": null,
+  "tags": {}
+}

@@ -848,9 +848,15 @@ class ParserBase:
             line = self._peek()
             if line is None:
                 break
-            indent = self._indent(line)
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            
+            # Handle closing brace for blocks
+            if stripped == '}':
+                self._advance()
+                break
+            
+            indent = self._indent(line)
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             if indent <= parent_indent or stripped.startswith('-'):

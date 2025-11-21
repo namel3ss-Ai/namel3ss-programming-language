@@ -17,6 +17,7 @@ from .ai import (
     TuningJob,
     LLMDefinition,
     ToolDefinition,
+    RLHFJob,
 )
 from .rag import IndexDefinition, RagPipelineDefinition
 from .agents import AgentDefinition, GraphDefinition
@@ -70,6 +71,7 @@ class App:
     eval_suites: List[EvalSuiteDefinition] = field(default_factory=list)
     training_jobs: List[TrainingJob] = field(default_factory=list)
     tuning_jobs: List[TuningJob] = field(default_factory=list)
+    rlhf_jobs: List[RLHFJob] = field(default_factory=list)  # RLHF training jobs
     indices: List[IndexDefinition] = field(default_factory=list)  # RAG retrieval indices
     rag_pipelines: List[RagPipelineDefinition] = field(default_factory=list)  # RAG pipeline definitions
     agents: List[AgentDefinition] = field(default_factory=list)  # Agent definitions

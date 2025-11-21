@@ -24,7 +24,7 @@ class UtilityParsersMixin:
                 break
             stripped = line.text.strip()
             
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             
@@ -78,7 +78,7 @@ class UtilityParsersMixin:
                 break
             
             stripped = line.text.strip()
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             

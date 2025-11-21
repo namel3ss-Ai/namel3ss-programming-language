@@ -1,13 +1,14 @@
 # Namel3ss Template Engine Examples
 
 # Example 1: Simple variable substitution
-prompt simple_greeting:
+prompt "simple_greeting" {
     name: "SimpleGreeting"
     template: "Hello {{ name }}!"
     model: "gpt-4"
+}
 
 # Example 2: Conditional instructions
-prompt conditional_prompt:
+prompt "conditional_prompt" {
     name: "ConditionalInstructions"
     template: """
 You are a helpful assistant.
@@ -25,9 +26,10 @@ Important: Limit your response to {{ max_words }} words.
 Question: {{ question }}
 """
     model: "gpt-4"
+}
 
 # Example 3: RAG with document loop
-prompt rag_qa_prompt:
+prompt "rag_qa_prompt" {
     name: "RAGQuestionAnswer"
     template: """
 Answer the question based on the following context documents:
@@ -46,9 +48,10 @@ Question: {{ question }}
 Please provide a detailed answer based on the {{ documents|length }} documents above.
 """
     model: "gpt-4"
+}
 
 # Example 4: Few-shot learning
-prompt few_shot_classifier:
+prompt "few_shot_classifier" {
     name: "FewShotClassifier"
     template: """
 Task: {{ task }}
@@ -71,9 +74,10 @@ Input: {{ input }}
 Output:
 """
     model: "gpt-4"
+}
 
 # Example 5: Complex nested data
-prompt user_profile_summary:
+prompt "user_profile_summary" {
     name: "UserProfileSummary"
     template: """
 Generate a summary for:
@@ -99,29 +103,19 @@ Preferences:
 Please create a professional summary of this user's profile.
 """
     model: "gpt-4"
+}
 
 # Example 6: Chain with templates
-chain rag_pipeline:
-    # Retrieve documents
-    docs = retrieve_documents(query)
-    
-    # Rerank for relevance
-    ranked_docs = rerank(
-        query=query,
-        documents=docs,
-        top_k=5
-    )
-    
-    # Generate answer with template
-    answer = rag_qa_prompt(
-        question=query,
-        documents=ranked_docs
-    )
-    
-    return answer
+chain "rag_pipeline" {
+    steps: [
+        "retrieve_documents",
+        "rerank",
+        "rag_qa_prompt"
+    ]
+}
 
 # Example 7: Multi-turn conversation
-prompt conversation_prompt:
+prompt "conversation_prompt" {
     name: "ConversationPrompt"
     template: """
 System: {{ system_message }}
@@ -140,9 +134,10 @@ Assistant: {{ msg.content }}
 User: {{ user_message }}
 """
     model: "gpt-4"
+}
 
 # Example 8: Structured output generation
-prompt structured_extraction:
+prompt "structured_extraction" {
     name: "StructuredExtraction"
     template: """
 Extract structured information from the text below.
@@ -161,9 +156,10 @@ Output format: {{ format }}
 Please extract all information accurately.
 """
     model: "gpt-4"
+}
     
 # Example 9: Filter showcase
-prompt filter_examples:
+prompt "filter_examples" {
     name: "FilterExamples"
     template: """
 Demonstrating template filters:
@@ -181,3 +177,4 @@ Length: {{ items|length }} items
 Date: {{ timestamp|format_date('%B %d, %Y') }}
 """
     model: "gpt-4"
+}

@@ -178,6 +178,7 @@ class Dataset:
     source_type: str
     source: str
     connector: Optional[DatasetConnectorConfig] = None
+    filter: Optional[Any] = None  # Filter expression (lambda or other)
     operations: List[DatasetOp] = field(default_factory=list)
     transforms: List[DatasetTransformStep] = field(default_factory=list)
     schema: List[DatasetSchemaField] = field(default_factory=list)

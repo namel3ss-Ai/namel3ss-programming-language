@@ -22,7 +22,7 @@ class FunctionsParserMixin:
         func_text = line.text
         
         # Create symbolic parser
-        parser = SymbolicExpressionParser(func_text, path=self._path)
+        parser = SymbolicExpressionParser(func_text)
         
         try:
             func_def = parser.parse_function_def()
@@ -50,7 +50,7 @@ class FunctionsParserMixin:
         rule_text = line.text
         
         # Create symbolic parser
-        parser = SymbolicExpressionParser(rule_text, path=self._path)
+        parser = SymbolicExpressionParser(rule_text)
         
         try:
             rule_def = parser.parse_rule_def()

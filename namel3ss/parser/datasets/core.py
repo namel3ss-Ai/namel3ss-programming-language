@@ -165,11 +165,10 @@ class CoreDatasetParserMixin:
             
             # Centralized indentation validation
             self._expect_indent_greater_than(
-                base_indent,
                 nxt,
+                base_indent,
                 line_no,
-                context="dataset body",
-                hint="Dataset operations and configurations must be indented under the dataset declaration"
+                context="dataset body"
             )
 
             lowered = stripped.lower()
@@ -410,9 +409,11 @@ class CoreDatasetParserMixin:
                 dataset.streaming = self._build_streaming_policy(config)
             
             else:
+                # Advance before raising error to avoid infinite loop
+                self._advance()
                 raise self._error(
                     "Expected dataset operation or configuration block",
-                    self.pos + 1,
-                    nxt,
+                    self.pos,
+                    stripped,
                     hint='Valid directives: filter by, add column, group by, order by, join, transform, schema, feature, target, quality, profile, metadata, lineage, tags, reactive, auto refresh, with option, cache, pagination, stream'
                 )

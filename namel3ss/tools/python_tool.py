@@ -3,6 +3,8 @@
 from typing import Any, Callable, Dict, Optional
 
 from .base import BaseTool, ToolError, ToolResult
+from .errors import ToolExecutionError, ToolValidationError
+from .validation import validate_python_code
 
 
 class PythonTool(BaseTool):
@@ -10,6 +12,69 @@ class PythonTool(BaseTool):
     Tool for executing Python code or calling Python functions.
     
     Can execute either a code string or call a provided function.
+    Supports passing inputs as function arguments or code variables.
+    
+    Features:
+        - Execute arbitrary Python code strings
+        - Call Python functions with arguments
+        - Capture return values or result variable
+        - Safe execution with timeout support
+        - Error context in results
+    
+    Configuration:
+        name: Tool identifier
+        function: Python callable to execute (optional)
+        code: Python code string to execute (optional)
+        input_schema: Schema for function arguments/code variables
+        timeout: Execution timeout in seconds
+    
+    One of function or code must be provided.
+    
+    Example with function:
+        >>> def calculate_tax(amount, rate):
+        ...     return amount * rate
+        >>> 
+        >>> tool = create_tool(
+        ...     name="tax_calc",
+        ...     tool_type="python",
+        ...     function=calculate_tax,
+        ...     input_schema={
+        ...         "amount": {"type": "number", "required": True},
+        ...         "rate": {"type": "number", "required": True}
+        ...     }
+        ... )
+        >>> result = tool.execute(amount=100, rate=0.08)
+        >>> print(result.output)
+        8.0
+    
+    Example with code:
+        >>> code = '''
+        ... total = price * quantity
+        ... discount = total * 0.1
+        ... result = total - discount
+        ... '''
+        >>> tool = create_tool(
+        ...     name="discount_calc",
+        ...     tool_type="python",
+        ...     code=code
+        ... )
+        >>> result = tool.execute(price=50, quantity=3)
+        >>> print(result.output['result'])
+        135.0
+    
+    Security Warnings:
+        - Do NOT execute untrusted code strings (arbitrary code execution risk)
+        - Validate and sanitize all inputs
+        - Use functions instead of code strings when possible
+        - Consider sandboxing for untrusted code
+        - Set timeouts to prevent infinite loops
+    
+    Best Practices:
+        - Prefer function parameter over code for security
+        - Define clear input schemas
+        - Use 'result' variable in code for return values
+        - Handle exceptions in code/functions
+        - Set appropriate timeouts
     """
     
     def __init__(
@@ -47,10 +112,18 @@ class PythonTool(BaseTool):
         )
         
         if function is None and code is None:
-            raise ToolError(
+            raise ToolValidationError(
                 "Python tool requires either 'function' or 'code' parameter",
+                code="TOOL025",
                 tool_name=name,
+                field="function/code",
+                expected="Either function or code",
+                tool_type="python",
             )
+        
+        # Validate code if provided
+        if code:
+            validate_python_code(code, tool_name=name)
         
         self.function = function
         self.code = code
@@ -94,14 +167,24 @@ class PythonTool(BaseTool):
                 )
             
             else:
-                raise ToolError("No function or code to execute", tool_name=self.name)
+                raise ToolExecutionError(
+                    "No function or code to execute",
+                    code="TOOL032",
+                    tool_name=self.name,
+                    operation="execute",
+                )
         
         except Exception as e:
+            # Return result with error rather than raising
+            # This allows callers to handle errors gracefully
             return ToolResult(
                 output=None,
                 success=False,
-                error=str(e),
-                metadata={"error_type": type(e).__name__},
+                error=f"{type(e).__name__}: {str(e)}",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "execution_type": "function" if self.function else "code",
+                },
             )
     
     def get_tool_type(self) -> str:

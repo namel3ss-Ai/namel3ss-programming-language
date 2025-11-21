@@ -9,6 +9,11 @@ if TYPE_CHECKING:
 
 from namel3ss.ast.rag import IndexDefinition, RagPipelineDefinition
 
+# Regex patterns for RAG declarations
+_INDEX_HEADER_RE = re.compile(r'^index\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]')
+_DATASET_HEADER_RE = re.compile(r'^dataset\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]')
+_RAG_PIPELINE_HEADER_RE = re.compile(r'^rag_pipeline\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]')
+
 
 class RAGParserMixin:
     """Mixin providing rag index and pipeline parsing."""
@@ -181,14 +186,6 @@ class RAGParserMixin:
             dense_weight=dense_weight,
             sparse_weight=sparse_weight,
             reranker_type=reranker_type,
-            config=config,
-        )
-            query_encoder=query_encoder,
-            index=index,
-            top_k=top_k,
-            reranker=reranker,
-            distance_metric=distance_metric,
-            filters=filters,
             config=config,
         )
         

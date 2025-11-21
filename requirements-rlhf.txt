@@ -1,0 +1,58 @@
+# RLHF Training Dependencies
+# Requirements for Namel3ss RLHF subsystem
+
+# Core deep learning
+torch>=2.1.0
+torchvision>=0.16.0
+
+# HuggingFace ecosystem
+transformers>=4.35.0
+datasets>=2.14.0
+tokenizers>=0.15.0
+
+# RLHF and efficient fine-tuning
+trl>=0.7.0
+peft>=0.7.0
+bitsandbytes>=0.41.0
+
+# Distributed training
+accelerate>=0.24.0
+deepspeed>=0.12.0
+
+# Experiment tracking
+wandb>=0.16.0
+mlflow>=2.8.0
+tensorboard>=2.15.0
+
+# Data processing
+pandas>=2.0.0
+pyarrow>=14.0.0
+numpy>=1.24.0
+
+# Database
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0  # Async PostgreSQL driver
+psycopg2-binary>=2.9.0  # Sync PostgreSQL driver
+aiosqlite>=0.19.0  # Async SQLite driver
+alembic>=1.12.0
+
+# API
+fastapi>=0.104.0
+pydantic>=2.5.0
+uvicorn[standard]>=0.24.0
+httpx>=0.25.0  # For testing
+
+# Storage
+boto3>=1.29.0
+aioboto3>=12.0.0  # Async boto3
+google-cloud-storage>=2.10.0
+
+# Monitoring
+prometheus-client>=0.19.0
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+loguru>=0.7.0

@@ -30,13 +30,13 @@ class _ExpressionHelper(ExpressionParserMixin):
     
     def __init__(self):
         """Initialize with empty source - will be reset before each use."""
-        super().__init__("", path="")
+        ParserBase.__init__(self, "", path="")
     
     def parse(self, text: str, *, line_no: int, line: str) -> object:
         """Parse an expression string."""
-        self.reset(text, path="")
-        self.pos = 0
-        return self.expression()
+        self.lines = [line]
+        self.pos = line_no
+        return self._parse_expression(text)
 
 
 class _GrammarModuleParser(
@@ -108,7 +108,7 @@ class _GrammarModuleParser(
             if line is None:
                 break
             stripped = line.text.strip()
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             indent = self._indent(line.text)
@@ -177,6 +177,9 @@ class _GrammarModuleParser(
             if stripped.startswith('tuning '):
                 self._parse_tuning_job_wrapper(line)
                 continue
+            if stripped.startswith('train rlhf ') or stripped.startswith('rlhf '):
+                self._parse_rlhf_job_wrapper(line)
+                continue
             if stripped.startswith('index '):
                 self._parse_index(line)
                 continue
@@ -208,15 +211,24 @@ class _GrammarModuleParser(
 
         body: List[object] = []
         if self._app is not None:
-            # Collect knowledge modules and queries from extra nodes
+            # Collect knowledge modules, queries, and training jobs from extra nodes
             knowledge_modules = [n for n in self._extra_nodes if isinstance(n, KnowledgeModule)]
             queries = [n for n in self._extra_nodes if isinstance(n, LogicQuery)]
+            training_jobs = [n for n in self._extra_nodes if n.__class__.__name__ == 'TrainingJob']
+            tuning_jobs = [n for n in self._extra_nodes if n.__class__.__name__ == 'TuningJob']
+            rlhf_jobs = [n for n in self._extra_nodes if n.__class__.__name__ == 'RLHFJob']
             
             # Populate App fields
             if knowledge_modules:
                 self._app.knowledge_modules = knowledge_modules
             if queries:
                 self._app.queries = queries
+            if training_jobs:
+                self._app.training_jobs = training_jobs
+            if tuning_jobs:
+                self._app.tuning_jobs = tuning_jobs
+            if rlhf_jobs:
+                self._app.rlhf_jobs = rlhf_jobs
             
             body.append(self._app)
         body.extend(self._extra_nodes)

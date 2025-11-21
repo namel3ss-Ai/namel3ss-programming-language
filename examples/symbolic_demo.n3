@@ -1,19 +1,23 @@
 // Symbolic Expression Demo - Advanced N3 Features
 // This demonstrates functional programming, pattern matching, and logic rules
 
-app "Symbolic Demo" connects to postgres "demo_db".
+app "Symbolic Demo" connects to postgres "demo_db" {
+  description: "Symbolic expression demo"
+}
 
 // Define datasets with functional filters
-dataset "high_value_orders" from postgres orders:
-  filter by: fn(row) => row.amount > 1000 and row.status == "completed"
+dataset "high_value_orders" from table orders {
+  filter: fn(row) => row.amount > 1000 and row.status == "completed"
+}
   
-dataset "recent_orders" from postgres orders:
-  filter by: fn(row) => 
+dataset "recent_orders" from table orders {
+  filter: fn(row) => 
     let days_ago = (current_date() - row.created_at) / 86400 in
     days_ago < 30
+}
 
 // Computed dataset with map/filter/reduce
-dataset "order_summary" from postgres orders:
+dataset "order_summary" from table orders {
   transform rows: fn(orders) =>
     let totals = map(fn(o) => o.amount, orders) in
     let total_revenue = reduce(fn(a, b) => a + b, totals, 0) in
@@ -25,6 +29,7 @@ dataset "order_summary" from postgres orders:
       max_order: max(totals),
       min_order: min(totals)
     }]
+}
 
 // Define helper functions
 fn calculate_discount(amount, tier) =>

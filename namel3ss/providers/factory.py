@@ -2,11 +2,31 @@
 
 Central factory for instantiating providers from DSL specifications
 and managing provider instances through a registry.
+
+Key Functions:
+    - create_provider_from_spec: Main entry point for creating providers
+    - register_provider_class: Register a provider implementation
+    - get_provider_class: Get a provider class by type name
+    - register_provider_instance: Register a provider instance for reuse
+    - get_provider_instance: Get a registered provider instance
+
+Example:
+    >>> from namel3ss.providers.factory import create_provider_from_spec
+    >>> 
+    >>> provider = create_provider_from_spec(
+    ...     name="my_gpt4",
+    ...     provider_type="openai",
+    ...     model="gpt-4",
+    ...     config={"temperature": 0.7, "max_tokens": 1000}
+    ... )
 """
 
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, Type, TYPE_CHECKING
 from .base import N3Provider, ProviderError
 from .config import load_config_for_provider, ProviderConfigError
+
+if TYPE_CHECKING:
+    from .validation import validate_provider_name, validate_model_name
 
 
 # Provider class registry - populated lazily when provider modules are imported
@@ -107,22 +127,29 @@ def create_provider_from_spec(
     This is the main entry point for creating providers from parsed DSL `llm` blocks.
     
     Process:
-    1. Load base configuration from NAMEL3SS_PROVIDER_* environment variables
-    2. Merge with DSL-level config (DSL overrides environment)
-    3. Instantiate the appropriate provider class
-    4. Return the configured provider
+    1. Validate provider name and model name
+    2. Load base configuration from NAMEL3SS_PROVIDER_* environment variables
+    3. Merge with DSL-level config (DSL overrides environment)
+    4. Instantiate the appropriate provider class
+    5. Return the configured provider
     
     Args:
         name: Logical name for the provider instance (e.g., "chat_gpt_4o")
         provider_type: Provider type ('openai', 'anthropic', 'google', 'azure_openai', 'local', 'http')
         model: Model identifier (e.g., 'gpt-4', 'claude-3-opus')
-        config: DSL-level configuration overrides
+        config: DSL-level configuration overrides including:
+            - temperature: Sampling temperature (0-2)
+            - max_tokens: Maximum tokens to generate (must be positive)
+            - top_p: Nucleus sampling parameter (0-1)
+            - api_key: API key override
+            - timeout: Request timeout in seconds
     
     Returns:
         Configured N3Provider instance
     
     Raises:
-        ProviderError: If provider type is unknown or configuration is invalid
+        ProviderValidationError: If name, model, or config is invalid
+        ProviderError: If provider type is unknown or instantiation fails
         ProviderConfigError: If required configuration is missing
     
     Example:
@@ -131,9 +158,21 @@ def create_provider_from_spec(
         ...     name="chat_model",
         ...     provider_type="openai",
         ...     model="gpt-4",
-        ...     config={"temperature": 0.7}
+        ...     config={"temperature": 0.7, "max_tokens": 1000}
         ... )
     """
+    # Lazy import to avoid circular dependency
+    from .validation import validate_provider_name, validate_model_name
+    
+    # Validate inputs
+    try:
+        validate_provider_name(name)
+        validate_model_name(model)
+    except Exception as e:
+        raise ProviderError(
+            f"Invalid provider specification: {e}"
+        ) from e
+    
     # Load configuration (environment + DSL)
     try:
         merged_config = load_config_for_provider(provider_type, config)

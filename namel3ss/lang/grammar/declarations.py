@@ -47,7 +47,7 @@ class DeclarationsParserMixin:
                 if nxt_stripped and indent <= base_indent:
                     break
                 
-                if not nxt_stripped or nxt_stripped.startswith('#'):
+                if not nxt_stripped or nxt_stripped.startswith('#') or nxt_stripped.startswith('//'):
                     self._advance()
                     continue
                 
@@ -115,7 +115,7 @@ class DeclarationsParserMixin:
                 break
             stripped = next_line.text.strip()
             indent = self._indent(next_line.text)
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             if indent <= base_indent:
@@ -132,6 +132,8 @@ class DeclarationsParserMixin:
                 operations.append(GroupByOp(columns=columns))
                 self._advance()
                 continue
+            # Unknown clause - advance before raising to avoid infinite loop
+            self._advance()
             self._unsupported(next_line, "dataset clause")
         dataset = Dataset(name=name, source_type=source_type, source=source, operations=operations)
         self._ensure_app(line)
@@ -158,7 +160,7 @@ class DeclarationsParserMixin:
                 break
             stripped = next_line.text.strip()
             indent = self._indent(next_line.text)
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             if indent <= base_indent:

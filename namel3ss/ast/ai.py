@@ -1,48 +1,67 @@
 """
 AI-centric AST nodes for connectors, templates, prompts, and chains.
 
-DEPRECATED: This module has been refactored into modular files.
-Please import from namel3ss.ast instead:
-    from namel3ss.ast import Connector, AIModel, Memory, Template, Prompt, Chain, etc.
+REFACTORED: This module has been reorganized into a subpackage at namel3ss.ast.ai/
+This file remains as a thin compatibility shim for any code that imports from namel3ss.ast.ai
 
-This file remains as a compatibility shim for any internal code that
-imports directly from namel3ss.ast.ai.
+Preferred imports (new):
+    from namel3ss.ast.ai import Connector, AIModel, Prompt, Chain
+    from namel3ss.ast import Connector, AIModel, Prompt, Chain  # Also works
+
+Legacy imports (still supported):
+    from namel3ss.ast.ai import Connector, AIModel, Prompt, Chain
+
+The new subpackage structure at namel3ss.ast.ai/ provides:
+- Better organization (one responsibility per module)
+- Centralized validation (ai.validation module)
+- Production-grade error handling (ai.errors module)
+- Comprehensive documentation
+- Easier maintenance and testing
+
+For validation, use:
+    from namel3ss.ast.ai.validation import validate_prompt, validate_chain
+    
+For error handling, use:
+    from namel3ss.ast.ai.errors import AIValidationError, AIConfigurationError
 """
 
-# Re-export all symbols from the new modular structure
-from .ai_connectors import Connector
-from .ai_models import AIModel
-from .ai_templates import Template
-from .ai_memory import Memory
-from .ai_prompts import (
+# Re-export all symbols from the new subpackage structure
+from .ai import (
+    # Core constructs
+    Connector,
+    AIModel,
+    Template,
+    Memory,
+    # Prompts and schemas  
+    PromptField,
+    PromptArgument,
     EnumType,
-    OutputField,
     OutputFieldType,
+    OutputField,
     OutputSchema,
     Prompt,
-    PromptArgument,
-    PromptField,
-)
-from .ai_workflows import (
-    Chain,
-    ChainStep,
+    # Workflows and chains
     StepEvaluationConfig,
-    WorkflowForBlock,
+    ChainStep,
     WorkflowIfBlock,
-    WorkflowNode,
+    WorkflowForBlock,
     WorkflowWhileBlock,
-)
-from .ai_training import (
-    EarlyStoppingSpec,
-    HyperparamSpec,
-    HyperparameterValue,
+    Chain,
+    WorkflowNode,
+    # Training and tuning
     TrainingComputeSpec,
     TrainingJob,
+    HyperparamSpec,
+    EarlyStoppingSpec,
     TuningJob,
-)
-from .ai_tools import (
+    HyperparameterValue,
+    # Tools and LLMs
     LLMDefinition,
     ToolDefinition,
+    # Errors and validation
+    AIValidationError,
+    AIConfigurationError,
+    AIExecutionError,
 )
 
 __all__ = [

@@ -54,13 +54,20 @@ class PromptsParserMixin:
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
+        if stripped.endswith("{"):
+            stripped = stripped[:-1]
+        
+        # Try quoted name first: prompt "Name"
         match = re.match(r'(?:define\s+)?prompt\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
         if not match:
+            # Try unquoted identifier: prompt name
+            match = re.match(r'(?:define\s+)?prompt\s+([A-Za-z_][A-Za-z0-9_]*)', stripped, flags=re.IGNORECASE)
+        
+        if not match:
             raise self._error(
-                'Expected: prompt "Name":',
+                'Expected: prompt "Name" or prompt name',
                 line_no,
-                line,
-                hint='Prompt definitions require a name, e.g., prompt "Summarize":'
+                line
             )
         name = match.group(1)
         config_block = self._parse_kv_block(base_indent)
@@ -171,20 +178,23 @@ class PromptsParserMixin:
             }:
                 prompt_config[key] = self._transform_config(val)
         model_name = str(model_ref) if model_ref is not None else None
+        
+        # Build template from available prompt components
+        template_parts = []
+        if system_prompt:
+            template_parts.append(f"System: {system_prompt}")
+        if user_prompt:
+            template_parts.append(f"User: {user_prompt}")
+        if assistant_prompt:
+            template_parts.append(f"Assistant: {assistant_prompt}")
+        template = "\n\n".join(template_parts) if template_parts else ""
+        
         return Prompt(
             name=name,
             description=description,
             model=model_name,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            assistant_prompt=assistant_prompt,
-            arguments=arguments,
+            template=template,
+            args=arguments if arguments else [],
             output_schema=output_schema,
-            examples=examples,
-            safety_policy=safety_policy,
-            evaluators=evaluators,
-            temperature=temperature,
-            max_tokens=max_tokens,
             metadata=metadata,
-            config=prompt_config,
         )

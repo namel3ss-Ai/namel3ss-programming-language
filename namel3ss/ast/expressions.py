@@ -10,6 +10,8 @@ from .base import Expression
 __all__ = [
     "LiteralExpr",
     "VarExpr",
+    "BinaryOp",
+    "AttributeExpr",
     "CallExpr",
     "LambdaExpr",
     "IfExpr",
@@ -51,8 +53,23 @@ class LiteralExpr(Expression):
 
 @dataclass
 class VarExpr(Expression):
-    """Variable reference."""
+    """Variable reference: x"""
     name: str
+
+
+@dataclass
+class BinaryOp(Expression):
+    """Binary operation: left op right"""
+    op: str
+    left: Expression
+    right: Expression
+
+
+@dataclass
+class AttributeExpr(Expression):
+    """Attribute access: base.attr"""
+    base: Expression
+    attr: str
 
 
 @dataclass

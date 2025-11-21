@@ -79,8 +79,8 @@ prompt "chat_response" {
   model: "gpt4"
   
   args: {
-    user_message: string,
-    user_name: string = "User"
+    user_message: "string",
+    user_name: "User"
   }
   
   template: """

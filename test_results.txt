@@ -1,0 +1,16 @@
+[1m============================= test session starts ==============================[0m
+platform darwin -- Python 3.14.0, pytest-9.0.1, pluggy-1.6.0 -- /Users/disanssebowabasalidde/Documents/GitHub/namel3ss-programming-language/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/disanssebowabasalidde/Documents/GitHub/namel3ss-programming-language
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.11.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+[1mcollecting ... [0mcollected 10 items
+
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path0] [32mPASSED[0m[32m [ 10%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path1] [31mFAILED[0m[31m [ 20%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path2] [31mFAILED[0m[31m [ 30%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path3] [31mFAILED[0m[31m [ 40%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path4] [31mFAILED[0m[31m [ 50%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path5] [31mFAILED[0m[31m [ 60%][0m
+tests/test_official_examples.py::TestOfficialExamples::test_example_parses[example_path6] 

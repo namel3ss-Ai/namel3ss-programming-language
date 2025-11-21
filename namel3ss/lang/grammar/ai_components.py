@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 import re
-from typing import TYPE_CHECKING, List, Optional, Dict, Any, Tuple
+from typing import TYPE_CHECKING, List, Optional, Dict, Any, Tuple, Callable
 
 if TYPE_CHECKING:
     from .helpers import _Line
+    from .parser import _GrammarModuleParser
 
 from namel3ss.ast.ai import LLMDefinition, ToolDefinition
+from namel3ss.parser.ai import AIParserMixin as _AIParserMixin
+from namel3ss.parser.logic import LogicParserMixin as _LogicParserMixin
+
+# Regex patterns for AI component parsing
+_LLM_HEADER_RE = re.compile(r'^llm\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
+_TOOL_HEADER_RE = re.compile(r'^tool\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*$')
 
 
 class AIComponentsParserMixin:
-    """Mixin providing llm, tool, and ai wrapper parsing methods."""
+    """Mixin providing llm, tool, and AI wrapper parsing methods."""
 
     # ------------------------------------------------------------------
     # LLM, Tool, and Prompt block parsing
@@ -72,7 +79,7 @@ class AIComponentsParserMixin:
             top_p=top_p,
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
-            config=config,
+            metadata=config,  # Store additional config in metadata field
         )
         
         self._ensure_app(line)
@@ -236,6 +243,14 @@ class AIComponentsParserMixin:
             if not hasattr(self, '_extra_nodes'):
                 self._extra_nodes = []
             self._extra_nodes.append(tuning_job)
+
+    def _parse_rlhf_job_wrapper(self, line: _Line) -> None:
+        """Wrapper to parse RLHF job definitions using AIParserMixin."""
+        rlhf_job = self._run_ai_block_parser(line, _AIParserMixin._parse_rlhf_job)
+        if rlhf_job:
+            if not hasattr(self, '_extra_nodes'):
+                self._extra_nodes = []
+            self._extra_nodes.append(rlhf_job)
 
     def _parse_knowledge_wrapper(self, line: _Line) -> None:
         """Wrapper to parse knowledge module definitions using LogicParserMixin."""

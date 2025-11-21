@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Optional
 
 from namel3ss.ast import App, Module
-# Lazy import to avoid circular dependency - parse_module imported at usage time
-from .base import N3SyntaxError
+from namel3ss.lang.parser import parse_module as new_parse_module
+from namel3ss.lang.parser import N3SyntaxError
 
 
 class Parser:
@@ -16,11 +16,11 @@ class Parser:
         self.source_path = path
 
     def parse(self) -> Module:
-        # Import here to avoid circular dependency
-        from namel3ss.lang.grammar import parse_module
-        return parse_module(self._source, path=self.source_path, module_name=self._module_name)
+        """Parse source into Module AST using the unified parser."""
+        return new_parse_module(self._source, path=self.source_path, module_name=self._module_name)
 
     def parse_app(self) -> App:
+        """Parse source and extract the App node."""
         module = self.parse()
         if not module.body:
             raise N3SyntaxError(

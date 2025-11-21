@@ -119,9 +119,14 @@ class MainParserMixin:
         # Variable or function call
         expr: Expression = VarExpr(name=name)
         
-        # Check for indexing, slicing, or calls
+        # Check for postfix operators: ., [], (), ~
         while True:
-            if self.try_consume("["):
+            if self.try_consume("."):
+                # Attribute access
+                attr = self.word()
+                from namel3ss.ast.expressions import AttributeExpr
+                expr = AttributeExpr(base=expr, attr=attr)
+            elif self.try_consume("["):
                 # Could be indexing or slicing
                 if self.try_consume(":"):
                     # [:end]
@@ -170,5 +175,120 @@ class MainParserMixin:
                 expr = UnifyExpr(left=expr, right=right)
             else:
                 break
+        
+        # Now handle binary operators with precedence
+        return self._parse_binary_ops(expr)
+    
+    def _parse_binary_ops(self, left: "Expression") -> "Expression":
+        """Parse binary operators with precedence."""
+        from namel3ss.ast.expressions import BinaryOp
+        
+        # Operator precedence (higher number = higher precedence)
+        precedence = {
+            'or': 1,
+            'and': 2,
+            '==': 3, '!=': 3,
+            '<': 4, '<=': 4, '>': 4, '>=': 4,
+            '+': 5, '-': 5,
+            '*': 6, '/': 6, '%': 6,
+        }
+        
+        while self.peek() in precedence:
+            op = self.consume()
+            right = self._parse_primary_expr()
+            
+            # Handle right-associative operators with higher precedence
+            while self.peek() in precedence and precedence.get(self.peek(), 0) > precedence[op]:
+                right = self._parse_binary_ops(right)
+                break
+            
+            left = BinaryOp(op=op, left=left, right=right)
+        
+        return left
+    
+    def _parse_primary_expr(self) -> "Expression":
+        """Parse a primary expression (literal, variable, or parenthesized)."""
+        from namel3ss.ast.expressions import (
+            LiteralExpr, VarExpr, ListExpr, DictExpr, TupleExpr,
+            IndexExpr, CallExpr, SliceExpr
+        )
+        
+        # Parenthesized expression
+        if self.try_consume("("):
+            expr = self._parse_binary_ops(self._parse_base_expr())
+            self.expect(")")
+            return expr
+        
+        # Literals
+        if self.peek() and self.peek() in ('"', "'"):
+            return LiteralExpr(value=self.string())
+        
+        if self.peek() and (self.peek().isdigit() or self.peek() == "-"):
+            return LiteralExpr(value=self.number())
+        
+        # Variable
+        name = self.word()
+        
+        # Special literals
+        if name in ("True", "true"):
+            return LiteralExpr(value=True)
+        if name in ("False", "false"):
+            return LiteralExpr(value=False)
+        if name in ("None", "null"):
+            return LiteralExpr(value=None)
+        
+        expr = VarExpr(name=name)
+        
+        # Handle postfix operators (indexing, calls, attribute access)
+        while True:
+            if self.try_consume("."):
+                attr = self.word()
+                from namel3ss.ast.expressions import AttributeExpr
+                expr = AttributeExpr(base=expr, attr=attr)
+            elif self.try_consume("["):
+                index = self._parse_binary_ops(self._parse_base_expr())
+                self.expect("]")
+                expr = IndexExpr(base=expr, index=index)
+            elif self.try_consume("("):
+                args = []
+                while not self.try_consume(")"):
+                    if args:
+                        self.expect(",")
+                    args.append(self._parse_binary_ops(self._parse_base_expr()))
+                expr = CallExpr(func=expr, args=args, kwargs={})
+            else:
+                break
+        
+        return expr
+    
+    def _parse_base_expr(self) -> "Expression":
+        """Parse the very base expression before any operators."""
+        from namel3ss.ast.expressions import LiteralExpr, VarExpr
+        
+        # Literals
+        if self.peek() and self.peek() in ('"', "'"):
+            return LiteralExpr(value=self.string())
+        
+        if self.peek() and (self.peek().isdigit()):
+            return LiteralExpr(value=self.number())
+        
+        # Variable
+        name = self.word()
+        
+        # Special literals
+        if name in ("True", "true"):
+            return LiteralExpr(value=True)
+        if name in ("False", "false"):
+            return LiteralExpr(value=False)
+        if name in ("None", "null"):
+            return LiteralExpr(value=None)
+        
+        expr = VarExpr(name=name)
+        
+        # Handle attribute access
+        while self.try_consume("."):
+            attr = self.word()
+            from namel3ss.ast.expressions import AttributeExpr
+            expr = AttributeExpr(base=expr, attr=attr)
         
         return expr

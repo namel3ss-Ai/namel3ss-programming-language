@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from .chains import ChainsParserMixin
 from .models import ModelsParserMixin
 from .prompts import PromptsParserMixin
+from .rlhf import RLHFParserMixin
 from .schemas import SchemaParserMixin
 from .training import TrainingParserMixin
 from .workflows import WorkflowParserMixin
@@ -19,6 +20,7 @@ class AIParserMixin(
     ModelsParserMixin,
     ChainsParserMixin,
     PromptsParserMixin,
+    RLHFParserMixin,
     SchemaParserMixin,
     TrainingParserMixin,
     WorkflowParserMixin,

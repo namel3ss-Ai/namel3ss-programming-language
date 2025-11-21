@@ -44,6 +44,35 @@ Provider Types:
     - azure_openai: Azure OpenAI deployments
     - local/ollama/vllm: Local LLM engines
     - http: Generic HTTP LLM endpoints
+
+Validation:
+    Centralized validation functions for provider configs, messages, and parameters.
+    
+    >>> from namel3ss.providers import validate_provider_config
+    >>> from namel3ss.providers import ProviderValidationError
+    >>> 
+    >>> try:
+    ...     validate_provider_config(
+    ...         name="gpt4",
+    ...         model="gpt-4",
+    ...         temperature=0.7,
+    ...         max_tokens=1000
+    ...     )
+    ... except ProviderValidationError as e:
+    ...     print(f"[{e.code}] {e.message}")
+
+Error Handling:
+    Domain-specific exceptions for provider errors with error codes.
+    
+    >>> from namel3ss.providers import ProviderAuthError, ProviderRateLimitError
+    >>> 
+    >>> try:
+    ...     # Provider operation
+    ...     pass
+    ... except ProviderAuthError as e:
+    ...     print(f"Auth failed: {e.format()}")
+    ... except ProviderRateLimitError as e:
+    ...     print(f"Rate limited, retry after {e.retry_after}s")
 """
 
 from .base import (
@@ -52,6 +81,27 @@ from .base import (
     ProviderResponse,
     ProviderError,
     BaseLLMAdapter,
+)
+
+from .errors import (
+    ProviderValidationError,
+    ProviderAuthError,
+    ProviderRateLimitError,
+    ProviderAPIError,
+    ProviderTimeoutError,
+)
+
+from .validation import (
+    validate_provider_name,
+    validate_model_name,
+    validate_temperature,
+    validate_max_tokens,
+    validate_top_p,
+    validate_api_key,
+    validate_endpoint,
+    validate_message,
+    validate_messages,
+    validate_provider_config,
 )
 
 from .config import (
@@ -129,6 +179,23 @@ __all__ = [
     "ProviderResponse",
     "ProviderError",
     "BaseLLMAdapter",
+    # Errors
+    "ProviderValidationError",
+    "ProviderAuthError",
+    "ProviderRateLimitError",
+    "ProviderAPIError",
+    "ProviderTimeoutError",
+    # Validation
+    "validate_provider_name",
+    "validate_model_name",
+    "validate_temperature",
+    "validate_max_tokens",
+    "validate_top_p",
+    "validate_api_key",
+    "validate_endpoint",
+    "validate_message",
+    "validate_messages",
+    "validate_provider_config",
     # Configuration
     "ProviderConfigError",
     "load_provider_config",

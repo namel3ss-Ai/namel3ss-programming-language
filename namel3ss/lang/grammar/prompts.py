@@ -9,6 +9,9 @@ if TYPE_CHECKING:
 
 from namel3ss.ast.ai import PromptArgument, Prompt, OutputSchema, OutputField, OutputFieldType
 
+# Regex patterns for parsing prompt declarations
+_PROMPT_HEADER_RE = re.compile(r'^prompt\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]')
+
 
 class PromptsParserMixin:
     """Mixin providing legacy prompt parsing with args and output schema."""
@@ -55,7 +58,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             
@@ -116,7 +119,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             
@@ -172,7 +175,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             
@@ -229,7 +232,7 @@ class PromptsParserMixin:
             stripped = nxt.text.strip()
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 self._advance()
                 continue
             

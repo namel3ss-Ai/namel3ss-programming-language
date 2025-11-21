@@ -129,7 +129,7 @@ class ExpressionParserMixin(ParserBase):
             from namel3ss.parser.symbolic import SymbolicExpressionParser
             from namel3ss.ast.expressions import Expression as SymbolicExpression
             
-            parser = SymbolicExpressionParser(stripped, path=getattr(self, '_path', ''))
+            parser = SymbolicExpressionParser(stripped)
             try:
                 return parser.parse_extended_expression()
             except Exception as e:

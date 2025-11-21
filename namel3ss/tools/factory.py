@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional, Type
 
 from .base import BaseTool, ToolError
 from .registry import get_registry
+from .errors import ToolValidationError
+from .validation import validate_tool_config
 
 
 # Registry of tool provider classes
@@ -68,15 +70,18 @@ def create_tool(
     """
     Create a tool instance using the factory pattern.
     
+    Validates configuration and instantiates the appropriate tool class
+    based on tool_type. Optionally registers in global registry.
+    
     Args:
-        name: Tool identifier
+        name: Tool identifier (must be unique if registering)
         tool_type: Type of tool (http, python, database, etc.)
         endpoint: Tool endpoint (for http/api tools)
         method: HTTP method (for http tools)
         input_schema: JSON schema for inputs
         output_schema: JSON schema for outputs
         headers: HTTP headers (for http tools)
-        timeout: Execution timeout in seconds
+        timeout: Execution timeout in seconds (default: 30.0)
         register: If True, register in global registry
         **config: Tool-specific configuration
         
@@ -84,18 +89,53 @@ def create_tool(
         Instantiated tool
         
     Raises:
+        ToolValidationError: If configuration is invalid
         ToolError: If tool type unknown or creation fails
         
     Example:
-        tool = create_tool(
-            name="weather",
-            tool_type="http",
-            endpoint="https://api.weather.com/v1/current",
-            method="GET",
-            timeout=10.0,
-            register=True
-        )
+        Create HTTP tool:
+        >>> tool = create_tool(
+        ...     name="weather",
+        ...     tool_type="http",
+        ...     endpoint="https://api.weather.com/v1/current",
+        ...     method="GET",
+        ...     timeout=10.0,
+        ...     register=True
+        ... )
+        >>> result = tool.execute(location="NYC")
+        
+        Create Python tool:
+        >>> def add(a, b):
+        ...     return a + b
+        >>> tool = create_tool(
+        ...     name="calculator",
+        ...     tool_type="python",
+        ...     function=add,
+        ...     register=True
+        ... )
+        >>> result = tool.execute(a=5, b=3)
+    
+    Best Practices:
+        - Validate configuration before creating tools
+        - Use descriptive, unique names for registry
+        - Set appropriate timeouts for operations
+        - Define input/output schemas for type safety
+        - Register tools during initialization, not in hot paths
     """
+    # Validate configuration before creation
+    validate_tool_config(
+        name=name,
+        tool_type=tool_type,
+        timeout=timeout,
+        input_schema=input_schema,
+        output_schema=output_schema,
+        endpoint=endpoint,
+        method=method,
+        headers=headers,
+        code=config.get("code"),
+        function=config.get("function"),
+    )
+    
     provider_class = get_provider_class(tool_type)
     
     # Build config dict with all parameters

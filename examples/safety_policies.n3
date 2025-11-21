@@ -1,17 +1,20 @@
 # Safety and Guardrails Example
 # Demonstrates first-class policy primitives in Namel3ss
 
-app "Safe Customer Support Agent".
+app "Safe Customer Support Agent" {
+  description: "Customer support with safety policies"
+}
 
 # Define LLM
-llm chat_model:
-    provider: openai
-    model: gpt-4
+llm "chat_model" {
+    provider: "openai"
+    model: "gpt-4"
     temperature: 0.7
     max_tokens: 1024
+}
 
 # Define safety policies
-policy strict_safety {
+policy "strict_safety" {
     # Block harmful content categories
     block_categories: ["violence", "hate", "self-harm", "sexual_minors"]
     
@@ -28,7 +31,7 @@ policy strict_safety {
     log_level: "full"
 }
 
-policy content_moderation {
+policy "content_moderation" {
     # Block explicit categories
     block_categories: ["hate", "sexual"]
     
@@ -87,14 +90,29 @@ define chain "unprotected_qa" effect read:
     input -> template.customer_support(query = input.query) | llm.chat_model
 
 # Pages to test the system
-page "Support" at "/support":
-    show text "Customer Support (with Safety)"
-    show text "This endpoint uses strict safety policies to protect users."
+page "Support" at "/support" {
+    show text {
+      content: "Customer Support (with Safety)"
+    }
+    show text {
+      content: "This endpoint uses strict safety policies to protect users."
+    }
+}
 
-page "Recommendations" at "/recommendations":
-    show text "Product Recommendations (with Content Moderation)"
-    show text "This endpoint uses content moderation to filter inappropriate requests."
+page "Recommendations" at "/recommendations" {
+    show text {
+      content: "Product Recommendations (with Content Moderation)"
+    }
+    show text {
+      content: "This endpoint uses content moderation to filter inappropriate requests."
+    }
+}
 
-page "Unsafe" at "/unsafe":
-    show text "Unprotected Endpoint (Demo Only)"
-    show text "WARNING: This endpoint has no safety policies applied."
+page "Unsafe" at "/unsafe" {
+    show text {
+      content: "Unprotected Endpoint (Demo Only)"
+    }
+    show text {
+      content: "WARNING: This endpoint has no safety policies applied."
+    }
+}

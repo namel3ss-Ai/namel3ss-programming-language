@@ -28,25 +28,28 @@ ENV_ALIAS_MAP = {
 _RUN_ENV_PREPOSITIONS = {"using", "in", "on", "with"}
 
 
-def validate_path(value: Any, *, allow_none: bool = False) -> Optional[Path]:
+def validate_path(value: Any, *, allow_none: bool = False, must_exist: bool = False) -> Optional[Path]:
     """
     Validate and convert value to Path.
     
     Args:
         value: Value to validate (string, PathLike, or None)
         allow_none: Whether None is acceptable
+        must_exist: Whether the path must exist on the filesystem
     
     Returns:
         Path object or None if allow_none=True and value is None
     
     Raises:
-        CLIValidationError: If value is not a valid path type
+        CLIValidationError: If value is not a valid path type or doesn't exist when must_exist=True
     
     Examples:
         >>> validate_path("/tmp/file.txt")
         PosixPath('/tmp/file.txt')
         >>> validate_path(None, allow_none=True)
         None
+        >>> validate_path("/nonexistent", must_exist=True)  # doctest: +SKIP
+        CLIValidationError: Path does not exist: /nonexistent
     """
     if value is None:
         if allow_none:
@@ -57,7 +60,16 @@ def validate_path(value: Any, *, allow_none: bool = False) -> Optional[Path]:
         )
     
     if isinstance(value, (str, os.PathLike)):
-        return Path(value)
+        path = Path(value)
+        
+        # Check existence if required
+        if must_exist and not path.exists():
+            raise CLIValidationError(
+                f"Path does not exist: {path}",
+                hint="Ensure the file or directory exists before running this command"
+            )
+        
+        return path
     
     raise CLIValidationError(
         f"Expected path-like value, got {type(value).__name__}",

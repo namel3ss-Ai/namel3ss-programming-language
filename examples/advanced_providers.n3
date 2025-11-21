@@ -1,7 +1,7 @@
 // Example: Advanced Provider Configuration and Multi-Provider Workflows
 
 // Enterprise OpenAI Configuration
-llm gpt4_turbo {
+llm "gpt4_turbo" {
     provider: "openai"
     model: "gpt-4-turbo-preview"
     temperature: 0.3
@@ -10,7 +10,7 @@ llm gpt4_turbo {
 }
 
 // Anthropic for Long Context
-llm claude_opus {
+llm "claude_opus" {
     provider: "anthropic"
     model: "claude-3-opus-20240229"
     temperature: 0.7
@@ -18,7 +18,7 @@ llm claude_opus {
 }
 
 // Google for Cost-Effective Generation
-llm gemini_pro {
+llm "gemini_pro" {
     provider: "google"
     model: "gemini-pro"
     use_vertex: true
@@ -27,7 +27,7 @@ llm gemini_pro {
 }
 
 // Azure OpenAI for Enterprise
-llm azure_gpt4 {
+llm "azure_gpt4" {
     provider: "azure_openai"
     model: "gpt-4"
     deployment: "gpt-4-prod"
@@ -35,14 +35,14 @@ llm azure_gpt4 {
 }
 
 // Local vLLM for Privacy
-llm local_mistral {
+llm "local_mistral" {
     provider: "local"
     model: "mistral-7b-instruct"
     base_url: "http://localhost:8000"
 }
 
 // Custom HTTP Endpoint
-llm custom_model {
+llm "custom_model" {
     provider: "http"
     model: "my-custom-model"
     endpoint: "https://api.example.com/v1/generate"
@@ -50,54 +50,54 @@ llm custom_model {
 }
 
 // Multi-Stage Chain with Different Providers
-chain multi_provider_analysis {
-    input: document
+chain "multi_provider_analysis" {
+    input: "document"
     
     // Stage 1: Fast extraction with Gemini (cost-effective)
     step extract_entities {
-        target: extraction_prompt
-        model: gemini_pro
-        inputs: {text: $document}
-        output: entities
+        target: "extraction_prompt"
+        model: "gemini_pro"
+        inputs: {text: "$document"}
+        output: "entities"
     }
     
     // Stage 2: Deep analysis with GPT-4 (high quality)
     step analyze_sentiment {
-        target: analysis_prompt
-        model: gpt4_turbo
+        target: "analysis_prompt"
+        model: "gpt4_turbo"
         inputs: {
-            text: $document,
-            entities: $entities
+            text: "$document",
+            entities: "$entities"
         }
-        output: sentiment
+        output: "sentiment"
     }
     
     // Stage 3: Final synthesis with Claude (long context)
     step synthesize {
-        target: synthesis_prompt
-        model: claude_opus
+        target: "synthesis_prompt"
+        model: "claude_opus"
         inputs: {
-            text: $document,
-            entities: $entities,
-            sentiment: $sentiment
+            text: "$document",
+            entities: "$entities",
+            sentiment: "$sentiment"
         }
-        output: summary
+        output: "summary"
     }
     
     return: {
-        entities: $entities,
-        sentiment: $sentiment,
-        summary: $summary
+        entities: "$entities",
+        sentiment: "$sentiment",
+        summary: "$summary"
     }
 }
 
-prompt extraction_prompt {
-    model: gemini_pro
+prompt "extraction_prompt" {
+    model: "gemini_pro"
     system: "Extract named entities from text."
     user: "Text: {{text}}\n\nEntities (JSON):"
 }
 
-prompt analysis_prompt {
+prompt "analysis_prompt" {
     model: gpt4_turbo
     system: "Analyze sentiment considering entities."
     user: """

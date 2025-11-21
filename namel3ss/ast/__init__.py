@@ -112,39 +112,50 @@ from .models import (
     ModelServingSpec,
     ModelTrainingSpec,
 )
-# AI-related imports (modularized from ai.py)
-from .ai_connectors import Connector
-from .ai_models import AIModel
-from .ai_templates import Template
-from .ai_memory import Memory
-from .ai_prompts import (
+# AI-related imports (refactored into ai/ subpackage)
+from .ai import (
+    # Core constructs
+    Connector,
+    AIModel,
+    Template,
+    Memory,
+    # Prompts and schemas
+    PromptField,
+    PromptArgument,
     EnumType,
-    OutputField,
     OutputFieldType,
+    OutputField,
     OutputSchema,
     Prompt,
-    PromptArgument,
-    PromptField,
-)
-from .ai_workflows import (
-    Chain,
-    ChainStep,
+    # Workflows and chains
     StepEvaluationConfig,
-    WorkflowForBlock,
+    ChainStep,
     WorkflowIfBlock,
-    WorkflowNode,
+    WorkflowForBlock,
     WorkflowWhileBlock,
-)
-from .ai_training import (
-    EarlyStoppingSpec,
-    HyperparamSpec,
+    Chain,
+    WorkflowNode,
+    # Training and tuning
     TrainingComputeSpec,
     TrainingJob,
+    HyperparamSpec,
+    EarlyStoppingSpec,
     TuningJob,
-)
-from .ai_tools import (
+    # RLHF training
+    RLHFJob,
+    RLHFPEFTConfig,
+    RLHFAlgorithmConfig,
+    RLHFComputeSpec,
+    RLHFLoggingConfig,
+    RLHFSafetyConfig,
+    ConfigValue,
+    # Tools and LLMs
     LLMDefinition,
     ToolDefinition,
+    # Validation and errors also available
+    AIValidationError,
+    AIConfigurationError,
+    AIExecutionError,
 )
 from .modules import ImportedName, Import, ModuleSpec
 from .experiments import Experiment, ExperimentMetric, ExperimentVariant, ExperimentComparison
@@ -306,6 +317,13 @@ __all__ = [
     "HyperparamSpec",
     "EarlyStoppingSpec",
     "TuningJob",
+    "RLHFJob",
+    "RLHFPEFTConfig",
+    "RLHFAlgorithmConfig",
+    "RLHFComputeSpec",
+    "RLHFLoggingConfig",
+    "RLHFSafetyConfig",
+    "ConfigValue",
     "Chain",
     "WorkflowIfBlock",
     "WorkflowForBlock",

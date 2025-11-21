@@ -79,7 +79,7 @@ class LegacyProgramParser(
                 break
             line = raw.rstrip('\n')
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
                 continue
             indent = self._indent(line)
             if indent != 0:
@@ -206,6 +206,11 @@ class LegacyProgramParser(
                 self._ensure_app_initialized(line_no, line)
                 tuning_job = self._parse_tuning_job(line, line_no, indent)
                 self.app.tuning_jobs.append(tuning_job)
+            elif stripped.startswith('train rlhf ') or stripped.startswith('rlhf '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                rlhf_job = self._parse_rlhf_job(line, line_no, indent)
+                self.app.rlhf_jobs.append(rlhf_job)
             elif stripped.startswith('experiment '):
                 imports_allowed = False
                 self._ensure_app_initialized(line_no, line)
@@ -236,6 +241,47 @@ class LegacyProgramParser(
                 self._ensure_app_initialized(line_no, line)
                 assignment = self._parse_variable_assignment(line, line_no, indent)
                 self.app.variables.append(assignment)
+            elif stripped.startswith('llm '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse LLM definition
+                from namel3ss.ast.ai_tools import LLMDefinition
+                llm_def = self._parse_llm_definition(line, line_no, indent)
+                self.app.llms.append(llm_def)
+            elif stripped.startswith('fn '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse function definition using symbolic parser
+                from namel3ss.parser.symbolic import SymbolicExpressionParser
+                parser = SymbolicExpressionParser(line)
+                func_def = parser.parse_function_def()
+                if not hasattr(self.app, 'functions'):
+                    self.app.functions = []
+                self.app.functions.append(func_def)
+            elif stripped.startswith('chain '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse chain definition
+                chain_def = self._parse_chain_definition(line, line_no, indent)
+                if not hasattr(self.app, 'chains'):
+                    self.app.chains = []
+                self.app.chains.append(chain_def)
+            elif stripped.startswith('memory '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse memory definition
+                memory_def = self._parse_memory_definition(line, line_no, indent)
+                if not hasattr(self.app, 'memories'):
+                    self.app.memories = []
+                self.app.memories.append(memory_def)
+            elif stripped.startswith('rag_pipeline '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse RAG pipeline definition
+                rag_def = self._parse_rag_pipeline_definition(line, line_no, indent)
+                if not hasattr(self.app, 'rag_pipelines'):
+                    self.app.rag_pipelines = []
+                self.app.rag_pipelines.append(rag_def)
             else:
                 # Unknown top-level construct - provide helpful suggestion
                 first_word = stripped.split()[0] if stripped.split() else stripped
@@ -369,6 +415,239 @@ class LegacyProgramParser(
             self.app.theme = Theme(values=theme_values)
         else:
             self.app.theme.values.update(theme_values)
+    
+    def _parse_llm_definition(self, line: str, line_no: int, base_indent: int) -> 'LLMDefinition':
+        """Parse LLM definition: llm name { ... } or llm "name" { ... } or llm name: ..."""
+        from namel3ss.ast.ai_tools import LLMDefinition
+        import re
+        
+        # Parse: llm <name> { or llm "name" { or llm <name>: or llm "name":
+        # Try quoted name first
+        match = re.match(r'llm\s+"([^"]+)"\s*[:{]', line.strip())
+        if not match:
+            # Try unquoted identifier
+            match = re.match(r'llm\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]', line.strip())
+        
+        if not match:
+            raise self._error('Expected: llm <name> { or llm "name": or llm name:', line_no, line)
+        
+        name = match.group(1)
+        uses_braces = '{' in line
+        
+        # Parse configuration block
+        config = {}
+        model = None
+        provider = None
+        temperature = None
+        max_tokens = None
+        
+        self._advance()
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            # Handle closing brace for brace-style blocks
+            if uses_braces and stripped == '}':
+                self._advance()
+                break
+            
+            indent = self._indent(nxt)
+            # For colon-style blocks, break on dedent; for braces, continue until }
+            if not uses_braces and indent <= base_indent:
+                break
+            
+            # Parse key: value pairs
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Handle env references (don't strip quotes from env.VAR)
+                if not value.startswith('env.'):
+                    value = value.strip('"').strip("'")
+                
+                if key == 'model':
+                    model = value
+                elif key == 'provider':
+                    provider = value
+                elif key == 'temperature':
+                    temperature = float(value) if value else None
+                elif key == 'max_tokens':
+                    max_tokens = int(value) if value else None
+                elif key == 'api_key':
+                    api_key = value
+                else:
+                    config[key] = value
+            
+            self._advance()
+        
+        return LLMDefinition(
+            name=name,
+            model=model,
+            provider=provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            metadata=config
+        )
+    
+    def _parse_chain_definition(self, line: str, line_no: int, base_indent: int) -> Dict[str, Any]:
+        """Parse chain definition: chain name { ... } or chain name: ..."""
+        import re
+        
+        # Parse: chain <name> { or chain <name>:
+        match = re.match(r'chain\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]', line.strip())
+        if not match:
+            raise self._error('Expected: chain <name> { or chain <name>:', line_no, line)
+        
+        name = match.group(1)
+        uses_braces = '{' in line
+        
+        # Parse configuration as key-value dict
+        config = {'name': name}
+        
+        self._advance()
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            if uses_braces and stripped == '}':
+                self._advance()
+                break
+            
+            indent = self._indent(nxt)
+            if not uses_braces and indent <= base_indent:
+                break
+            
+            # Parse key: value pairs
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                config[key.strip()] = value.strip().strip('"').strip("'")
+            
+            self._advance()
+        
+        return config
+    
+    def _parse_memory_definition(self, line: str, line_no: int, base_indent: int) -> Dict[str, Any]:
+        """Parse memory definition: memory name { ... } or memory "name" { ... }"""
+        import re
+        
+        # Parse: memory <name> { or memory "name" {
+        match = re.match(r'memory\s+"([^"]+)"\s*[:{]', line.strip())
+        if not match:
+            match = re.match(r'memory\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]', line.strip())
+        
+        if not match:
+            raise self._error('Expected: memory <name> { or memory "name":', line_no, line)
+        
+        name = match.group(1)
+        uses_braces = '{' in line
+        
+        # Parse configuration as key-value dict
+        config = {'name': name}
+        
+        self._advance()
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            if uses_braces and stripped == '}':
+                self._advance()
+                break
+            
+            indent = self._indent(nxt)
+            if not uses_braces and indent <= base_indent:
+                break
+            
+            # Parse key: value or nested blocks
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Handle nested metadata blocks
+                if not value or value == '{':
+                    nested = {}
+                    self._advance()
+                    while self.pos < len(self.lines):
+                        nxt2 = self._peek()
+                        if not nxt2 or nxt2.strip() == '}':
+                            if nxt2 and nxt2.strip() == '}':
+                                self._advance()
+                            break
+                        if self._indent(nxt2) <= indent:
+                            break
+                        if ':' in nxt2:
+                            k2, v2 = nxt2.strip().split(':', 1)
+                            nested[k2.strip()] = v2.strip().strip('"').strip("'")
+                        self._advance()
+                    config[key] = nested
+                else:
+                    config[key] = value.strip('"').strip("'")
+            
+            self._advance()
+        
+        return config
+    
+    def _parse_rag_pipeline_definition(self, line: str, line_no: int, base_indent: int) -> Dict[str, Any]:
+        """Parse RAG pipeline definition: rag_pipeline name { ... } or rag_pipeline name: ..."""
+        import re
+        
+        # Parse: rag_pipeline <name> { or rag_pipeline <name>:
+        match = re.match(r'rag_pipeline\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]', line.strip())
+        if not match:
+            raise self._error('Expected: rag_pipeline <name> { or rag_pipeline <name>:', line_no, line)
+        
+        name = match.group(1)
+        uses_braces = '{' in line
+        
+        # Parse configuration as key-value dict
+        config = {'name': name}
+        
+        self._advance()
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            if uses_braces and stripped == '}':
+                self._advance()
+                break
+            
+            indent = self._indent(nxt)
+            if not uses_braces and indent <= base_indent:
+                break
+            
+            # Parse key: value pairs
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                config[key.strip()] = value.strip().strip('"').strip("'")
+            
+            self._advance()
+        
+        return config
 
 
 __all__ = ["LegacyProgramParser"]

@@ -82,6 +82,21 @@ class UtilityMethodsMixin:
         from .helpers import GrammarUnsupportedError
         location = f"{self._path}:{line.number}" if self._path else f"line {line.number}"
         raise GrammarUnsupportedError(f"Unsupported {feature} near {location}")
+    
+    def _transform_config(self, value: Any) -> Any:
+        """Transform configuration values for compatibility with legacy parser."""
+        # Simple passthrough - extend as needed for type conversions
+        if isinstance(value, str):
+            # Handle common type conversions
+            if value.lower() in ('true', 'false'):
+                return value.lower() == 'true'
+            try:
+                if '.' in value:
+                    return float(value)
+                return int(value)
+            except ValueError:
+                return value
+        return value
 
 
 __all__ = ['UtilityMethodsMixin']

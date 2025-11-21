@@ -1,10 +1,30 @@
 """Provider configuration management.
 
 Centralized configuration for all LLM providers using NAMEL3SS_PROVIDER_* environment variables.
+
+This module handles:
+    - Environment variable loading with NAMEL3SS_PROVIDER_{TYPE}_{KEY} pattern
+    - Provider-specific configuration loaders (OpenAI, Anthropic, Google, Azure, etc.)
+    - Configuration merging (environment + DSL overrides)
+    - Configuration validation using namel3ss.providers.validation
+
+Example:
+    >>> from namel3ss.providers.config import load_openai_config
+    >>> config = load_openai_config({"temperature": 0.7, "max_tokens": 1000})
+    >>> # Config includes environment vars + DSL overrides + defaults
 """
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .validation import (
+        validate_api_key,
+        validate_endpoint,
+        validate_temperature,
+        validate_max_tokens,
+        validate_top_p,
+    )
 
 
 # Environment variable prefix
