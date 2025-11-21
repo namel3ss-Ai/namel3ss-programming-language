@@ -11,21 +11,49 @@ from .errors import create_syntax_error
 class ExpressionParsingMixin:
     """Mixin with expression and value parsing methods."""
     
-    def parse_block(self) -> Dict[str, Any]:
+    # Structural tokens that cannot be used as field names in blocks
+    _STRUCTURAL_TOKENS = frozenset({
+        TokenType.LBRACE, TokenType.RBRACE, TokenType.COLON, TokenType.COMMA,
+        TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT, TokenType.EOF
+    })
+    
+    def _parse_config_block(
+        self,
+        allow_any_keyword: bool = False,
+        special_handlers: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        Parse a configuration block.
+        Parse a configuration block with configurable keyword handling.
+        
+        This is a shared helper for parse_block() and prompt block parsing.
+        It implements the generic block loop: token skipping, key detection,
+        and key: value parsing.
+        
+        Args:
+            allow_any_keyword: If True, any non-structural token can be a key.
+                              If False, only IDENTIFIER and a limited set of
+                              keywords (MODEL, FILTER, INDEX, MEMORY, CHAIN) are allowed.
+            special_handlers: Optional dict mapping field names to custom parser
+                            functions. If a key matches, the handler is called
+                            instead of parse_value(). The handler should consume
+                            tokens and return the parsed value.
+        
+        Returns:
+            Dict mapping field names to their parsed values.
         
         Grammar:
-            Block = "{" , "\n" , { BlockStatement } , "}" ;
-            BlockStatement = KeyValuePair | NestedDecl ;
+            Block = "{" , { BlockStatement } , "}" ;
+            BlockStatement = KeyValuePair ;
+            KeyValuePair = Key , ":" , Value ;
         """
-        self.expect(TokenType.LBRACE)
+        # Note: Opening brace should already be consumed by caller
         self.skip_newlines()
         
         # Skip indent if present (lexer may insert it after opening brace)
         self.consume_if(TokenType.INDENT)
         
         config = {}
+        special_handlers = special_handlers or {}
         
         while not self.match(TokenType.RBRACE):
             # Skip any dedent/indent tokens between lines
@@ -44,38 +72,54 @@ class ExpressionParsingMixin:
             if self.match(TokenType.RBRACE):
                 break
             
-            # Parse key - allow keywords as identifiers in this context
+            # Parse key - strategy depends on allow_any_keyword flag
             key_token = self.current()
             if not key_token:
                 raise self.error("Unexpected end of file in block")
+            
+            # Check if this is a structural token (not allowed as key)
+            if key_token.type in self._STRUCTURAL_TOKENS:
+                raise create_syntax_error(
+                    "Expected field name in block",
+                    path=self.path,
+                    line=key_token.line,
+                    column=key_token.column,
+                    expected="identifier or keyword",
+                    found=key_token.type.name.lower()
+                )
             
             # Handle various token types as keys
             if key_token.type == TokenType.IDENTIFIER:
                 key = key_token.value
                 self.advance()
-            elif key_token.type in (TokenType.MODEL, TokenType.FILTER, TokenType.INDEX, 
-                                     TokenType.MEMORY, TokenType.CHAIN):
-                # Allow these keywords as field names
+            elif allow_any_keyword:
+                # In allow_any_keyword mode, any non-structural token is valid
                 key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
                 self.advance()
-            elif key_token.type == TokenType.RBRACE:
-                # End of block
-                break
+            elif key_token.type in (TokenType.MODEL, TokenType.FILTER, TokenType.INDEX, 
+                                     TokenType.MEMORY, TokenType.CHAIN):
+                # In strict mode, only specific keywords are allowed
+                key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
+                self.advance()
             else:
-                # Unexpected token
+                # In strict mode, reject other keywords
                 raise create_syntax_error(
-                    f"Expected field name",
+                    "Expected field name in block",
                     path=self.path,
                     line=key_token.line,
                     column=key_token.column,
-                    expected="identifier",
+                    expected="identifier or keyword",
                     found=key_token.type.name.lower()
                 )
             
             self.expect(TokenType.COLON)
             
-            # Parse value
-            value = self.parse_value()
+            # Parse value - use special handler if one is registered for this key
+            if key in special_handlers:
+                value = special_handlers[key]()
+            else:
+                value = self.parse_value()
+            
             config[key] = value
             
             self.skip_newlines()
@@ -83,6 +127,20 @@ class ExpressionParsingMixin:
         # Skip dedent if present before closing brace
         self.consume_if(TokenType.DEDENT)
         
+        return config
+    
+    def parse_block(self) -> Dict[str, Any]:
+        """
+        Parse a configuration block.
+        
+        Grammar:
+            Block = "{" , "\n" , { BlockStatement } , "}" ;
+            BlockStatement = KeyValuePair | NestedDecl ;
+            
+        Note: Allows keywords as field names for forward compatibility.
+        """
+        self.expect(TokenType.LBRACE)
+        config = self._parse_config_block(allow_any_keyword=True)
         self.expect(TokenType.RBRACE)
         self.skip_newlines()
         
@@ -163,19 +221,47 @@ class ExpressionParsingMixin:
         self.expect(TokenType.RBRACKET)
         return items
     
-    def parse_object_literal(self) -> Dict[str, Any]:
-        """Parse object literal: {key: value, ...}"""
+    def parse_object_literal(self, allow_keyword_keys: bool = False) -> Dict[str, Any]:
+        """
+        Parse object literal: {key: value, ...}
+        
+        Args:
+            allow_keyword_keys: If True, allows keywords as object keys (for schemas).
+        """
         self.expect(TokenType.LBRACE)
         self.skip_newlines()
+        
+        # Skip indent if present (lexer may insert it after opening brace)
+        self.consume_if(TokenType.INDENT)
         
         obj = {}
         
         while not self.match(TokenType.RBRACE):
-            # Key can be identifier or string
+            # Skip any dedent/indent tokens between lines
+            while self.consume_if(TokenType.DEDENT):
+                pass
+            
+            if self.match(TokenType.RBRACE):
+                break
+            
+            while self.consume_if(TokenType.INDENT):
+                pass
+            
+            if self.match(TokenType.RBRACE):
+                break
+            
+            # Key can be identifier, string, or (if allowed) keyword
             if self.match(TokenType.IDENTIFIER):
                 key = self.advance().value
             elif self.match(TokenType.STRING):
                 key = self.advance().value
+            elif allow_keyword_keys:
+                # In schema contexts, allow keywords as keys
+                key_token = self.current()
+                if key_token.type in self._STRUCTURAL_TOKENS:
+                    raise self.error("Expected object key (identifier or string)")
+                key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
+                self.advance()
             else:
                 raise self.error("Expected object key (identifier or string)")
             
@@ -185,9 +271,14 @@ class ExpressionParsingMixin:
             
             self.skip_newlines()
             
+            # Optional comma (newlines can also separate entries)
             if not self.match(TokenType.RBRACE):
-                self.expect(TokenType.COMMA)
-                self.skip_newlines()
+                if self.match(TokenType.COMMA):
+                    self.advance()
+                    self.skip_newlines()
+        
+        # Skip dedent if present before closing brace
+        self.consume_if(TokenType.DEDENT)
         
         self.expect(TokenType.RBRACE)
         return obj
@@ -603,8 +694,8 @@ class ExpressionParsingMixin:
             self.expect(TokenType.RBRACKET)
             return fields
         
-        # Object-style schema
-        return self.parse_object_literal()
+        # Object-style schema - allow keywords as keys
+        return self.parse_object_literal(allow_keyword_keys=True)
     
     # Helper methods
     

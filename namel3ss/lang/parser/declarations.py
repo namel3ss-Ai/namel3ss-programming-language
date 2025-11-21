@@ -6,6 +6,15 @@ Contains all methods for parsing top-level declarations like app, page, llm, etc
 from typing import Any, Dict, List, Optional
 from .grammar.lexer import TokenType
 from .errors import create_syntax_error
+from .config_filter import (
+    build_dataclass_with_config,
+    AGENT_ALIASES,
+    LLM_ALIASES,
+    CHAIN_ALIASES,
+    RAG_ALIASES,
+    DATASET_ALIASES,
+    GRAPH_ALIASES,
+)
 
 
 class DeclarationParsingMixin:
@@ -153,6 +162,9 @@ class DeclarationParsingMixin:
         
         Grammar:
             LLMDecl = "llm" , QuotedName , Block ;
+            
+        Uses config filtering with introspection to safely construct LLMDefinition.
+        Unknown fields are automatically routed to the metadata field.
         """
         from namel3ss.ast import LLMDefinition
         
@@ -164,33 +176,12 @@ class DeclarationParsingMixin:
         
         config = self.parse_block()
         
-        # LLMDefinition known fields
-        known_fields = {
-            'model', 'provider', 'temperature', 'max_tokens', 'top_p', 'top_k',
-            'frequency_penalty', 'presence_penalty', 'system_prompt', 'safety',
-            'tools', 'stop_sequences', 'stream', 'seed', 'description', 'metadata'
-        }
-        
-        # Separate known fields and metadata
-        llm_config = {}
-        extra_metadata = {}
-        
-        for key, value in config.items():
-            if key in known_fields:
-                llm_config[key] = value
-            else:
-                # Unknown fields go to metadata
-                extra_metadata[key] = value
-        
-        # Merge extra metadata with existing metadata
-        if extra_metadata:
-            metadata = llm_config.get('metadata', {})
-            metadata.update(extra_metadata)
-            llm_config['metadata'] = metadata
-        
-        return LLMDefinition(
+        # Use config filtering system with LLM aliases
+        return build_dataclass_with_config(
+            LLMDefinition,
+            config=config,
+            aliases=LLM_ALIASES,
             name=name,
-            **llm_config,
         )
     
     def parse_agent_declaration(self):
@@ -199,6 +190,14 @@ class DeclarationParsingMixin:
         
         Grammar:
             AgentDecl = "agent" , QuotedName , Block ;
+            
+        Uses config filtering with DSL→AST aliasing:
+        - "llm" -> "llm_name"
+        - "tools" -> "tool_names"
+        - "memory" -> "memory_config"
+        - "system" -> "system_prompt"
+        
+        Unknown fields are routed to the config field.
         """
         from namel3ss.ast import AgentDefinition
         
@@ -210,17 +209,37 @@ class DeclarationParsingMixin:
         
         config = self.parse_block()
         
-        return AgentDefinition(
+        # Use config filtering system with Agent aliases
+        return build_dataclass_with_config(
+            AgentDefinition,
+            config=config,
+            aliases=AGENT_ALIASES,
             name=name,
-            **config,
         )
     
     def parse_prompt_declaration(self):
         """
-        Parse prompt declaration.
+        Parse prompt declaration with unified config pattern.
         
         Grammar:
             PromptDecl = "prompt" , QuotedName , Block ;
+            
+        Modern fields supported:
+        - args: List[PromptArgument] - Typed arguments (preferred over legacy 'input')
+        - output_schema: OutputSchema - Structured output (preferred over legacy 'output')
+        - parameters: Dict[str, Any] - Model parameters (temperature, max_tokens, etc.)
+        - metadata: Dict[str, Any] - Extra metadata (version, tags, etc.)
+        - effects: Set[str] - Effect tracking
+        
+        Legacy fields (backwards compatible):
+        - input: Schema definition -> input_fields
+        - output: Schema definition -> output_fields
+        
+        Special handling:
+        - model/llm: Both accepted with validation (model preferred)
+        - template: Required prompt template string
+        - description: Optional documentation
+        - name: Ignored in block (canonical name from declaration)
         """
         from namel3ss.ast import Prompt
         
@@ -230,79 +249,72 @@ class DeclarationParsingMixin:
         
         self.declare_symbol(f"prompt:{name}", prompt_token.line)
         
-        # Parse block with special handling for input/output schemas
+        # Parse block with special handlers for legacy input/output
         self.expect(TokenType.LBRACE)
-        self.skip_newlines()
-        self.consume_if(TokenType.INDENT)  # Skip initial indent
         
-        input_fields = []
-        output_fields = []
-        template = None
-        other_config = {}
+        # Special handlers for legacy schema fields
+        def parse_input_schema():
+            """Parse legacy input schema -> input_fields"""
+            return self.parse_schema_definition()
         
-        while not self.match(TokenType.RBRACE):
-            # Skip indent/dedent tokens
-            while self.consume_if(TokenType.DEDENT):
-                pass
-            if self.match(TokenType.RBRACE):
-                break
-            while self.consume_if(TokenType.INDENT):
-                pass
-            if self.match(TokenType.RBRACE):
-                break
-            
-            # Parse key - allow keywords as identifiers
-            key_token = self.current()
-            if key_token.type == TokenType.IDENTIFIER:
-                key = key_token.value
-                self.advance()
-            elif key_token.type in (TokenType.MODEL, TokenType.FILTER, TokenType.INDEX, 
-                                     TokenType.MEMORY, TokenType.CHAIN):
-                key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
-                self.advance()
-            else:
-                raise create_syntax_error(
-                    f"Expected field name in prompt block",
-                    path=self.path,
-                    line=key_token.line,
-                    column=key_token.column,
-                    expected="identifier",
-                    found=key_token.type.name.lower()
-                )
-            
-            self.expect(TokenType.COLON)
-            
-            if key == "input":
-                input_fields = self.parse_schema_definition()
-            elif key == "output":
-                output_fields = self.parse_schema_definition()
-            elif key == "template":
-                template = self.parse_value()
-            else:
-                other_config[key] = self.parse_value()
-            
-            self.skip_newlines()
+        def parse_output_schema():
+            """Parse legacy output schema -> output_fields"""
+            return self.parse_schema_definition()
         
-        self.consume_if(TokenType.DEDENT)  # Skip final dedent
+        def parse_args_list():
+            """Parse modern args list -> args"""
+            # Parse array of argument definitions
+            return self.parse_value()
+        
+        def parse_output_schema_def():
+            """Parse modern output_schema -> output_schema"""
+            # Parse structured output schema definition
+            return self.parse_value()
+        
+        special_handlers = {
+            "input": parse_input_schema,
+            "output": parse_output_schema,
+            "args": parse_args_list,
+            "output_schema": parse_output_schema_def,
+        }
+        
+        # Use shared block parsing
+        config = self._parse_config_block(
+            allow_any_keyword=True,
+            special_handlers=special_handlers
+        )
+        
         self.expect(TokenType.RBRACE)
         self.skip_newlines()
         
-        # Extract known fields
-        model = other_config.pop('model', '')
-        description = other_config.pop('description', None)
-        name_field = other_config.pop('name', None)
+        # Extract legacy fields if present
+        input_fields = config.pop('input', None)
+        output_fields = config.pop('output', None)
         
-        # Everything else goes to parameters
-        parameters = other_config
+        # Extract modern fields if present
+        args = config.pop('args', None)
+        output_schema = config.pop('output_schema', None)
         
-        return Prompt(
-            name=name,
-            model=model,
-            template=template or "",
-            input_fields=input_fields,
-            output_fields=output_fields,
-            parameters=parameters,
-            description=description,
+        # If legacy fields present, map to their dataclass fields
+        if input_fields is not None:
+            config['input_fields'] = input_fields
+        
+        if output_fields is not None:
+            config['output_fields'] = output_fields
+        
+        # Provide default for template if not present (backwards compatibility)
+        if 'template' not in config:
+            config['template'] = ""
+        
+        # Build with unified config pattern
+        return build_dataclass_with_config(
+            Prompt,
+            config,
+            declared_name=name,
+            path=self.path,
+            line=prompt_token.line,
+            column=prompt_token.column,
+            name=name,  # Explicit: canonical name from declaration
         )
     
     def parse_chain_declaration(self):
@@ -352,7 +364,12 @@ class DeclarationParsingMixin:
         )
     
     def parse_rag_pipeline_declaration(self):
-        """Parse RAG pipeline declaration."""
+        """
+        Parse RAG pipeline declaration.
+        
+        Uses config filtering with RAG-specific aliases.
+        Unknown fields are routed to config field.
+        """
         from namel3ss.ast import RagPipelineDefinition
         
         rag_token = self.expect(TokenType.RAG_PIPELINE)
@@ -363,13 +380,20 @@ class DeclarationParsingMixin:
         
         config = self.parse_block()
         
-        return RagPipelineDefinition(
+        return build_dataclass_with_config(
+            RagPipelineDefinition,
+            config=config,
+            aliases=RAG_ALIASES,
             name=name,
-            **config,
         )
     
     def parse_index_declaration(self):
-        """Parse index declaration."""
+        """
+        Parse index declaration.
+        
+        Uses config filtering for IndexDefinition.
+        Unknown fields are routed to config field.
+        """
         from namel3ss.ast import IndexDefinition
         
         index_token = self.expect(TokenType.INDEX)
@@ -380,9 +404,10 @@ class DeclarationParsingMixin:
         
         config = self.parse_block()
         
-        return IndexDefinition(
+        return build_dataclass_with_config(
+            IndexDefinition,
+            config=config,
             name=name,
-            **config,
         )
     
     def parse_dataset_declaration(self):
@@ -571,13 +596,24 @@ class DeclarationParsingMixin:
         return PolicyDefinition(name=name, **config)
     
     def parse_graph_declaration(self):
-        """Parse graph declaration."""
+        """
+        Parse graph declaration.
+        
+        Uses config filtering with Graph-specific aliases.
+        Unknown fields are routed to config field.
+        """
         from namel3ss.ast import GraphDefinition
         graph_token = self.expect(TokenType.GRAPH)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"graph:{name}", graph_token.line)
         config = self.parse_block()
-        return GraphDefinition(name=name, **config)
+        
+        return build_dataclass_with_config(
+            GraphDefinition,
+            config=config,
+            aliases=GRAPH_ALIASES,
+            name=name,
+        )
     
     def parse_knowledge_declaration(self):
         """Parse knowledge declaration."""
