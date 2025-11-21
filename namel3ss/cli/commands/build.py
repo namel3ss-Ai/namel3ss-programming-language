@@ -179,6 +179,8 @@ def cmd_build(args: argparse.Namespace) -> None:
         embed_flag = getattr(args, "embed_insights", False)
         backend_only = getattr(args, "backend_only", False)
         build_backend = getattr(args, "build_backend", False)
+        export_schemas = getattr(args, "export_schemas", False)
+        schema_version = getattr(args, "schema_version", "1.0.0")
         
         # Generate frontend
         if not backend_only:
@@ -205,6 +207,8 @@ def cmd_build(args: argparse.Namespace) -> None:
                 embed_insights=embed_flag,
                 enable_realtime=realtime_flag,
                 connector_config=connector_cfg,
+                export_schemas=export_schemas,
+                schema_version=schema_version,
             )
             print_success(f"Backend scaffold generated in {backend_dir}")
             

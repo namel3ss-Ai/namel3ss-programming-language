@@ -1,0 +1,162 @@
+{
+  "projectId": "example-research-system",
+  "name": "Research Pipeline",
+  "description": "Multi-stage research workflow that gathers information, synthesizes findings, and generates comprehensive reports with citations",
+  "nodes": [
+    {
+      "id": "start-1",
+      "type": "start",
+      "label": "START",
+      "position": {"x": 100, "y": 100},
+      "data": {}
+    },
+    {
+      "id": "prompt-extract-queries",
+      "type": "prompt",
+      "label": "Extract Search Queries",
+      "position": {"x": 100, "y": 200},
+      "data": {
+        "name": "extract_queries",
+        "text": "Break down this research question into 3-5 specific search queries:\n\nQuestion: {{research_question}}\n\nGenerate targeted queries that will help gather comprehensive information.",
+        "model": "gpt-4",
+        "arguments": ["research_question"],
+        "outputSchema": {
+          "queries": "array",
+          "research_areas": "array"
+        }
+      }
+    },
+    {
+      "id": "rag-search",
+      "type": "ragDataset",
+      "label": "Document Search",
+      "position": {"x": 100, "y": 300},
+      "data": {
+        "name": "document_search",
+        "datasetName": "research_corpus",
+        "queryTemplate": "{{query}}",
+        "topK": 10,
+        "queryEncoder": "text-embedding-3-large",
+        "reranker": "colbert-v2",
+        "distanceMetric": "cosine",
+        "enableHybrid": true
+      }
+    },
+    {
+      "id": "agent-researcher",
+      "type": "agent",
+      "label": "Research Agent",
+      "position": {"x": 100, "y": 400},
+      "data": {
+        "name": "research_agent",
+        "llm": "gpt-4-turbo",
+        "systemPrompt": "You are an expert research assistant. Analyze retrieved documents, extract key findings, identify patterns, and flag any inconsistencies or gaps in the evidence.",
+        "tools": ["web_search", "arxiv_search", "wikipedia_lookup"],
+        "maxTurns": 10,
+        "temperature": 0.4,
+        "goal": "Gather and validate comprehensive information on the research topic"
+      }
+    },
+    {
+      "id": "prompt-synthesize",
+      "type": "prompt",
+      "label": "Synthesize Findings",
+      "position": {"x": 100, "y": 500},
+      "data": {
+        "name": "synthesize_findings",
+        "text": "Synthesize the research findings:\n\nOriginal Question: {{research_question}}\nDocument Results: {{document_results}}\nAgent Analysis: {{agent_analysis}}\n\nCreate a structured synthesis with key findings, supporting evidence, and identified gaps.",
+        "model": "gpt-4",
+        "arguments": ["research_question", "document_results", "agent_analysis"],
+        "outputSchema": {
+          "key_findings": "array",
+          "evidence": "array",
+          "gaps": "array",
+          "confidence_score": "number"
+        }
+      }
+    },
+    {
+      "id": "agent-writer",
+      "type": "agent",
+      "label": "Report Writer Agent",
+      "position": {"x": 100, "y": 600},
+      "data": {
+        "name": "writer_agent",
+        "llm": "gpt-4",
+        "systemPrompt": "You are an expert research report writer. Generate clear, well-structured reports with proper citations, executive summaries, and actionable recommendations.",
+        "tools": ["format_citations", "generate_bibliography"],
+        "maxTurns": 8,
+        "temperature": 0.6,
+        "goal": "Create comprehensive, publication-ready research report"
+      }
+    },
+    {
+      "id": "prompt-quality-check",
+      "type": "prompt",
+      "label": "Quality Check",
+      "position": {"x": 100, "y": 700},
+      "data": {
+        "name": "quality_check",
+        "text": "Review this research report for quality:\n\nReport: {{report}}\n\nEvaluate completeness, citation quality, logical flow, and identify any improvements needed.",
+        "model": "gpt-4",
+        "arguments": ["report"],
+        "outputSchema": {
+          "quality_score": "number",
+          "strengths": "array",
+          "improvements_needed": "array",
+          "ready_for_publication": "boolean"
+        }
+      }
+    },
+    {
+      "id": "end-1",
+      "type": "end",
+      "label": "END",
+      "position": {"x": 100, "y": 800},
+      "data": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start-1",
+      "target": "prompt-extract-queries"
+    },
+    {
+      "id": "e2",
+      "source": "prompt-extract-queries",
+      "target": "rag-search"
+    },
+    {
+      "id": "e3",
+      "source": "rag-search",
+      "target": "agent-researcher"
+    },
+    {
+      "id": "e4",
+      "source": "agent-researcher",
+      "target": "prompt-synthesize"
+    },
+    {
+      "id": "e5",
+      "source": "prompt-synthesize",
+      "target": "agent-writer"
+    },
+    {
+      "id": "e6",
+      "source": "agent-writer",
+      "target": "prompt-quality-check"
+    },
+    {
+      "id": "e7",
+      "source": "prompt-quality-check",
+      "target": "end-1"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "author": "example",
+    "tags": ["research", "rag", "multi-agent", "synthesis"],
+    "estimated_cost_per_run": 0.25
+  }
+}

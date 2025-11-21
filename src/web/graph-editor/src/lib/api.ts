@@ -42,7 +42,13 @@ export const graphApi = {
     projectId: string,
     request: ExecutionRequest
   ): Promise<ExecutionResult> => {
-    const { data } = await api.post(`/graphs/${projectId}/execute`, request);
+    // Use the execution API endpoint
+    const { data } = await api.post(`/execution/graphs/${projectId}/execute`, request);
+    return data;
+  },
+
+  validateGraph: async (projectId: string): Promise<any> => {
+    const { data } = await api.post(`/execution/graphs/${projectId}/validate`);
     return data;
   },
 };

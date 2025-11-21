@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 from namel3ss.ast import App
 
@@ -39,6 +40,8 @@ def generate_backend(
     embed_insights: bool = False,
     enable_realtime: bool = False,
     connector_config: Optional[Dict[str, Any]] = None,
+    export_schemas: bool = True,
+    schema_version: str = "1.0.0",
 ) -> None:
     """Generate the backend scaffold for ``app`` into ``out_dir``.
     
@@ -54,6 +57,10 @@ def generate_backend(
         Whether to enable websocket support
     connector_config : Optional[Dict[str, Any]]
         Runtime connector configuration (retry/concurrency settings)
+    export_schemas : bool
+        Whether to export schemas for SDK generation
+    schema_version : str
+        Version for exported schemas (default: "1.0.0")
     """
 
     state = build_backend_state(app)
@@ -97,7 +104,7 @@ def generate_backend(
     )
 
     (routers_dir / "__init__.py").write_text(
-        _render_routers_package(), encoding="utf-8"
+        _render_routers_package(include_metadata=export_schemas), encoding="utf-8"
     )
     (routers_dir / "insights.py").write_text(
         _render_insights_router_module(), encoding="utf-8"
@@ -138,5 +145,32 @@ def generate_backend(
     custom_api_path = custom_routes_dir / "custom_api.py"
     if not custom_api_path.exists():
         custom_api_path.write_text(_render_custom_api_stub(), encoding="utf-8")
+
+    # Generate metadata router for SDK generation
+    if export_schemas:
+        metadata_router_path = routers_dir / "metadata.py"
+        try:
+            from namel3ss.sdk_sync import (
+                export_schemas_from_app,
+                generate_metadata_router,
+            )
+            from namel3ss.sdk_sync.ir import SchemaVersion
+            
+            # Export schemas to registry
+            version = SchemaVersion.parse(schema_version)
+            spec = export_schemas_from_app(
+                app=app,
+                version=version,
+                output_path=schemas_dir / "spec.json",
+                namespace="app",
+            )
+            
+            # Generate metadata router
+            metadata_code = generate_metadata_router()
+            metadata_router_path.write_text(metadata_code, encoding="utf-8")
+            
+        except ImportError:
+            # SDK-Sync not available, skip schema export
+            pass
 
     emit_deployment_artifacts(out_path, state)

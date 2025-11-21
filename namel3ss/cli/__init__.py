@@ -29,6 +29,7 @@ from .commands import (
     cmd_train,
     cmd_typecheck,
 )
+from namel3ss.sdk_sync.cli import add_sdk_sync_command
 from .context import CLIContext
 from .validation import normalize_run_command_args
 
@@ -157,6 +158,15 @@ def main(argv: Optional[list] = None) -> None:
     build_parser.add_argument(
         '--embed-insights', action='store_true',
         help='Embed insight results directly in dataset responses'
+    )
+    build_parser.add_argument(
+        '--export-schemas', action='store_true',
+        help='Export schemas for SDK generation (enables /api/_meta endpoints)'
+    )
+    build_parser.add_argument(
+        '--schema-version',
+        default='1.0.0',
+        help='Version for exported schemas (default: 1.0.0)'
     )
     build_parser.add_argument(
         '--env',
@@ -424,6 +434,9 @@ def main(argv: Optional[list] = None) -> None:
         help='Start the Namel3ss language server for editor integrations'
     )
     lsp_parser.set_defaults(func=cmd_lsp)
+    
+    # SDK-Sync subcommand
+    add_sdk_sync_command(subparsers)
     
     # RAG index building command
     build_index_parser = subparsers.add_parser(

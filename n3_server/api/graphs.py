@@ -143,13 +143,18 @@ async def update_graph(
         return {"status": "ok"}
 
 
-@router.post("/{project_id}/execute", response_model=ExecutionResult)
+@router.post("/{project_id}/execute", response_model=ExecutionResult, deprecated=True)
 async def execute_graph(
     project_id: str,
     request: ExecutionRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Execute a graph with N3 runtime and OpenTelemetry instrumentation."""
+    """
+    Execute a graph with N3 runtime and OpenTelemetry instrumentation.
+    
+    DEPRECATED: Use POST /api/execution/graphs/{project_id}/execute instead.
+    This endpoint uses the legacy converter and will be removed in a future version.
+    """
     with tracer.start_as_current_span("execute_graph") as span:
         span.set_attribute("project_id", project_id)
         span.set_attribute("entry", request.entry)

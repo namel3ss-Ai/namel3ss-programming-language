@@ -1,0 +1,303 @@
+// {{ project_name }} - N3 Configuration
+// This file demonstrates N3 DSL integration with the CRUD service
+
+// ============================================================================
+// DATASET DEFINITION
+// ============================================================================
+
+dataset {{ dataset_name }} {
+    name: "{{ entity_name }} Management"
+    description: "CRUD operations for {{ entity_name | lower }} entities"
+    version: "1.0.0"
+    
+    // Entity schema definition
+    schema {
+        id: uuid(primary_key: true, auto: true)
+        name: string(required: true, min_length: 1, max_length: 255)
+        description: string(max_length: 2000)
+        quantity: integer(default: 0, min: 0)
+        price: decimal(precision: 10, scale: 2, default: 0.00, min: 0)
+        is_active: boolean(default: true)
+        tags: array(string, max_length: 20)
+        metadata: json()
+        created_at: timestamp(auto_now_add: true)
+        updated_at: timestamp(auto_now: true)
+        deleted_at: timestamp(nullable: true)
+        tenant_id: string(nullable: true, max_length: 255)
+    }
+    
+    // Indexes for query optimization
+    indexes {
+        idx_name: [name]
+        idx_active: [is_active, created_at]
+        idx_tenant: [tenant_id]
+        idx_tags: [tags] (type: gin)
+        idx_metadata: [metadata] (type: gin)
+    }
+    
+    // Validation rules
+    validation {
+        // Name must not be empty
+        rule "name_not_empty" {
+            field: name
+            condition: name.length > 0
+            message: "Name cannot be empty"
+        }
+        
+        // Price precision validation
+        rule "price_precision" {
+            field: price
+            condition: price.decimal_places <= 2
+            message: "Price must have at most 2 decimal places"
+        }
+        
+        // Tags format validation
+        rule "tags_alphanumeric" {
+            field: tags
+            condition: all(tags, tag => tag.matches(/^[a-z0-9_-]+$/))
+            message: "Tags must contain only lowercase alphanumeric, hyphens, and underscores"
+        }
+    }
+}
+
+// ============================================================================
+// API CONFIGURATION
+// ============================================================================
+
+api {{ api_name }} {
+    dataset: {{ dataset_name }}
+    base_path: "/{{ endpoint_prefix }}"
+    version: "v1"
+    
+    // Enable standard CRUD operations
+    operations {
+        create: true
+        read: true
+        update: true
+        delete: true
+        list: true
+        search: true
+    }
+    
+    // Pagination settings
+    pagination {
+        default_page_size: 20
+        max_page_size: 100
+    }
+    
+    // Filtering capabilities
+    filters {
+        is_active: boolean
+        tags: array(string)
+        created_at: timestamp(range: true)
+        price: decimal(range: true)
+    }
+    
+    // Sorting options
+    sorting {
+        fields: [name, created_at, updated_at, price, quantity]
+        default: [created_at: desc]
+    }
+    
+    // Multi-tenancy support
+    multi_tenancy {
+        enabled: false  // Set to true to enable
+        tenant_field: tenant_id
+        tenant_header: "X-Tenant-ID"
+    }
+    
+    // Soft delete configuration
+    soft_delete {
+        enabled: true
+        field: deleted_at
+    }
+}
+
+// ============================================================================
+// BACKEND CONFIGURATION
+// ============================================================================
+
+backend {{ backend_name }} {
+    api: {{ api_name }}
+    framework: "fastapi"
+    language: "python"
+    
+    // Database configuration
+    database {
+        type: "postgresql"
+        pool_size: 10
+        max_overflow: 20
+        pool_timeout: 30
+        echo: false  // Set to true for SQL query logging
+    }
+    
+    // Server configuration
+    server {
+        host: "0.0.0.0"
+        port: 8000
+        workers: 1  // Increase for production
+        reload: true  // Set to false for production
+    }
+    
+    // CORS configuration
+    cors {
+        enabled: true
+        origins: ["http://localhost:3000", "http://localhost:8000"]
+        allow_credentials: true
+        allow_methods: ["*"]
+        allow_headers: ["*"]
+    }
+    
+    // Logging configuration
+    logging {
+        level: "INFO"  // DEBUG, INFO, WARNING, ERROR, CRITICAL
+        format: "json"  // json or text
+    }
+    
+    // Security (extension points)
+    security {
+        // authentication {
+        //     type: "jwt"
+        //     secret_key: env("JWT_SECRET_KEY")
+        //     algorithm: "HS256"
+        //     token_expiry: 3600
+        // }
+        
+        // api_key {
+        //     enabled: false
+        //     header: "X-API-Key"
+        // }
+    }
+    
+    // Observability (extension points)
+    observability {
+        // metrics {
+        //     enabled: true
+        //     endpoint: "/metrics"
+        //     provider: "prometheus"
+        // }
+        
+        // tracing {
+        //     enabled: false
+        //     provider: "opentelemetry"
+        //     endpoint: env("OTEL_EXPORTER_OTLP_ENDPOINT")
+        // }
+        
+        health_check {
+            enabled: true
+            endpoint: "/health"
+        }
+    }
+}
+
+// ============================================================================
+// DEPLOYMENT CONFIGURATION (Optional)
+// ============================================================================
+
+// deployment production {
+//     backend: {{ backend_name }}
+//     platform: "docker"
+//     
+//     container {
+//         image: "{{ project_name | lower | replace('_', '-') }}:latest"
+//         port: 8000
+//         replicas: 3
+//         
+//         resources {
+//             cpu: "500m"
+//             memory: "512Mi"
+//             cpu_limit: "1000m"
+//             memory_limit: "1Gi"
+//         }
+//         
+//         health_check {
+//             path: "/health"
+//             interval: 30
+//             timeout: 5
+//             retries: 3
+//         }
+//     }
+//     
+//     database {
+//         host: env("DB_HOST")
+//         port: 5432
+//         name: env("DB_NAME")
+//         user: env("DB_USER")
+//         password: env("DB_PASSWORD")
+//         ssl: true
+//     }
+//     
+//     environment {
+//         ENVIRONMENT: "production"
+//         LOG_LEVEL: "INFO"
+//         DEBUG: "false"
+//     }
+// }
+
+// ============================================================================
+// EXTENSION EXAMPLES
+// ============================================================================
+
+// Example: Custom business logic hook
+// hook before_create {
+//     dataset: {{ dataset_name }}
+//     
+//     execute {
+//         // Normalize tags to lowercase
+//         item.tags = item.tags.map(tag => tag.lower())
+//         
+//         // Set default metadata
+//         if item.metadata is empty {
+//             item.metadata = {"source": "api", "version": "1.0"}
+//         }
+//     }
+// }
+
+// Example: Custom validation
+// validator price_validation {
+//     dataset: {{ dataset_name }}
+//     field: price
+//     
+//     rule {
+//         if item.quantity > 100 and item.price < 10.00 {
+//             error("High quantity items must have price >= $10.00")
+//         }
+//     }
+// }
+
+// Example: Event handler
+// event item_created {
+//     dataset: {{ dataset_name }}
+//     trigger: after_create
+//     
+//     action {
+//         // Log to external service
+//         log.info("New item created", {
+//             id: item.id,
+//             name: item.name,
+//             tenant: item.tenant_id
+//         })
+//         
+//         // Send notification
+//         // notify.send("items.created", item)
+//     }
+// }
+
+// Example: Scheduled task
+// task cleanup_deleted_items {
+//     dataset: {{ dataset_name }}
+//     schedule: "0 0 * * *"  // Daily at midnight
+//     
+//     execute {
+//         // Hard delete items soft-deleted > 30 days ago
+//         cutoff_date = now() - days(30)
+//         deleted_items = {{ dataset_name }}.filter(
+//             deleted_at < cutoff_date
+//         )
+//         
+//         for item in deleted_items {
+//             {{ dataset_name }}.hard_delete(item.id)
+//             log.info(f"Permanently deleted item {item.id}")
+//         }
+//     }
+// }

@@ -7,7 +7,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from n3_server.config import get_settings
-from n3_server.api import graphs, shares, tools, policies, import_export
+from n3_server.api import graphs, shares, tools, policies, import_export, execution
 
 settings = get_settings()
 
@@ -42,6 +42,7 @@ app.include_router(shares.router, prefix=f"{settings.api_prefix}/projects", tags
 app.include_router(tools.router, prefix=f"{settings.api_prefix}/tools", tags=["tools"])
 app.include_router(policies.router, prefix=f"{settings.api_prefix}", tags=["policies"])
 app.include_router(import_export.router, prefix=f"{settings.api_prefix}/n3", tags=["import-export"])
+app.include_router(execution.router, prefix=f"{settings.api_prefix}", tags=["execution"])
 
 
 @app.get("/")

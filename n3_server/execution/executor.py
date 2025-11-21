@@ -8,6 +8,7 @@ with detailed tracing and telemetry collection.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -22,7 +23,9 @@ from namel3ss.ast import Chain, ChainStep, AgentDefinition, Prompt
 from namel3ss.agents.runtime import AgentRuntime, AgentResult
 from namel3ss.prompts.executor import execute_structured_prompt, StructuredPromptResult
 from namel3ss.rag.pipeline import RagPipelineRuntime, RagResult
-from namel3ss.llm.registry import get_llm
+from n3_server.execution.registry import RuntimeRegistry, RegistryError
+
+logger = logging.getLogger(__name__)
 
 
 class SpanType(str, Enum):
@@ -99,9 +102,19 @@ class GraphExecutor:
     - Agent execution with tool calls and turn tracking
     - Prompt execution with token counting
     - RAG pipeline queries with retrieval metrics
+    
+    This executor uses real runtime components (AgentRuntime, PromptExecutor,
+    RagPipelineRuntime) provided via the RuntimeRegistry.
     """
     
-    def __init__(self):
+    def __init__(self, registry: RuntimeRegistry):
+        """
+        Initialize executor with runtime registry.
+        
+        Args:
+            registry: RuntimeRegistry with instantiated components
+        """
+        self.registry = registry
         self.tracer = trace.get_tracer(__name__)
     
     async def execute_chain(
@@ -139,10 +152,8 @@ class GraphExecutor:
                     )
                     
                     # Update working data with step output
-                    if step.output_key:
-                        working[step.output_key] = step_result
-                    else:
-                        working = step_result if isinstance(step_result, dict) else {"result": step_result}
+                    # ChainStep doesn't have output_key, always merge result
+                    working = step_result if isinstance(step_result, dict) else {"result": step_result}
                 
                 # Record chain span
                 end_time = datetime.now(timezone.utc)
@@ -209,7 +220,12 @@ class GraphExecutor:
         context: ExecutionContext,
         parent_span_id: Optional[str],
     ) -> Any:
-        """Execute a prompt step with instrumentation."""
+        """
+        Execute a prompt step with real PromptExecutor.
+        
+        Uses execute_structured_prompt from namel3ss.prompts.executor to
+        execute the prompt with validation and instrumentation.
+        """
         span_id = str(uuid.uuid4())
         start_time = datetime.now(timezone.utc)
         
@@ -217,19 +233,31 @@ class GraphExecutor:
             otel_span.set_attribute("prompt.target", step.target)
             
             try:
-                # Get prompt definition (would need prompt registry)
-                # For now, simulate prompt execution
-                prompt_args = step.options.get("args", working_data)
+                # Get prompt definition from registry
+                prompt_def = self.registry.get_prompt(step.target)
+                otel_span.set_attribute("prompt.name", prompt_def.name)
                 
-                # Simulate LLM call
-                await asyncio.sleep(0.1)  # Simulate API latency
+                # Get LLM for prompt
+                llm = self.registry.get_llm(prompt_def.model)
+                otel_span.set_attribute("prompt.model", prompt_def.model)
                 
-                result = {
-                    "text": f"Response from {step.target}",
-                    "status": "completed"
-                }
+                # Prepare arguments (merge step options with working data)
+                prompt_args = step.options.get("args", {})
+                prompt_args.update(working_data)
                 
-                # Record span
+                # Execute with real prompt executor
+                logger.info(
+                    f"Executing prompt '{step.target}' with model '{prompt_def.model}'"
+                )
+                result = await execute_structured_prompt(
+                    prompt_def=prompt_def,
+                    llm=llm,
+                    args=prompt_args,
+                    retry_on_validation_error=True,
+                    max_retries=2,
+                )
+                
+                # Record span with real metrics
                 end_time = datetime.now(timezone.utc)
                 context.add_span(ExecutionSpan(
                     span_id=span_id,
@@ -241,19 +269,55 @@ class GraphExecutor:
                     duration_ms=(end_time - start_time).total_seconds() * 1000,
                     status="ok",
                     attributes=SpanAttribute(
-                        model="gpt-4",
-                        tokens_prompt=100,
-                        tokens_completion=50,
-                        cost=0.0015,
+                        model=result.model,
+                        tokens_prompt=result.prompt_tokens,
+                        tokens_completion=result.completion_tokens,
+                        cost=self._estimate_cost(
+                            result.model,
+                            result.prompt_tokens,
+                            result.completion_tokens
+                        ),
                     ),
                     input_data=prompt_args,
-                    output_data=result,
+                    output_data=result.output,
                 ))
                 
+                otel_span.set_attribute("prompt.tokens_prompt", result.prompt_tokens)
+                otel_span.set_attribute("prompt.tokens_completion", result.completion_tokens)
+                otel_span.set_attribute("prompt.latency_ms", result.latency_ms)
                 otel_span.set_status(Status(StatusCode.OK))
-                return result
                 
+                logger.info(
+                    f"Prompt '{step.target}' completed: "
+                    f"{result.prompt_tokens}+{result.completion_tokens} tokens, "
+                    f"{result.latency_ms:.1f}ms"
+                )
+                
+                return result.output
+                
+            except RegistryError as e:
+                logger.error(f"Registry error executing prompt '{step.target}': {e}")
+                end_time = datetime.now(timezone.utc)
+                context.add_span(ExecutionSpan(
+                    span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    name=f"prompt.{step.target}",
+                    type=SpanType.PROMPT,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_ms=(end_time - start_time).total_seconds() * 1000,
+                    status="error",
+                    attributes=SpanAttribute(error=str(e)),
+                    input_data=working_data,
+                    output_data=None,
+                ))
+                
+                otel_span.set_status(Status(StatusCode.ERROR, str(e)))
+                otel_span.record_exception(e)
+                raise
+            
             except Exception as e:
+                logger.error(f"Error executing prompt '{step.target}': {e}")
                 end_time = datetime.now(timezone.utc)
                 context.add_span(ExecutionSpan(
                     span_id=span_id,
@@ -280,7 +344,12 @@ class GraphExecutor:
         context: ExecutionContext,
         parent_span_id: Optional[str],
     ) -> Any:
-        """Execute an agent step with turn-level tracing."""
+        """
+        Execute an agent step with real AgentRuntime.
+        
+        Uses AgentRuntime from registry to execute the agent with turn-level
+        tracing and token counting.
+        """
         span_id = str(uuid.uuid4())
         start_time = datetime.now(timezone.utc)
         
@@ -288,58 +357,92 @@ class GraphExecutor:
             otel_span.set_attribute("agent.target", step.target)
             
             try:
+                # Get agent runtime from registry
+                agent_runtime = self.registry.get_agent(step.target)
+                otel_span.set_attribute("agent.name", agent_runtime.name)
+                
                 # Get agent configuration
                 agent_config = step.options or {}
-                goal = agent_config.get("goal", "Execute task")
-                max_turns = agent_config.get("max_turns", 5)
+                user_input = agent_config.get("input") or working_data.get("input", "")
+                goal = agent_config.get("goal")
+                max_turns = agent_config.get("max_turns", agent_runtime.max_turns)
                 
-                # Simulate agent execution with turns
-                turns_executed = 0
-                result_data = {"goal": goal, "turns": []}
+                logger.info(
+                    f"Executing agent '{step.target}' with max_turns={max_turns}"
+                )
                 
-                for turn in range(max_turns):
+                # Execute with real agent runtime
+                result: AgentResult = await agent_runtime.execute(
+                    user_input=user_input,
+                    goal=goal,
+                    max_turns=max_turns,
+                )
+                
+                # Record turn-level spans
+                total_tokens_prompt = 0
+                total_tokens_completion = 0
+                
+                for turn_idx, turn in enumerate(result.turns, start=1):
                     turn_span_id = str(uuid.uuid4())
-                    turn_start = datetime.now(timezone.utc)
                     
-                    # Simulate turn execution
-                    await asyncio.sleep(0.15)
+                    # Estimate turn timing (AgentResult doesn't have duration_ms, use metadata or default)
+                    total_duration_ms = result.metadata.get('duration_ms', 100.0 * len(result.turns))
+                    turn_duration_ms = total_duration_ms / len(result.turns)
+                    turn_start = start_time
+                    turn_end = datetime.fromtimestamp(
+                        start_time.timestamp() + (turn_idx * turn_duration_ms / 1000),
+                        tz=timezone.utc
+                    )
                     
-                    turn_result = {
-                        "turn": turn + 1,
-                        "action": "thinking",
-                        "output": f"Completed turn {turn + 1}"
-                    }
-                    result_data["turns"].append(turn_result)
+                    # Count tokens for turn
+                    from namel3ss.agents.runtime import estimate_messages_tokens
+                    turn_prompt_tokens = estimate_messages_tokens(turn.messages)
+                    turn_completion_tokens = turn_prompt_tokens  # Estimate both from messages
+                    total_tokens_prompt += turn_prompt_tokens
+                    total_tokens_completion += turn_completion_tokens
                     
-                    # Record turn span
-                    turn_end = datetime.now(timezone.utc)
+                    # Extract user and assistant messages
+                    user_msg = next((m for m in turn.messages if m.role == "user"), None)
+                    assistant_msg = next((m for m in turn.messages if m.role == "assistant"), None)
+                    
                     context.add_span(ExecutionSpan(
                         span_id=turn_span_id,
                         parent_span_id=span_id,
-                        name=f"agent.{step.target}.turn_{turn + 1}",
+                        name=f"agent.{step.target}.turn_{turn_idx}",
                         type=SpanType.AGENT_TURN,
                         start_time=turn_start,
                         end_time=turn_end,
-                        duration_ms=(turn_end - turn_start).total_seconds() * 1000,
+                        duration_ms=turn_duration_ms,
                         status="ok",
                         attributes=SpanAttribute(
-                            model="gpt-4",
-                            tokens_prompt=200,
-                            tokens_completion=100,
-                            cost=0.003,
+                            model=agent_runtime.llm.model_name,
+                            tokens_prompt=turn_prompt_tokens,
+                            tokens_completion=turn_completion_tokens,
+                            cost=self._estimate_cost(
+                                agent_runtime.llm.model_name,
+                                turn_prompt_tokens,
+                                turn_completion_tokens
+                            ),
                         ),
-                        input_data={"turn": turn + 1, "goal": goal},
-                        output_data=turn_result,
+                        input_data={
+                            "turn": turn_idx,
+                            "role": user_msg.role if user_msg else "user",
+                            "content": user_msg.content if user_msg else "",
+                        },
+                        output_data={
+                            "role": assistant_msg.role if assistant_msg else "assistant",
+                            "content": assistant_msg.content if assistant_msg else "",
+                            "tool_calls": len(turn.tool_calls),
+                        },
                     ))
-                    
-                    turns_executed += 1
-                    
-                    # Simulate goal completion after 2-3 turns
-                    if turn >= 1:
-                        break
                 
-                result_data["status"] = "completed"
-                result_data["turns_executed"] = turns_executed
+                # Prepare result data
+                result_data = {
+                    "status": result.status,
+                    "turns_executed": len(result.turns),
+                    "final_response": result.final_response,
+                    "error": result.error,
+                }
                 
                 # Record agent span
                 end_time = datetime.now(timezone.utc)
@@ -351,16 +454,59 @@ class GraphExecutor:
                     start_time=start_time,
                     end_time=end_time,
                     duration_ms=(end_time - start_time).total_seconds() * 1000,
-                    status="ok",
-                    attributes=SpanAttribute(),
-                    input_data=working_data,
+                    status="ok" if result.status == "completed" else "error",
+                    attributes=SpanAttribute(
+                        model=agent_runtime.llm.model_name,
+                        tokens_prompt=total_tokens_prompt,
+                        tokens_completion=total_tokens_completion,
+                        cost=self._estimate_cost(
+                            agent_runtime.llm.model_name,
+                            total_tokens_prompt,
+                            total_tokens_completion
+                        ),
+                    ),
+                    input_data={"input": user_input, "goal": goal},
                     output_data=result_data,
                 ))
                 
+                otel_span.set_attribute("agent.turns", len(result.turns))
+                otel_span.set_attribute("agent.tokens_prompt", total_tokens_prompt)
+                otel_span.set_attribute("agent.tokens_completion", total_tokens_completion)
                 otel_span.set_status(Status(StatusCode.OK))
+                
+                # Calculate total duration from metadata or estimate
+                duration_ms = result.metadata.get('duration_ms', total_duration_ms)
+                logger.info(
+                    f"Agent '{step.target}' completed: {len(result.turns)} turns, "
+                    f"{total_tokens_prompt}+{total_tokens_completion} tokens, "
+                    f"{duration_ms:.1f}ms"
+                )
+                
                 return result_data
                 
+            except RegistryError as e:
+                logger.error(f"Registry error executing agent '{step.target}': {e}")
+                end_time = datetime.now(timezone.utc)
+                context.add_span(ExecutionSpan(
+                    span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    name=f"agent.{step.target}",
+                    type=SpanType.AGENT_TURN,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_ms=(end_time - start_time).total_seconds() * 1000,
+                    status="error",
+                    attributes=SpanAttribute(error=str(e)),
+                    input_data=working_data,
+                    output_data=None,
+                ))
+                
+                otel_span.set_status(Status(StatusCode.ERROR, str(e)))
+                otel_span.record_exception(e)
+                raise
+                
             except Exception as e:
+                logger.error(f"Error executing agent '{step.target}': {e}")
                 end_time = datetime.now(timezone.utc)
                 context.add_span(ExecutionSpan(
                     span_id=span_id,
@@ -387,7 +533,12 @@ class GraphExecutor:
         context: ExecutionContext,
         parent_span_id: Optional[str],
     ) -> Any:
-        """Execute a RAG query step with retrieval metrics."""
+        """
+        Execute a RAG query step with real RagPipelineRuntime.
+        
+        Uses RagPipelineRuntime from registry to execute retrieval with
+        embeddings, vector search, and optional reranking.
+        """
         span_id = str(uuid.uuid4())
         start_time = datetime.now(timezone.utc)
         
@@ -395,31 +546,56 @@ class GraphExecutor:
             otel_span.set_attribute("rag.target", step.target)
             
             try:
+                # Get RAG pipeline from registry
+                rag_pipeline = self.registry.get_rag_pipeline(step.target)
+                otel_span.set_attribute("rag.name", rag_pipeline.name)
+                otel_span.set_attribute("rag.encoder", rag_pipeline.query_encoder)
+                
                 # Get query from working data
                 query = working_data.get("query", "")
                 if not query and isinstance(working_data.get("input"), str):
                     query = working_data["input"]
                 
+                if not query:
+                    raise ValueError("No query provided in working data")
+                
+                # Get RAG configuration
                 rag_config = step.options or {}
-                top_k = rag_config.get("top_k", 5)
-                reranker = rag_config.get("reranker")
+                top_k = rag_config.get("top_k", rag_pipeline.top_k)
                 
-                # Simulate RAG retrieval
-                await asyncio.sleep(0.2)
+                logger.info(
+                    f"Executing RAG query on '{step.target}' with top_k={top_k}"
+                )
                 
+                # Execute query with real RAG pipeline
+                rag_result: RagResult = await rag_pipeline.execute_query(
+                    query=query,
+                    top_k=top_k,
+                )
+                
+                # Convert documents to dict format
                 documents = [
-                    {"id": f"doc_{i}", "content": f"Document {i} content", "score": 0.9 - i * 0.1}
-                    for i in range(top_k)
+                    {
+                        "id": doc.id,
+                        "content": doc.content,
+                        "score": doc.score,
+                        "metadata": doc.metadata,
+                    }
+                    for doc in rag_result.documents
                 ]
                 
                 result = {
-                    "query": query,
+                    "query": rag_result.query,
                     "documents": documents,
-                    "count": len(documents)
+                    "count": len(documents),
+                    "metadata": rag_result.metadata,
                 }
                 
-                # Record span
+                # Record span with metrics
                 end_time = datetime.now(timezone.utc)
+                retrieval_time_ms = rag_result.metadata.get("retrieval_time_ms", 0)
+                rerank_time_ms = rag_result.metadata.get("rerank_time_ms", 0)
+                
                 context.add_span(ExecutionSpan(
                     span_id=span_id,
                     parent_span_id=parent_span_id,
@@ -431,17 +607,49 @@ class GraphExecutor:
                     status="ok",
                     attributes=SpanAttribute(
                         top_k=top_k,
-                        reranker=reranker,
-                        tokens_prompt=50,  # Query embedding
+                        reranker=rag_pipeline.reranker,
+                        model=rag_pipeline.query_encoder,
                     ),
-                    input_data={"query": query},
+                    input_data={"query": query, "top_k": top_k},
                     output_data=result,
                 ))
                 
+                otel_span.set_attribute("rag.documents_retrieved", len(documents))
+                otel_span.set_attribute("rag.retrieval_time_ms", retrieval_time_ms)
+                if rerank_time_ms:
+                    otel_span.set_attribute("rag.rerank_time_ms", rerank_time_ms)
                 otel_span.set_status(Status(StatusCode.OK))
+                
+                logger.info(
+                    f"RAG query on '{step.target}' completed: {len(documents)} docs, "
+                    f"retrieval={retrieval_time_ms:.1f}ms"
+                )
+                
                 return result
                 
+            except RegistryError as e:
+                logger.error(f"Registry error executing RAG '{step.target}': {e}")
+                end_time = datetime.now(timezone.utc)
+                context.add_span(ExecutionSpan(
+                    span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    name=f"rag.{step.target}",
+                    type=SpanType.RAG_QUERY,
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_ms=(end_time - start_time).total_seconds() * 1000,
+                    status="error",
+                    attributes=SpanAttribute(error=str(e)),
+                    input_data=working_data,
+                    output_data=None,
+                ))
+                
+                otel_span.set_status(Status(StatusCode.ERROR, str(e)))
+                otel_span.record_exception(e)
+                raise
+                
             except Exception as e:
+                logger.error(f"Error executing RAG '{step.target}': {e}")
                 end_time = datetime.now(timezone.utc)
                 context.add_span(ExecutionSpan(
                     span_id=span_id,
@@ -526,3 +734,42 @@ class GraphExecutor:
                 otel_span.set_status(Status(StatusCode.ERROR, str(e)))
                 otel_span.record_exception(e)
                 raise
+    
+    def _estimate_cost(self, model: str, tokens_prompt: int, tokens_completion: int) -> float:
+        """
+        Estimate API cost based on token usage and model pricing.
+        
+        Args:
+            model: Model name (e.g., "gpt-4", "gpt-3.5-turbo")
+            tokens_prompt: Number of prompt tokens
+            tokens_completion: Number of completion tokens
+        
+        Returns:
+            Estimated cost in USD
+        """
+        # Pricing per 1K tokens (as of 2024)
+        PRICING = {
+            "gpt-4": {"prompt": 0.03, "completion": 0.06},
+            "gpt-4-turbo": {"prompt": 0.01, "completion": 0.03},
+            "gpt-4-turbo-preview": {"prompt": 0.01, "completion": 0.03},
+            "gpt-3.5-turbo": {"prompt": 0.0015, "completion": 0.002},
+            "gpt-3.5-turbo-16k": {"prompt": 0.003, "completion": 0.004},
+            "claude-3-opus": {"prompt": 0.015, "completion": 0.075},
+            "claude-3-sonnet": {"prompt": 0.003, "completion": 0.015},
+            "claude-3-haiku": {"prompt": 0.00025, "completion": 0.00125},
+        }
+        
+        # Normalize model name
+        model_lower = model.lower()
+        for pricing_key in PRICING:
+            if pricing_key in model_lower:
+                pricing = PRICING[pricing_key]
+                cost_prompt = (tokens_prompt / 1000) * pricing["prompt"]
+                cost_completion = (tokens_completion / 1000) * pricing["completion"]
+                return cost_prompt + cost_completion
+        
+        # Default pricing for unknown models (use GPT-4 as baseline)
+        logger.warning(f"Unknown model '{model}', using default pricing")
+        cost_prompt = (tokens_prompt / 1000) * 0.03
+        cost_completion = (tokens_completion / 1000) * 0.06
+        return cost_prompt + cost_completion
