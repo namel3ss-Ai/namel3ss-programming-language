@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=none
+# This is a Jinja2 template file - YAML validation disabled
 version: '3.8'
 
 services:

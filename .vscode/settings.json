@@ -9,25 +9,50 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     
-    // Exclude template files from validation (they contain Jinja2 syntax)
+    // Disable YAML validation for template files (they contain Jinja2 syntax)
     "yaml.validate": true,
-    "yaml.schemas": {
-        "docker-compose": []
-    },
+    "yaml.customTags": [
+        "!jinja"
+    ],
+    
+    // Associate template files with plaintext to avoid validation
     "files.associations": {
-        "**/project_templates/**/docker-compose.yml": "jinja-yaml",
-        "**/project_templates/**/*.yml": "jinja-yaml",
-        "**/project_templates/**/*.yaml": "jinja-yaml"
+        "**/project_templates/**/docker-compose.yml": "yaml",
+        "**/project_templates/**/*.yml": "yaml",
+        "**/project_templates/**/*.yaml": "yaml"
     },
     
-    // Exclude template directories from TypeScript checking
-    "typescript.validate.enable": true,
-    "typescript.tsdk": "node_modules/typescript/lib",
+    // Exclude specific files from validation
+    "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
     
-    // Suppress specific errors in template files and packages
-    "problems.excludedFiles": [
-        "**/project_templates/**",
-        "**/packages/**/__tests__/**",
-        "**/packages/**/node_modules/**"
-    ]
+    // Exclude paths from file watching and validation
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/node_modules": true,
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/dist": true,
+        "**/build": true,
+        "**/*.egg-info": true
+    },
+    
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/.venv/**": true,
+        "**/dist/**": true,
+        "**/build/**": true
+    },
+    
+    // Suppress validation errors in specific paths
+    "yaml.schemaStore.enable": true,
+    "yaml.schemas": {
+        "https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json": [
+            "docker-compose.yml",
+            "docker-compose.yaml",
+            "!**/project_templates/**/docker-compose.yml"
+        ]
+    }
 }
