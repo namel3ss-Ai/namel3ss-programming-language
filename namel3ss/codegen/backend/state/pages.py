@@ -29,7 +29,7 @@ def _encode_page(
             components.append(component)
     
     layout = _encode_layout_meta(page.layout_meta)
-    api_path = _page_api_path(page.name, page.route)
+    api_path = _page_api_path(page.route or page.name)
     metadata_encoded = _encode_value(page.metadata or {}, env_keys)
     if not isinstance(metadata_encoded, dict):
         metadata_encoded = {"value": metadata_encoded} if metadata_encoded else {}
@@ -37,14 +37,11 @@ def _encode_page(
     return PageSpec(
         name=page.name,
         slug=_slugify_page_name(page.name),
-        title=page.title or page.name,
         route=_slugify_route(page.route or page.name),
         index=0,  # Will be set by caller
         api_path=api_path,
         components=components,
         layout=layout,
-        style=dict(page.style or {}),
-        metadata=metadata_encoded,
     )
 
 

@@ -275,6 +275,114 @@ def _call_llm_via_registry(
             "metadata": {"elapsed_ms": elapsed_ms},
             "traceback": tb_text,
         }
+
+
+async def _call_llm_via_registry_async(
+    name: str,
+    prompt_text: str,
+    args: Dict[str, Any],
+    config: Dict[str, Any],
+    start_time: float,
+) -> Optional[Dict[str, Any]]:
+    """
+    Async version: Try to call an LLM using the new BaseLLM interface from _LLM_INSTANCES.
+    
+    Returns response dict if successful, None if LLM not found in registry.
+    """
+    # Check if _LLM_INSTANCES is defined (only exists if app has LLM blocks)
+    if '_LLM_INSTANCES' not in globals():
+        return None
+    
+    # Check if LLM instance exists
+    llm_instance = _LLM_INSTANCES.get(name)
+    if llm_instance is None:
+        return None
+    
+    try:
+        from namel3ss.llm import ChatMessage
+        
+        # Determine mode (chat vs completion)
+        mode = str(config.get("mode") or "chat").lower()
+        
+        # Build messages for chat mode
+        if mode == "chat":
+            messages = []
+            
+            # Add system message if present
+            system_prompt = config.get("system") or config.get("system_prompt")
+            if system_prompt:
+                messages.append(ChatMessage(role="system", content=str(system_prompt)))
+            
+            # Add extra messages from config
+            extra_messages = config.get("messages")
+            if isinstance(extra_messages, list):
+                for msg in extra_messages:
+                    if isinstance(msg, dict):
+                        role = str(msg.get("role", "user"))
+                        content = str(msg.get("content", ""))
+                        messages.append(ChatMessage(role=role, content=content))
+            
+            # Add user prompt
+            user_role = str(config.get("user_role") or "user")
+            messages.append(ChatMessage(role=user_role, content=prompt_text))
+            
+            # Call LLM with async chat interface
+            llm_response = await llm_instance.agenerate_chat(messages, **args)
+        else:
+            # Async completion mode
+            llm_response = await llm_instance.agenerate(prompt_text, **args)
+        
+        # Convert LLMResponse to our standard format
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        
+        result_payload = {
+            "text": llm_response.text,
+            "raw": llm_response.raw,
+        }
+        
+        metadata = {
+            "elapsed_ms": elapsed_ms,
+            "provider": llm_response.metadata.get("provider", llm_instance.get_provider_name()),
+        }
+        
+        # Add usage info if available
+        if llm_response.usage:
+            metadata["usage"] = llm_response.usage
+            result_payload["usage"] = llm_response.usage
+        
+        if llm_response.finish_reason:
+            metadata["finish_reason"] = llm_response.finish_reason
+        
+        return {
+            "status": "ok",
+            "provider": llm_instance.get_provider_name(),
+            "model": llm_response.model,
+            "inputs": args,
+            "result": result_payload,
+            "metadata": metadata,
+        }
+        
+    except Exception as exc:
+        # Return error response
+        import traceback
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        tb_text = ""
+        try:
+            tb_text = traceback.format_exc(limit=5).strip()
+        except Exception:
+            tb_text = ""
+        if tb_text and len(tb_text) > 3000:
+            tb_text = tb_text[:3000]
+        
+        return {
+            "status": "error",
+            "provider": llm_instance.get_provider_name() if llm_instance else "unknown",
+            "model": getattr(llm_instance, "model", "unknown"),
+            "inputs": args,
+            "error": f"{type(exc).__name__}: {exc}",
+            "metadata": {"elapsed_ms": elapsed_ms},
+            "traceback": tb_text,
+        }
 '''
 ).strip()
 

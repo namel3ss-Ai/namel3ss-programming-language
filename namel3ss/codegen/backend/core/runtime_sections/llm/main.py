@@ -4,7 +4,7 @@ from textwrap import dedent
 
 MAIN = dedent(
     '''
-def run_chain(
+async def run_chain(
     name: str,
     payload: Optional[Dict[str, Any]] = None,
     context: Optional[Dict[str, Any]] = None,
@@ -44,17 +44,65 @@ def run_chain(
     runtime_context["payload"] = args
 
     steps_history: List[Dict[str, Any]] = []
-    status, result_value, working = _execute_workflow_nodes(
-        spec.get("steps", []),
-        context=runtime_context,
-        chain_scope=chain_scope,
-        args=args,
-        working=working,
-        memory_state=memory_state,
-        allow_stubs=allow_stubs,
-        steps_history=steps_history,
-        chain_name=name,
-    )
+    
+    # Check for timeout configuration
+    timeout_seconds = spec.get("timeout")
+    if timeout_seconds is None:
+        timeout_seconds = float(os.getenv("CHAIN_TIMEOUT_SECONDS", "0"))  # 0 = no timeout
+    
+    try:
+        if timeout_seconds > 0:
+            # Execute with timeout
+            status, result_value, working = await _execute_with_timeout(
+                _execute_workflow_nodes(
+                    spec.get("steps", []),
+                    context=runtime_context,
+                    chain_scope=chain_scope,
+                    args=args,
+                    working=working,
+                    memory_state=memory_state,
+                    allow_stubs=allow_stubs,
+                    steps_history=steps_history,
+                    chain_name=name,
+                ),
+                timeout_seconds=timeout_seconds,
+                chain_name=name,
+                context=runtime_context,
+            )
+        else:
+            # Execute without timeout
+            status, result_value, working = await _execute_workflow_nodes(
+                spec.get("steps", []),
+                context=runtime_context,
+                chain_scope=chain_scope,
+                args=args,
+                working=working,
+                memory_state=memory_state,
+                allow_stubs=allow_stubs,
+                steps_history=steps_history,
+                chain_name=name,
+            )
+    except TimeoutError as exc:
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        return {
+            "status": "timeout",
+            "result": None,
+            "steps": steps_history,
+            "inputs": args,
+            "error": str(exc),
+            "metadata": {"elapsed_ms": elapsed_ms, "timeout_seconds": timeout_seconds},
+        }
+    except Exception as exc:
+        elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
+        logger.error(f"Chain '{name}' execution failed: {exc}")
+        return {
+            "status": "error",
+            "result": None,
+            "steps": steps_history,
+            "inputs": args,
+            "error": str(exc),
+            "metadata": {"elapsed_ms": elapsed_ms},
+        }
 
     elapsed_ms = float(round((time.time() - start_time) * 1000.0, 3))
     if status != "error" and result_value is None:

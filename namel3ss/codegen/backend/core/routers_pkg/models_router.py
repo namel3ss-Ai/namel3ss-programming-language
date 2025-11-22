@@ -61,7 +61,7 @@ async def get_model_specification(model_name: str) -> Dict[str, Any]:
     dependencies=[rate_limit_dependency("ai")],
 )
 async def run_registered_chain(chain_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return run_chain(chain_name, payload)
+    return await run_chain(chain_name, payload)
 
 
 @router.post(
@@ -69,7 +69,7 @@ async def run_registered_chain(chain_name: str, payload: Dict[str, Any]) -> Dict
     dependencies=[rate_limit_dependency("ai")],
 )
 async def run_llm_connector(connector: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return call_llm_connector(connector, payload)
+    return await call_llm_connector(connector, payload)
 
 
 __all__ = ["router"]

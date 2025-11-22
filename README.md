@@ -179,10 +179,118 @@ define chain "RAG_Query":
 
 Namel3ss requires **Python 3.10 or newer**.
 
-### From PyPI (recommended)
+### Core Installation (Lightweight)
+
+The core installation includes only the essentials for parsing, code generation, and CLI:
 
 ```bash
 pip install namel3ss
+```
+
+This minimal installation (~10MB) provides:
+- ✅ `.n3` file parsing and AST generation
+- ✅ FastAPI backend code generation  
+- ✅ Frontend site generation (static HTML, React)
+- ✅ CLI commands: `build`, `run`, `test`, `lint`
+- ✅ Language Server Protocol (LSP) support
+- ✅ Template engine for code generation
+
+**Perfect for**: CI/CD pipelines, code compilation, static analysis, development tools.
+
+### Optional Features (Extras)
+
+Install only the features you need:
+
+#### AI & LLM Providers
+
+```bash
+# All AI providers
+pip install namel3ss[ai]
+
+# Or individual providers
+pip install namel3ss[openai]      # OpenAI (GPT-4, etc.)
+pip install namel3ss[anthropic]   # Anthropic (Claude)
+```
+
+**Enables**: Structured prompts, model adapters, token counting, AI chains
+
+#### Databases
+
+```bash
+# All SQL databases
+pip install namel3ss[sql]
+
+# Or specific databases
+pip install namel3ss[postgres]    # PostgreSQL (asyncpg + psycopg3)
+pip install namel3ss[mysql]       # MySQL (aiomysql)
+pip install namel3ss[mongo]       # MongoDB (motor + pymongo)
+```
+
+**Enables**: SQL datasets, database connectors, ORM models
+
+#### Caching & Queues
+
+```bash
+pip install namel3ss[redis]       # Redis caching and pub/sub
+```
+
+**Enables**: Redis adapters, queue systems (RQ), caching layers
+
+#### Real-time Features
+
+```bash
+pip install namel3ss[realtime]    # WebSockets + Redis
+pip install namel3ss[websockets]  # WebSockets only
+```
+
+**Enables**: WebSocket endpoints, real-time data streaming, pub/sub
+
+#### Observability
+
+```bash
+pip install namel3ss[otel]        # OpenTelemetry instrumentation
+```
+
+**Enables**: Distributed tracing, metrics, FastAPI auto-instrumentation
+
+#### Everything
+
+```bash
+pip install namel3ss[all]         # All optional features
+```
+
+### Installation Examples
+
+**Typical web app with database**:
+```bash
+pip install namel3ss[postgres]
+```
+
+**AI-powered application**:
+```bash
+pip install namel3ss[ai,postgres,redis]
+```
+
+**Full-featured production setup**:
+```bash
+pip install namel3ss[all]
+```
+
+### Feature Detection
+
+Namel3ss gracefully handles missing dependencies with helpful error messages:
+
+```python
+# If OpenAI not installed
+n3 run app.n3
+# Error: OpenAI integration requires the 'openai' extra.
+# Install with: pip install 'namel3ss[openai]'
+# Or for all AI providers: pip install 'namel3ss[ai]'
+```
+
+Check available features:
+```bash
+python -c "from namel3ss.features import print_feature_status; print_feature_status()"
 ```
 
 Verify installation:
@@ -191,24 +299,45 @@ Verify installation:
 namel3ss --help
 ```
 
+### Feature → Extra Mapping
+
+Quick reference for what each extra provides:
+
+| Feature | Extra | Packages Installed |
+|---------|-------|-------------------|
+| **Core** (always included) | _(none)_ | `fastapi`, `pydantic`, `uvicorn`, `httpx`, `pygls`, `jinja2` |
+| OpenAI (GPT models) | `[openai]` | `openai`, `tiktoken` |
+| Anthropic (Claude) | `[anthropic]` | `anthropic` |
+| All AI providers | `[ai]` | `openai`, `anthropic`, `tiktoken` |
+| PostgreSQL | `[postgres]` | `sqlalchemy`, `asyncpg`, `psycopg[binary]` |
+| MySQL | `[mysql]` | `sqlalchemy`, `aiomysql` |
+| All SQL databases | `[sql]` | `sqlalchemy`, `asyncpg`, `psycopg`, `aiomysql` |
+| MongoDB | `[mongo]` | `motor`, `pymongo` |
+| Redis caching/queues | `[redis]` | `redis>=5.0` |
+| WebSockets | `[websockets]` | `websockets>=12.0` |
+| Real-time (WS + Redis) | `[realtime]` | `websockets`, `redis` |
+| OpenTelemetry | `[otel]` | `opentelemetry-*` (SDK, instrumentation, exporters) |
+| Development tools | `[dev]` | `pytest`, `black`, `mypy`, `ruff`, etc. |
+| Everything | `[all]` | All of the above |
+
 ### From source
 
 ```bash
 git clone https://github.com/SsebowaDisan/namel3ss-programming-language.git
 cd namel3ss-programming-language
-pip install -e .
+pip install -e .[dev]  # Include dev tools
 ```
 
-### Optional extras
+### Legacy extras (deprecated)
+
+The following extras are deprecated and will be removed in future versions:
 
 ```bash
-# AI connectors for OpenAI, Anthropic, etc.
+# DEPRECATED: Use [ai] instead
 pip install namel3ss[ai-connectors]
 
-# SQL database support
+# sql, redis, mongo extras remain supported
 pip install namel3ss[sql]
-
-# Redis for caching and memory
 pip install namel3ss[redis]
 
 # MongoDB datasets

@@ -125,14 +125,10 @@ class ModelAdapter(BaseAdapter):
     
     def _setup_openai(self):
         """Setup OpenAI client."""
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise AdapterExecutionError(
-                "OpenAI not installed. Install with: pip install openai",
-                adapter_name=self.config.name,
-                adapter_type=self.config.adapter_type,
-            )
+        from namel3ss.features import require_openai
+        
+        require_openai()
+        from openai import OpenAI
         
         self._client = OpenAI(
             api_key=self.config.api_key,
@@ -142,14 +138,10 @@ class ModelAdapter(BaseAdapter):
     
     def _setup_anthropic(self):
         """Setup Anthropic client."""
-        try:
-            from anthropic import Anthropic
-        except ImportError:
-            raise AdapterExecutionError(
-                "Anthropic not installed. Install with: pip install anthropic",
-                adapter_name=self.config.name,
-                adapter_type=self.config.adapter_type,
-            )
+        from namel3ss.features import require_anthropic
+        
+        require_anthropic()
+        from anthropic import Anthropic
         
         self._client = Anthropic(
             api_key=self.config.api_key,

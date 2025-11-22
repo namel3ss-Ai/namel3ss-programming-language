@@ -4,7 +4,7 @@ from textwrap import dedent
 
 WORKFLOW = dedent(
     '''
-def _execute_workflow_nodes(
+async def _execute_workflow_nodes(
     nodes: List[Dict[str, Any]],
     *,
     context: Dict[str, Any],
@@ -16,6 +16,130 @@ def _execute_workflow_nodes(
     steps_history: List[Dict[str, Any]],
     chain_name: str,
 ) -> Tuple[str, Any, Any]:
+    """
+    Execute workflow nodes with support for parallel execution.
+    
+    Detects groups of parallelizable steps and executes them concurrently
+    when ENABLE_PARALLEL_STEPS environment variable is set.
+    """
+    enable_parallel = _is_truthy_env("ENABLE_PARALLEL_STEPS")
+    
+    if enable_parallel:
+        # Detect parallel groups
+        groups = _detect_parallel_groups(nodes or [])
+        
+        status = "partial"
+        result_value: Any = None
+        current_value = working
+        encountered_error = False
+        
+        for group in groups:
+            if len(group) == 1:
+                # Single step - execute normally
+                node = group[0]
+                node_type = str(node.get("type") or "step").lower()
+                
+                if node_type == "step":
+                    step_status, current_value, step_result, stop_on_error = await _execute_workflow_step(
+                        node,
+                        context=context,
+                        chain_scope=chain_scope,
+                        args=args,
+                        working=current_value,
+                        memory_state=memory_state,
+                        allow_stubs=allow_stubs,
+                        steps_history=steps_history,
+                        chain_name=chain_name,
+                    )
+                    if step_status == "error":
+                        encountered_error = True
+                        if stop_on_error:
+                            return "error", step_result, current_value
+                    elif step_status == "ok":
+                        status = "ok"
+                        result_value = step_result
+                    elif step_status == "stub" and status != "error" and result_value is None:
+                        result_value = step_result
+                elif node_type == "if":
+                    branch_status, branch_result, branch_value = await _execute_workflow_if(
+                        node,
+                        context=context,
+                        chain_scope=chain_scope,
+                        args=args,
+                        working=current_value,
+                        memory_state=memory_state,
+                        allow_stubs=allow_stubs,
+                        steps_history=steps_history,
+                        chain_name=chain_name,
+                    )
+                    if branch_status == "error":
+                        return "error", branch_result, branch_value
+                    if branch_status == "ok" and branch_result is not None:
+                        status = "ok"
+                        result_value = branch_result
+                    current_value = branch_value
+                elif node_type == "for":
+                    loop_status, loop_result, loop_value = await _execute_workflow_for(
+                        node,
+                        context=context,
+                        chain_scope=chain_scope,
+                        args=args,
+                        working=current_value,
+                        memory_state=memory_state,
+                        allow_stubs=allow_stubs,
+                        steps_history=steps_history,
+                        chain_name=chain_name,
+                    )
+                    if loop_status == "error":
+                        return "error", loop_result, loop_value
+                    if loop_status == "ok" and loop_result is not None:
+                        status = "ok"
+                        result_value = loop_result
+                    current_value = loop_value
+                elif node_type == "while":
+                    while_status, while_result, while_value = await _execute_workflow_while(
+                        node,
+                        context=context,
+                        chain_scope=chain_scope,
+                        args=args,
+                        working=current_value,
+                        memory_state=memory_state,
+                        allow_stubs=allow_stubs,
+                        steps_history=steps_history,
+                        chain_name=chain_name,
+                    )
+                    if while_status == "error":
+                        return "error", while_result, while_value
+                    if while_status == "ok" and while_result is not None:
+                        status = "ok"
+                        result_value = while_result
+                    current_value = while_value
+            else:
+                # Multiple steps - execute in parallel
+                logger.info(f"Executing {len(group)} steps in parallel for chain '{chain_name}'")
+                parallel_status, parallel_result, parallel_value = await _execute_parallel_steps(
+                    group,
+                    context=context,
+                    chain_scope=chain_scope,
+                    args=args,
+                    working=current_value,
+                    memory_state=memory_state,
+                    allow_stubs=allow_stubs,
+                    steps_history=steps_history,
+                    chain_name=chain_name,
+                )
+                if parallel_status == "error":
+                    return "error", parallel_result, parallel_value
+                if parallel_status == "ok" and parallel_result is not None:
+                    status = "ok"
+                    result_value = parallel_result
+                current_value = parallel_value
+        
+        if encountered_error and status != "error":
+            status = "error"
+        return status, result_value, current_value
+    
+    # Sequential execution (default)
     status = "partial"
     result_value: Any = None
     current_value = working
@@ -23,7 +147,7 @@ def _execute_workflow_nodes(
     for node in nodes or []:
         node_type = str(node.get("type") or "step").lower()
         if node_type == "step":
-            step_status, current_value, step_result, stop_on_error = _execute_workflow_step(
+            step_status, current_value, step_result, stop_on_error = await _execute_workflow_step(
                 node,
                 context=context,
                 chain_scope=chain_scope,
@@ -44,7 +168,7 @@ def _execute_workflow_nodes(
             elif step_status == "stub" and status != "error" and result_value is None:
                 result_value = step_result
         elif node_type == "if":
-            branch_status, branch_result, branch_value = _execute_workflow_if(
+            branch_status, branch_result, branch_value = await _execute_workflow_if(
                 node,
                 context=context,
                 chain_scope=chain_scope,
@@ -62,7 +186,7 @@ def _execute_workflow_nodes(
                 result_value = branch_result
             current_value = branch_value
         elif node_type == "for":
-            loop_status, loop_result, loop_value = _execute_workflow_for(
+            loop_status, loop_result, loop_value = await _execute_workflow_for(
                 node,
                 context=context,
                 chain_scope=chain_scope,
@@ -80,7 +204,7 @@ def _execute_workflow_nodes(
                 result_value = loop_result
             current_value = loop_value
         elif node_type == "while":
-            while_status, while_result, while_value = _execute_workflow_while(
+            while_status, while_result, while_value = await _execute_workflow_while(
                 node,
                 context=context,
                 chain_scope=chain_scope,
@@ -111,7 +235,7 @@ def _execute_workflow_nodes(
     return status, result_value, current_value
 
 
-def _execute_workflow_step(
+async def _execute_workflow_step(
     step: Dict[str, Any],
     *,
     context: Dict[str, Any],
@@ -180,7 +304,7 @@ def _execute_workflow_step(
         if memory_payload:
             connector_payload.setdefault("memory", {}).update(memory_payload)
         entry["inputs"] = connector_payload
-        response = call_llm_connector(target, connector_payload)
+        response = await call_llm_connector(target, connector_payload)
         entry["output"] = response
         entry["status"] = response.get("status", "partial")
         step_status = response.get("status")
@@ -211,7 +335,7 @@ def _execute_workflow_step(
             payload_data["read_memory"] = read_memory
         if write_memory:
             payload_data["write_memory"] = write_memory
-        response = run_prompt(target, payload_data, context=context, memory=memory_payload)
+        response = await run_prompt(target, payload_data, context=context, memory=memory_payload)
         entry["inputs"] = response.get("inputs")
         entry["output"] = response
         entry["status"] = response.get("status", "partial")
@@ -418,7 +542,7 @@ def _execute_workflow_step(
     return entry.get("status", "partial"), current_value, step_result, stop_on_error
 
 
-def _execute_workflow_if(
+async def _execute_workflow_if(
     node: Dict[str, Any],
     *,
     context: Dict[str, Any],
@@ -453,7 +577,7 @@ def _execute_workflow_if(
             branch_nodes = node.get("else") or []
     if not branch_nodes:
         return "partial", None, working
-    return _execute_workflow_nodes(
+    return await _execute_workflow_nodes(
         branch_nodes,
         context=context,
         chain_scope=chain_scope,
@@ -466,7 +590,7 @@ def _execute_workflow_if(
     )
 
 
-def _execute_workflow_for(
+async def _execute_workflow_for(
     node: Dict[str, Any],
     *,
     context: Dict[str, Any],
@@ -494,7 +618,7 @@ def _execute_workflow_for(
         chain_scope["locals"][loop_var] = item
         loop_context[loop_var] = item
         scope_loop[loop_var] = item
-        branch_status, branch_result, branch_value = _execute_workflow_nodes(
+        branch_status, branch_result, branch_value = await _execute_workflow_nodes(
             node.get("body") or [],
             context=context,
             chain_scope=chain_scope,
@@ -519,7 +643,7 @@ def _execute_workflow_for(
     return ("ok" if iterations else "partial"), result_value, current_value
 
 
-def _execute_workflow_while(
+async def _execute_workflow_while(
     node: Dict[str, Any],
     *,
     context: Dict[str, Any],
@@ -541,7 +665,7 @@ def _execute_workflow_while(
         scope = _workflow_scope(chain_scope, args, current_value)
         if not _evaluate_workflow_condition(condition, source, scope, context, chain_name):
             break
-        branch_status, branch_result, branch_value = _execute_workflow_nodes(
+        branch_status, branch_result, branch_value = await _execute_workflow_nodes(
             node.get("body") or [],
             context=context,
             chain_scope=chain_scope,

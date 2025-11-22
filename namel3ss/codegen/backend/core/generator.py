@@ -7,6 +7,11 @@ from typing import Any, Dict, Optional
 
 from namel3ss.ast import App
 
+from ..inline_blocks import (
+    collect_inline_blocks,
+    generate_inline_python_module,
+    generate_inline_react_components,
+)
 from ..state import build_backend_state
 from .app_module import _render_app_module
 from .database import _render_database_module
@@ -96,6 +101,23 @@ def generate_backend(
     (generated_dir / "runtime.py").write_text(
         _render_runtime_module(state, embed_insights, enable_realtime, connector_config), encoding="utf-8"
     )
+    
+    # Generate inline blocks module
+    inline_blocks = collect_inline_blocks(app)
+    if inline_blocks.get("python"):
+        inline_python_module = generate_inline_python_module(inline_blocks["python"])
+        (generated_dir / "inline_blocks.py").write_text(
+            inline_python_module, encoding="utf-8"
+        )
+    
+    # Generate React components
+    if inline_blocks.get("react"):
+        react_components = generate_inline_react_components(inline_blocks["react"])
+        react_dir = generated_dir / "react_components"
+        react_dir.mkdir(exist_ok=True)
+        for filename, code in react_components.items():
+            (react_dir / filename).write_text(code, encoding="utf-8")
+    
     (helpers_dir / "__init__.py").write_text(
         _render_helpers_package(), encoding="utf-8"
     )

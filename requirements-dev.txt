@@ -1,1 +1,4 @@
 -e .[dev]
+
+# Load testing
+locust>=2.15.0

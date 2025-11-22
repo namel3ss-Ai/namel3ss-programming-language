@@ -40,6 +40,8 @@ def _expression_to_source(expression: Optional["Expression"]) -> Optional[str]:
         Literal,
         NameRef,
         UnaryOp,
+        InlinePythonBlock,
+        InlineReactBlock,
     )
     
     if expression is None:
@@ -65,6 +67,12 @@ def _expression_to_source(expression: Optional["Expression"]) -> Optional[str]:
         return f"{func}({args})"
     if isinstance(expression, ContextValue):
         return None
+    if isinstance(expression, InlinePythonBlock):
+        # Return inline Python as reference to generated function
+        return f"inline_python_{id(expression)}"
+    if isinstance(expression, InlineReactBlock):
+        # Return inline React as reference to generated component
+        return f"inline_react_{id(expression)}"
     return str(expression)
 
 
@@ -78,6 +86,8 @@ def _expression_to_runtime(expression: Optional["Expression"]) -> Optional[Dict[
         Literal,
         NameRef,
         UnaryOp,
+        InlinePythonBlock,
+        InlineReactBlock,
     )
     
     if expression is None:
@@ -120,6 +130,21 @@ def _expression_to_runtime(expression: Optional["Expression"]) -> Optional[Dict[
             "arguments": [
                 _expression_to_runtime(arg) for arg in expression.arguments
             ],
+        }
+    if isinstance(expression, InlinePythonBlock):
+        return {
+            "type": "inline_python",
+            "code": expression.code,
+            "block_id": id(expression),
+            "bindings": expression.bindings,
+        }
+    if isinstance(expression, InlineReactBlock):
+        return {
+            "type": "inline_react",
+            "code": expression.code,
+            "block_id": id(expression),
+            "component_name": expression.component_name,
+            "props": expression.props,
         }
     return {"type": "literal", "value": _expression_to_source(expression)}
 

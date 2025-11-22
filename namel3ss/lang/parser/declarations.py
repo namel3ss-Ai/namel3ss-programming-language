@@ -155,7 +155,7 @@ class DeclarationParsingMixin:
         return Page(
             name=name,
             route=route,
-            statements=statements,
+            body=statements,  # Use 'body' not 'statements' (statements is just a property alias)
         )
     
     def parse_llm_declaration(self):

@@ -447,6 +447,106 @@ def run_prompt(
         if tb_text and len(tb_text) > 3000:
             tb_text = tb_text[:3000]
         return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta, tb_text)
+
+
+async def run_prompt(
+    name: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    context: Optional[Dict[str, Any]] = None,
+    memory: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Async version of run_prompt - attempts to use LLM registry for async calls."""
+    
+    start_time = time.time()
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
+    prompt_spec = AI_PROMPTS.get(name)
+    model_name = str(prompt_spec.get("model") or "") if prompt_spec else ""
+    payload_dict = dict(payload or {}) if isinstance(payload, dict) else {}
+    memory_state = _ensure_memory_state(context)
+    read_memory = _extract_memory_names(payload_dict.pop("read_memory", None))
+    write_memory = _extract_memory_names(payload_dict.pop("write_memory", None))
+    memory_payload = dict(memory or {})
+    if not memory_payload and read_memory:
+        memory_payload = _memory_snapshot(memory_state, read_memory)
+
+    def _elapsed_ms() -> float:
+        return float(round((time.time() - start_time) * 1000.0, 3))
+
+    def _error_response(reason: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        response: Dict[str, Any] = {
+            "status": "error",
+            "prompt": name,
+            "model": model_name,
+            "inputs": payload_dict,
+            "metadata": metadata or {},
+            "error": reason,
+        }
+        return response
+
+    if not prompt_spec:
+        return _error_response(f"Prompt '{name}' is not defined", {"elapsed_ms": _elapsed_ms()})
+
+    # For async, try to use BaseLLM interface via call_llm_connector
+    # Build a connector-style payload
+    connector_payload = dict(payload_dict)
+    
+    # Render template
+    try:
+        prompt_text = _render_template_value(
+            prompt_spec.get("template"),
+            {
+                "input": payload_dict,
+                "vars": payload_dict,
+                "payload": payload_dict,
+                "memory": memory_payload,
+            },
+        )
+        connector_payload["prompt"] = prompt_text
+        connector_payload["input"] = prompt_text
+    except Exception as exc:
+        return _error_response(f"Template error: {exc}", {"elapsed_ms": _elapsed_ms()})
+
+    # Use async call_llm_connector (which tries the BaseLLM registry)
+    try:
+        connector_response = await call_llm_connector(model_name, connector_payload)
+        
+        # Adapt response format
+        if connector_response.get("status") == "ok":
+            result = connector_response.get("result", {})
+            output_text = result.get("text", "")
+            
+            # Write to memory if configured
+            if write_memory:
+                _write_memory_entries(
+                    memory_state,
+                    write_memory,
+                    output_text,
+                    context=context,
+                    source=f"prompt:{name}",
+                )
+            
+            return {
+                "status": "ok",
+                "prompt": name,
+                "model": model_name,
+                "inputs": payload_dict,
+                "output": output_text,
+                "result": result,
+                "metadata": connector_response.get("metadata", {"elapsed_ms": _elapsed_ms()}),
+            }
+        else:
+            # Error or stub response
+            return {
+                "status": connector_response.get("status", "error"),
+                "prompt": name,
+                "model": model_name,
+                "inputs": payload_dict,
+                "error": connector_response.get("error", "Unknown error"),
+                "metadata": connector_response.get("metadata", {"elapsed_ms": _elapsed_ms()}),
+            }
+    except Exception as exc:
+        return _error_response(f"{type(exc).__name__}: {exc}", {"elapsed_ms": _elapsed_ms()})
 '''
 ).strip()
 

@@ -418,6 +418,89 @@ def _run_structured_prompt(
             "prompt": prompt_name,
             "model": model_name,
         }
+
+
+# Async version for non-blocking LLM calls
+async def call_llm_connector(
+    name: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Async version: Execute an LLM connector and return structured response details."""
+
+    import traceback
+
+    start_time = time.time()
+    
+    # Try new LLM interface first
+    args = dict(payload or {})
+    prompt_value = args.get("prompt") or args.get("input")
+    prompt_text = _stringify_prompt_value(name, prompt_value) if prompt_value is not None else ""
+    
+    # Attempt to use new BaseLLM interface (async)
+    spec = AI_CONNECTORS.get(name, {})
+    context_stub = {
+        "env": {key: os.getenv(key) for key in ENV_KEYS},
+        "vars": {},
+        "app": APP,
+    }
+    config_raw = spec.get("config", {})
+    config_resolved = _resolve_placeholders(config_raw, context_stub)
+    if not isinstance(config_resolved, dict):
+        config_resolved = config_raw if isinstance(config_raw, dict) else {}
+    
+    llm_response = await _call_llm_via_registry_async(name, prompt_text, args, config_resolved, start_time)
+    if llm_response is not None:
+        return llm_response
+    
+    # Fall back to HTTP-based implementation (keep sync for now - most connectors use the registry)
+    # If needed, we can make HTTP calls async using aiohttp later
+    provider = str(config_resolved.get("provider") or spec.get("type") or name or "").strip()
+    model_name = str(config_resolved.get("model") or "").strip()
+    allow_stubs = _is_truthy_env("NAMEL3SS_ALLOW_STUBS")
+
+    redacted_config = _redact_config(config_resolved)
+
+    def _elapsed_ms() -> float:
+        return float(round((time.time() - start_time) * 1000.0, 3))
+
+    def _stub_response(reason: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        logger.warning(_format_error_message(name, prompt_text, reason))
+        response: Dict[str, Any] = {
+            "status": "stub",
+            "provider": provider or "unknown",
+            "model": model_name,
+            "inputs": args,
+            "result": {"text": "[stub: llm call failed]"},
+            "config": redacted_config,
+            "error": reason,
+        }
+        if metadata:
+            response["metadata"] = metadata
+        return response
+
+    def _error_response(reason: str, metadata: Optional[Dict[str, Any]] = None, tb_text: str = "") -> Dict[str, Any]:
+        logger.error(_format_error_message(name, prompt_text, reason))
+        response: Dict[str, Any] = {
+            "status": "error",
+            "provider": provider or "unknown",
+            "model": model_name,
+            "inputs": args,
+            "error": reason,
+        }
+        if metadata:
+            response["metadata"] = metadata
+        if tb_text:
+            response["traceback"] = tb_text
+        return response
+
+    if not provider or not model_name:
+        reason = "LLM provider or model is not configured"
+        meta = {"elapsed_ms": _elapsed_ms()}
+        return _stub_response(reason, meta) if allow_stubs else _error_response(reason, meta)
+
+    # For connectors without BaseLLM registry, return error for now
+    # Full HTTP async support can be added if needed
+    return _error_response(f"Async connector '{name}' requires BaseLLM registry (not legacy HTTP)")
 '''
 ).strip()
 

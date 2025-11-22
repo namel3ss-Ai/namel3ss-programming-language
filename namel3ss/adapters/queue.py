@@ -274,6 +274,8 @@ class RQQueueAdapter(BaseAdapter):
     """
     
     def __init__(self, config: QueueAdapterConfig):
+        from namel3ss.features import has_redis
+        
         try:
             import rq
             from redis import Redis
@@ -288,9 +290,10 @@ class RQQueueAdapter(BaseAdapter):
         self._queue = None
         
         if config.backend == QueueBackend.RQ:
-            if not self._has_rq:
+            if not self._has_rq or not has_redis():
                 raise AdapterExecutionError(
-                    "RQ not installed. Install with: pip install rq redis",
+                    "RQ support requires the 'redis' extra.\n"
+                    "Install with: pip install 'namel3ss[redis]'",
                     adapter_name=config.name,
                     adapter_type=config.adapter_type,
                 )

@@ -89,11 +89,25 @@ from typing import (
     runtime_checkable,
 )
 
-from opentelemetry import trace
-from opentelemetry.trace import Tracer, Span
 from pydantic import BaseModel
 
 from namel3ss.tools.errors import ToolError
+
+# Optional: OpenTelemetry tracing support
+try:
+    from namel3ss.features import has_opentelemetry
+    if has_opentelemetry():
+        from opentelemetry import trace
+        from opentelemetry.trace import Tracer, Span
+        _HAS_OTEL = True
+    else:
+        _HAS_OTEL = False
+        Tracer = Any  # type: ignore
+        Span = Any  # type: ignore
+except ImportError:
+    _HAS_OTEL = False
+    Tracer = Any  # type: ignore
+    Span = Any  # type: ignore
 
 
 # Type variables for input/output schemas
@@ -296,6 +310,10 @@ class ToolContext:
     
     def child_span(self, name: str) -> Span:
         """Create child span for nested operations."""
+        if not _HAS_OTEL:
+            # Return no-op if OpenTelemetry not available
+            return None  # type: ignore
+        
         if self.tracer:
             if self.span:
                 with trace.use_span(self.span):
