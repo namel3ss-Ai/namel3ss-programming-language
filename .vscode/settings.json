@@ -7,5 +7,27 @@
         "*test.py"
     ],
     "python.testing.pytestEnabled": false,
-    "python.testing.unittestEnabled": true
+    "python.testing.unittestEnabled": true,
+    
+    // Exclude template files from validation (they contain Jinja2 syntax)
+    "yaml.validate": true,
+    "yaml.schemas": {
+        "docker-compose": []
+    },
+    "files.associations": {
+        "**/project_templates/**/docker-compose.yml": "jinja-yaml",
+        "**/project_templates/**/*.yml": "jinja-yaml",
+        "**/project_templates/**/*.yaml": "jinja-yaml"
+    },
+    
+    // Exclude template directories from TypeScript checking
+    "typescript.validate.enable": true,
+    "typescript.tsdk": "node_modules/typescript/lib",
+    
+    // Suppress specific errors in template files and packages
+    "problems.excludedFiles": [
+        "**/project_templates/**",
+        "**/packages/**/__tests__/**",
+        "**/packages/**/node_modules/**"
+    ]
 }
