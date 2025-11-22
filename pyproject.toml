@@ -9,16 +9,15 @@ build-backend = "setuptools.build_meta"
 name = "namel3ss"
 version = "0.4.2"
 description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
     { name = "Namel3ss Developers" }
 ]
 license = "MIT"
-license-files = ["LICENSE"]
 requires-python = ">=3.10"
 keywords = ["codegen", "fastapi", "llm", "dashboard", "language"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Framework :: FastAPI",
     "Topic :: Software Development :: Code Generators",

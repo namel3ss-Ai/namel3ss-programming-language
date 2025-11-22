@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.4.2] - 2025-01-23
 
+### Changed
+- Upgraded development status classifier from Beta to Production/Stable to reflect codebase maturity and production readiness.
+- Enhanced PyPI metadata configuration with explicit content-type specification for README rendering (`text/markdown`).
+- Modernized license declaration to use PEP 639 compatible format for improved PyPI compatibility.
+
 ### Fixed
 - Include frontend JavaScript widget templates (`widget-core.js`, `widget-rendering.js`, `widget-realtime.js`) in both wheel and source distributions to fix runtime errors when generating frontends after PyPI installation.
 - Include CRUD service scaffolding templates and configuration files (Dockerfile, Makefile, `.env.example`, `.gitignore`, documentation) in distributions so `namel3ss scaffold crud` works out of the box.
