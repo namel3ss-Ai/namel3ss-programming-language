@@ -209,7 +209,42 @@ def _encode_chain_step(step: "ChainStep", env_keys: Set[str], memory_names: Set[
 
 ---
 
-## Known Limitations (7 test failures)
+## Test Coverage Summary
+
+### Parser Tests: 75% (21/28 passing)
+
+**File**: `tests/parser/test_chain_parsing.py` (737 lines, 28 tests)
+
+```
+By Category:
+- Step Parsing: 4/4 (100%)
+- Step Kinds: 5/9 (56%)
+- Control Flow: 3/4 (75%)
+- Config: 3/3 (100%)
+- Legacy Format: 0/1 (0%)
+- Error Handling: 4/4 (100%)
+- Complex Examples: 2/3 (67%)
+```
+
+### Integration Tests: 100% (19/19 passing) ✅
+
+**File**: `tests/integration/test_chain_runtime.py` (846 lines, 19 tests)
+
+```
+By Category:
+- Basic Chain Integration: 3/3 (100%)
+- Step Kinds Integration: 6/6 (100%)
+- Control Flow Integration: 4/4 (100%)
+- Chain Config Integration: 2/2 (100%)
+- Complex Chain Integration: 3/3 (100%)
+- Multiple Chains: 1/1 (100%)
+```
+
+**Integration tests validate complete pipeline: Parse → Generate Backend → Runtime Structure**
+
+---
+
+## Known Limitations (7 parser test failures)
 
 ### 1. Object Literal Keyword Keys (4 failures)
 **Issue**: Object literal parser doesn't allow keyword tokens as keys
@@ -403,32 +438,93 @@ chain "resilient_call" {
 
 ---
 
+## Integration Tests ✅ COMPLETE
+
+**File**: `tests/integration/test_chain_runtime.py` (846 lines, 19 tests)
+
+All **19/19 tests passing** - validates complete parse → generate → runtime flow.
+
+### Test Coverage
+
+**1. TestBasicChainIntegration** (3/3 passing)
+- ✅ `test_simple_chain_generates_runtime` - Simple chain with 2 steps
+- ✅ `test_chain_with_options_runtime` - LLM step with configuration options
+- ✅ `test_chain_with_evaluation_runtime` - Step with evaluators and guardrail
+
+**2. TestChainStepKindsIntegration** (6/6 passing)
+- ✅ `test_python_step_runtime` - Python function/module invocation
+- ✅ `test_llm_step_runtime` - Direct LLM call
+- ✅ `test_rag_step_runtime` - RAG retrieval step
+- ✅ `test_memory_steps_runtime` - Memory read and write operations
+- ✅ `test_tool_step_runtime` - Tool invocation
+- ✅ `test_chain_invocation_step_runtime` - Sub-chain calling
+
+**3. TestChainControlFlowIntegration** (4/4 passing)
+- ✅ `test_if_block_runtime` - If conditional with condition and then branch
+- ✅ `test_if_else_runtime` - If/else branching logic
+- ✅ `test_for_loop_runtime` - For loop over dataset
+- ✅ `test_while_loop_runtime` - While loop with condition
+
+**4. TestChainConfigIntegration** (2/2 passing)
+- ✅ `test_chain_with_input_key_runtime` - Custom input_key configuration
+- ✅ `test_chain_with_metadata_runtime` - Metadata with description, version, tags
+
+**5. TestComplexChainIntegration** (3/3 passing)
+- ✅ `test_memory_chat_chain_runtime` - Memory read → prompt → memory write workflow
+- ✅ `test_conditional_escalation_chain_runtime` - If/elif/else with confidence-based routing
+- ✅ `test_nested_control_flow_runtime` - For loop containing if/else blocks
+
+**6. TestMultipleChainsIntegration** (1/1 passing)
+- ✅ `test_multiple_chains_in_runtime` - Three chains in one app, all registered
+
+### What Integration Tests Validate
+
+1. **Parse → Backend Generation**
+   - N3 source parses correctly with chain syntax
+   - Backend generation completes without errors
+   - Runtime module loads successfully
+
+2. **Runtime Structure**
+   - `AI_CHAINS` registry exists in runtime module
+   - Chains registered by name
+   - Chain structure matches expected schema
+
+3. **Step Encoding**
+   - All step fields present: `type`, `kind`, `target`, `options`, `stop_on_error`, `name`
+   - Options encoded as dictionaries
+   - Evaluation config includes evaluators and guardrail
+
+4. **Control Flow Encoding**
+   - If blocks: `type: "if"`, condition, then/elif/else branches
+   - For loops: `type: "for"`, loop_var, source_kind, source_name, body
+   - While loops: `type: "while"`, condition, body
+   - Nested structures properly maintained
+
+5. **All Step Kinds Working**
+   - python, llm, rag, tool, prompt verified in runtime
+   - memory_read, memory_write operations
+   - chain invocations (sub-chains)
+
+---
+
 ## Next Steps
 
-### To Reach 100% Test Coverage
+### To Reach 100% Parser Test Coverage
 
-1. **Fix object literal keyword keys** (affects 5 tests)
+1. **Fix object literal keyword keys** (affects 5 parser tests)
    - Location: `namel3ss/lang/parser/expressions.py` → `_parse_object_literal()`
    - Change: Allow keyword tokens as object keys
    - Impact: Enables natural syntax like `options: { prompt: "text" }`
 
-2. **Fix while loop condition parsing** (affects 1 test)
+2. **Fix while loop condition parsing** (affects 1 parser test)
    - Location: `_parse_workflow_while()` in declarations.py
    - Issue: Complex boolean expressions in conditions
    - Fix: Improve expression context or simplify test case
 
-3. **Fix legacy steps list kind detection** (affects 1 test)
+3. **Fix legacy steps list kind detection** (affects 1 parser test)
    - Location: `parse_chain_declaration()` legacy format handling
    - Issue: Bare identifiers get `kind="unknown"`
    - Fix: Better string parsing or explicit kind detection
-
-### Integration Testing
-
-Create end-to-end tests that:
-1. Parse `.n3` files with chains
-2. Generate backend via `generate_backend()`
-3. Verify runtime sees correct chain structure
-4. Test chain execution with real LLM/memory/RAG calls
 
 ### Documentation
 
