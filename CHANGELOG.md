@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file. The format 
 
 - Nothing yet.
 
+## [0.4.2] - 2025-01-23
+
+### Fixed
+- Include frontend JavaScript widget templates (`widget-core.js`, `widget-rendering.js`, `widget-realtime.js`) in both wheel and source distributions to fix runtime errors when generating frontends after PyPI installation.
+- Include CRUD service scaffolding templates and configuration files (Dockerfile, Makefile, `.env.example`, `.gitignore`, documentation) in distributions so `namel3ss scaffold crud` works out of the box.
+- Add comprehensive package verification script (`scripts/verify_package_assets.py`) for CI/CD integration to prevent future packaging regressions.
+
 ## [0.4.1] - 2025-11-17
 
 ### Added

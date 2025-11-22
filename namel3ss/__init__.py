@@ -61,7 +61,7 @@ def _local_version() -> str | None:
 try:  # pragma: no cover - metadata fallback for editable installs
     __version__ = _metadata.version("namel3ss")
 except _metadata.PackageNotFoundError:  # pragma: no cover - source tree
-  __version__ = _local_version() or "0.4.1"
+  __version__ = _local_version() or "0.4.2"
 else:  # pragma: no cover - version override for in-repo runs
   __version__ = _local_version() or __version__
 

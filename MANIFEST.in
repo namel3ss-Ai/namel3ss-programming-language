@@ -1,7 +1,21 @@
 include LICENSE
 include CHANGELOG.md
+include README.md
+
+# Backend runtime templates and sections
 graft namel3ss/codegen/backend/core
 recursive-include namel3ss/codegen/backend/core/runtime_sections *.py
 
+# Frontend JavaScript widget templates (required at runtime)
+recursive-include namel3ss/codegen/frontend/templates *.js
+
+# Project templates (CRUD service scaffolding and all template files)
+graft namel3ss/project_templates
+recursive-include namel3ss/project_templates *.py *.md *.txt *.yml *.yaml *.sql *.ini *.n3
+recursive-include namel3ss/project_templates .env* .gitignore Dockerfile* Makefile*
+
+# Exclude compiled Python files and caches
 global-exclude __pycache__
 global-exclude *.py[cod]
+global-exclude *$py.class
+global-exclude .DS_Store

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "namel3ss"
-version = "0.4.1"
+version = "0.4.2"
 description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
 readme = "README.md"
 authors = [
@@ -154,6 +154,14 @@ include = ["namel3ss", "namel3ss.*"]
 
 [tool.setuptools.package-data]
 "namel3ss.codegen.backend.core" = ["runtime_sections/*.py"]
+"namel3ss.codegen.frontend.templates" = ["*.js"]
+"namel3ss.project_templates" = [
+    "**/*",
+    "**/.env*",
+    "**/.gitignore",
+    "**/Dockerfile*",
+    "**/Makefile*",
+]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
