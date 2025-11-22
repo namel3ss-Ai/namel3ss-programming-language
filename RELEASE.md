@@ -1,6 +1,17 @@
 # Release Process for Namel3ss
 
-This document describes the steps to publish a new version of Namel3ss to PyPI.
+This document describes the steps to publish a new version of the **core namel3ss package** to PyPI.
+
+> **Note**: For releasing the **namel3ss-sdk** client library, see [`namel3ss_sdk/RELEASE.md`](namel3ss_sdk/RELEASE.md).
+
+## Package Overview
+
+This repository contains two independently versioned packages:
+
+1. **namel3ss** (this guide) - Core AI programming language, compiler, and runtime
+2. **namel3ss-sdk** - Python client SDK for integrating Namel3ss into existing applications
+
+Each package has separate release processes, versions, and PyPI entries.
 
 ## Pre-Release Checklist
 

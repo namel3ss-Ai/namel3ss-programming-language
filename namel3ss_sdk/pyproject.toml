@@ -4,17 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "namel3ss-sdk"
-version = "0.1.0"
-description = "Python SDK for Namel3ss - incremental adoption and integration layer"
-readme = "README.md"
+version = "0.2.0"
+description = "Python SDK for Namel3ss AI programming language - incremental adoption and integration with remote/in-process execution"
+readme = { file = "README.md", content-type = "text/markdown" }
 authors = [{ name = "Namel3ss Developers" }]
 license = "MIT"
 requires-python = ">=3.10"
-keywords = ["namel3ss", "ai", "sdk", "integration", "adoption"]
+keywords = ["namel3ss", "ai", "sdk", "integration", "adoption", "llm", "agents", "chains"]
 
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -46,6 +50,7 @@ dev = [
 Homepage = "https://github.com/SsebowaDisan/namel3ss-programming-language"
 Repository = "https://github.com/SsebowaDisan/namel3ss-programming-language"
 Documentation = "https://github.com/SsebowaDisan/namel3ss-programming-language/tree/main/namel3ss_sdk"
+Issues = "https://github.com/SsebowaDisan/namel3ss-programming-language/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
