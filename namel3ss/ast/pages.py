@@ -37,6 +37,11 @@ class LayoutSpec:
 
 @dataclass
 class LayoutMeta:
+    """Layout metadata for pages and components."""
+    # New fields matching backend encoder expectations
+    direction: Optional[str] = None  # "row" | "column"
+    spacing: Optional[str] = None  # "small" | "medium" | "large"
+    # Legacy fields (kept for backward compatibility)
     width: Optional[int] = None
     height: Optional[int] = None
     variant: Optional[str] = None

@@ -26,7 +26,7 @@ from .datasets import Dataset, RefreshPolicy
 from .frames import Frame
 from .insights import Insight
 from .models import Model
-from .pages import PageStatement, VariableAssignment
+from .pages import LayoutMeta, PageStatement, VariableAssignment
 from .crud import CrudResource
 from .eval import Evaluator, Metric, Guardrail, EvalSuiteDefinition
 from .policy import PolicyDefinition
@@ -36,12 +36,76 @@ from .logic import KnowledgeModule, LogicQuery
 
 @dataclass
 class Page:
+    """
+    Represents a page in the application with UI components.
+    
+    Attributes:
+        name: Page name/identifier
+        route: URL route path
+        body: List of page statements/components (primary field)
+        title: Page title for display and SEO
+        layout_meta: Layout configuration (direction, spacing, etc.)
+        metadata: Additional page metadata (SEO, description, etc.)
+        style: Page-level styling
+        reactive: Whether page has reactive data binding
+        refresh_policy: Auto-refresh configuration
+        
+    Note: 'statements' is an alias for 'body' for backward compatibility.
+    """
     name: str
     route: str
-    statements: List[PageStatement] = field(default_factory=list)
+    body: List[PageStatement] = field(default_factory=list)
+    title: Optional[str] = None
+    layout_meta: Optional[LayoutMeta] = None
+    metadata: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
     reactive: bool = False
     refresh_policy: Optional[RefreshPolicy] = None
-    layout: Dict[str, Any] = field(default_factory=dict)
+    
+    # Backward compatibility alias
+    @property
+    def statements(self) -> List[PageStatement]:
+        """Alias for body (backward compatibility)."""
+        return self.body
+    
+    @statements.setter
+    def statements(self, value: List[PageStatement]) -> None:
+        """Allow setting via statements for backward compatibility."""
+        self.body = value
+    
+    # Legacy layout field (dict) - convert to/from layout_meta for compatibility
+    @property
+    def layout(self) -> Dict[str, Any]:
+        """Legacy dict-based layout (backward compatibility)."""
+        if self.layout_meta is None:
+            return {}
+        return {
+            "direction": self.layout_meta.direction,
+            "spacing": self.layout_meta.spacing,
+            "width": self.layout_meta.width,
+            "height": self.layout_meta.height,
+            "variant": self.layout_meta.variant,
+            "align": self.layout_meta.align,
+            "emphasis": self.layout_meta.emphasis,
+            **(self.layout_meta.extras or {}),
+        }
+    
+    @layout.setter
+    def layout(self, value: Dict[str, Any]) -> None:
+        """Allow setting via dict for backward compatibility."""
+        if value:
+            self.layout_meta = LayoutMeta(
+                direction=value.get("direction"),
+                spacing=value.get("spacing"),
+                width=value.get("width"),
+                height=value.get("height"),
+                variant=value.get("variant"),
+                align=value.get("align"),
+                emphasis=value.get("emphasis"),
+                extras={k: v for k, v in value.items() if k not in {
+                    "direction", "spacing", "width", "height", "variant", "align", "emphasis"
+                }},
+            )
 
 
 @dataclass

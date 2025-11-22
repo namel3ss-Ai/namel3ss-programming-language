@@ -4,7 +4,7 @@ import re
 
 from typing import Optional
 
-from namel3ss.ast import Page, PageStatement, RefreshPolicy
+from namel3ss.ast import LayoutMeta, Page, PageStatement, RefreshPolicy
 from namel3ss.lang import (
     PAGE_STATEMENT_KEYWORDS,
     suggest_keyword,
@@ -158,6 +158,30 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
                 )
                 self._advance()
                 continue
+            
+            if lowered.startswith('title:'):
+                title_str = stripped.split(':', 1)[1].strip()
+                # Remove quotes if present
+                if (title_str.startswith('"') and title_str.endswith('"')) or \
+                   (title_str.startswith("'") and title_str.endswith("'")):
+                    title_str = title_str[1:-1]
+                page.title = title_str
+                self._advance()
+                continue
+            
+            if lowered.startswith('metadata:'):
+                block_indent = indent_info.effective_level
+                self._advance()
+                metadata_config = self._parse_kv_block(block_indent)
+                page.metadata = metadata_config
+                continue
+            
+            if lowered.startswith('style:'):
+                block_indent = indent_info.effective_level
+                self._advance()
+                style_config = self._parse_kv_block(block_indent)
+                page.style = style_config
+                continue
                 
             if lowered.startswith('auto refresh'):
                 refresh_text = stripped.split('auto refresh', 1)[1].strip()
@@ -188,12 +212,24 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
                 block_indent = indent_info.effective_level
                 self._advance()
                 config = self._parse_kv_block(block_indent)
-                page.layout.update(config)
+                # Parse into proper LayoutMeta structure
+                page.layout_meta = LayoutMeta(
+                    direction=config.get("direction"),
+                    spacing=config.get("spacing"),
+                    width=config.get("width"),
+                    height=config.get("height"),
+                    variant=config.get("variant"),
+                    align=config.get("align"),
+                    emphasis=config.get("emphasis"),
+                    extras={k: v for k, v in config.items() if k not in {
+                        "direction", "spacing", "width", "height", "variant", "align", "emphasis"
+                    }},
+                )
                 continue
             
             # Parse page statement
             stmt = self._parse_page_statement(indent_info.effective_level)
-            page.statements.append(stmt)
+            page.body.append(stmt)
         return page
 
     def _default_page_route(self, name: str) -> str:
