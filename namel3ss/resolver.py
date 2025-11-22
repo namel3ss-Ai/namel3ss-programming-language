@@ -167,13 +167,24 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
 
 
 def _build_module_exports(module: Module) -> ModuleExports:
+    """
+    Build exports for a module.
+    
+    This function extracts all declarations from the module's App and builds
+    an export registry for cross-module references.
+    
+    For backward compatibility, it also collects any declarations that are
+    directly in module.body (not yet attached to the App).
+    """
     app: Optional[App] = None
     if module.body and isinstance(module.body[0], App):
         app = module.body[0]
 
     exports_by_kind: Dict[str, Dict[str, Any]] = {kind: {} for kind in EXPORT_ATTRS}
     symbol_index: Dict[str, List[ExportedSymbol]] = {}
+    
     if app is not None:
+        # Collect from App collections (primary mechanism)
         for kind in EXPORT_ATTRS:
             collection = getattr(app, kind, [])
             for item in collection:
@@ -188,6 +199,10 @@ def _build_module_exports(module: Module) -> ModuleExports:
                     )
                 registry[name] = item
                 symbol_index.setdefault(name, []).append(ExportedSymbol(kind=kind, name=name, value=item))
+        
+        # BACKWARD COMPATIBILITY: Collect any loose declarations from module.body
+        # that weren't properly attached to the App (legacy parser behavior)
+        _collect_loose_declarations_into_app(module, app, exports_by_kind, symbol_index)
 
     return ModuleExports(
         app=app,
@@ -195,6 +210,89 @@ def _build_module_exports(module: Module) -> ModuleExports:
         exports_by_kind=exports_by_kind,
         symbol_index=symbol_index,
     )
+
+
+def _collect_loose_declarations_into_app(
+    module: Module,
+    app: App,
+    exports_by_kind: Dict[str, Dict[str, Any]],
+    symbol_index: Dict[str, List[ExportedSymbol]],
+) -> None:
+    """
+    Collect any declarations from module.body that aren't in the App.
+    
+    This is a backward compatibility mechanism for code that might bypass
+    the normal App attachment process. It also serves as a safety net.
+    """
+    from namel3ss.ast import (
+        Dataset, Frame, Page, Prompt, Chain, Memory, Template,
+        Connector, Model, AgentDefinition, GraphDefinition, 
+        IndexDefinition, RagPipelineDefinition,
+        LLMDefinition, ToolDefinition, TrainingJob, TuningJob,
+        FunctionDef, RuleDef, KnowledgeModule, LogicQuery,
+    )
+    
+    # Import PolicyDefinition conditionally - may not be in __init__
+    try:
+        from namel3ss.ast import PolicyDefinition
+    except ImportError:
+        from namel3ss.ast.policy import PolicyDefinition
+    
+    # Map AST types to collection names
+    type_to_collection = {
+        Dataset: 'datasets',
+        Frame: 'frames',
+        Page: 'pages',
+        Prompt: 'prompts',
+        Chain: 'chains',
+        Memory: 'memories',
+        Template: 'templates',
+        Connector: 'connectors',
+        Model: 'models',
+        AgentDefinition: 'agents',
+        GraphDefinition: 'graphs',
+        IndexDefinition: 'indices',
+        RagPipelineDefinition: 'rag_pipelines',
+        PolicyDefinition: 'policies',
+        LLMDefinition: 'llms',
+        ToolDefinition: 'tools',
+        TrainingJob: 'training_jobs',
+        TuningJob: 'tuning_jobs',
+        FunctionDef: 'functions',
+        RuleDef: 'rules',
+        KnowledgeModule: 'knowledge_modules',
+        LogicQuery: 'queries',
+    }
+    
+    # Iterate through module.body looking for declarations
+    for item in module.body:
+        # Skip the App itself
+        if isinstance(item, App):
+            continue
+        
+        # Check if this is a known declaration type
+        item_type = type(item)
+        collection_name = type_to_collection.get(item_type)
+        
+        if collection_name:
+            name = getattr(item, "name", None)
+            if not name:
+                continue
+            
+            # Check if already in exports (attached to App)
+            registry = exports_by_kind.get(collection_name, {})
+            if name in registry:
+                # Already exported from App, skip
+                continue
+            
+            # Not in App yet - attach it and add to exports
+            collection = getattr(app, collection_name, None)
+            if collection is not None:
+                collection.append(item)
+                registry[name] = item
+                symbol_index.setdefault(name, []).append(
+                    ExportedSymbol(kind=collection_name, name=name, value=item)
+                )
 
 
 def _resolve_imports(
@@ -712,12 +810,8 @@ def _validate_symbolic_expressions(resolved_modules: Dict[str, ResolvedModule]) 
         all_functions.extend(app.functions)
         all_rules.extend(app.rules)
         
-        # Also extract from app body (for backward compatibility)
-        for item in app.body:
-            if isinstance(item, FunctionDef):
-                all_functions.append(item)
-            elif isinstance(item, RuleDef):
-                all_rules.append(item)
+        # Note: app.body was from legacy parser and is not used in the new parser
+        # All declarations are now in App collection fields
     
     # Validate collected expressions
     if all_functions or all_rules:

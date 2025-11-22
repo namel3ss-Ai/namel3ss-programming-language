@@ -301,7 +301,6 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         self.imports.append(Import(
             module=import_path,
             alias=alias,
-            line=import_token.line,
         ))
         
         self.skip_newlines()
@@ -333,6 +332,9 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         
         Grammar:
             TopLevelDecl = AppDecl | PageDecl | LLMDecl | AgentDecl | ... ;
+            
+        All declarations (except App itself) are automatically attached to the App object.
+        If no explicit app declaration exists, an implicit App is created on first use.
         """
         token = self.current()
         if not token:
@@ -366,7 +368,13 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         
         parser_func = dispatch.get(token.type)
         if parser_func:
-            return parser_func()
+            decl = parser_func()
+            
+            # Attach declaration to App (except for App itself)
+            if token.type != TokenType.APP and decl is not None:
+                self._attach_to_app(decl, token.type)
+            
+            return decl
         
         # Unknown declaration
         raise create_syntax_error(
@@ -387,6 +395,12 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             or "main"
         )
         
+        # Ensure we have an App (create implicit one if needed)
+        if self.app is None and self.declarations:
+            # If we have declarations but no explicit app, create an implicit one
+            self.app = App(name=final_module_name or "app")
+            self.explicit_app = False
+        
         # Build body with app first if it exists
         body = []
         if self.app:
@@ -400,6 +414,76 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             language_version=self.language_version,
             has_explicit_app=self.explicit_app,
         )
+    
+    def _ensure_app(self) -> App:
+        """Ensure an App exists, creating an implicit one if needed."""
+        if self.app is None:
+            # Create implicit app with module name or default
+            app_name = self.module_name or self.path.split('/')[-1].replace('.n3', '') or "app"
+            self.app = App(name=app_name)
+            self.explicit_app = False
+        return self.app
+    
+    def _attach_to_app(self, decl: Any, token_type: TokenType) -> None:
+        """
+        Attach a parsed declaration to the appropriate App collection.
+        
+        This is the central wiring mechanism that ensures all declarations
+        end up in the correct App field for downstream processing.
+        """
+        if decl is None:
+            return
+        
+        # Ensure we have an App to attach to
+        app = self._ensure_app()
+        
+        # Map token types to App collection names
+        # This mapping must stay in sync with App dataclass fields
+        collection_map = {
+            TokenType.PAGE: 'pages',
+            TokenType.DATASET: 'datasets',
+            TokenType.FRAME: 'frames',
+            TokenType.CONNECTOR: 'connectors',
+            TokenType.LLM: 'llms',
+            TokenType.TOOL: 'tools',
+            TokenType.PROMPT: 'prompts',
+            TokenType.MEMORY: 'memories',
+            TokenType.TEMPLATE: 'templates',
+            TokenType.CHAIN: 'chains',
+            TokenType.MODEL: 'models',
+            TokenType.AGENT: 'agents',
+            TokenType.GRAPH: 'graphs',
+            TokenType.RAG_PIPELINE: 'rag_pipelines',
+            TokenType.INDEX: 'indices',
+            TokenType.POLICY: 'policies',
+            TokenType.KNOWLEDGE: 'knowledge_modules',
+            TokenType.QUERY: 'queries',
+            TokenType.FN: 'functions',
+            TokenType.TRAINING: 'training_jobs',
+            TokenType.THEME: None,  # Theme is special - not a collection
+        }
+        
+        collection_name = collection_map.get(token_type)
+        
+        if collection_name is None:
+            # For declarations that don't have a direct mapping (like theme),
+            # or for future extensibility, keep them in declarations list
+            return
+        
+        # Get the target collection from the App
+        try:
+            collection = getattr(app, collection_name)
+        except AttributeError:
+            # Collection doesn't exist on App - this shouldn't happen if our
+            # mapping is correct, but handle gracefully
+            raise create_syntax_error(
+                f"Internal error: App has no collection '{collection_name}' for {token_type.name}",
+                path=self.path,
+                suggestion=f"Check that App dataclass has a '{collection_name}' field",
+            )
+        
+        # Attach the declaration
+        collection.append(decl)
 
 
 __all__ = ["N3Parser"]

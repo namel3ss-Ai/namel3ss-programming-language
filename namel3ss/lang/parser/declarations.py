@@ -27,7 +27,7 @@ class DeclarationParsingMixin:
         Parse app declaration.
         
         Grammar:
-            AppDecl = "app" , QuotedName , [ AppConnections ] , Block ;
+            AppDecl = "app" , QuotedName , [ AppConnections ] , [ Block ] ;
         """
         from namel3ss.ast import App
         
@@ -55,8 +55,10 @@ class DeclarationParsingMixin:
                     database = conn.get("name")
                     break
         
-        # Parse block (will contain config like description, version, etc.)
-        config = self.parse_block()
+        # Parse optional block (will contain config like description, version, etc.)
+        config = {}
+        if self.match(TokenType.LBRACE):
+            config = self.parse_block()
         
         # Extract database from config if present
         if "database" in config:
@@ -503,13 +505,19 @@ class DeclarationParsingMixin:
         
         config = self.parse_block()
         
+        # Memory config goes into the config dict, not as top-level kwargs
         return Memory(
             name=name,
-            **config,
+            scope=config.get('scope', 'session'),
+            kind=config.get('kind', 'list'),
+            max_items=config.get('max_items'),
+            config=config,  # Pass all config
         )
     
     def parse_function_declaration(self):
         """Parse function declaration."""
+        from namel3ss.ast import FunctionDef, Parameter
+        
         fn_token = self.expect(TokenType.FN)
         name_token = self.expect(TokenType.IDENTIFIER)
         name = name_token.value
@@ -532,54 +540,84 @@ class DeclarationParsingMixin:
         
         self.skip_newlines()
         
-        return {
-            "type": "function",
-            "name": name,
-            "params": params,
-            "return_type": return_type,
-            "body": body,
-        }
+        # Convert params to Parameter objects if they're not already
+        param_objects = []
+        for param in params:
+            if isinstance(param, Parameter):
+                param_objects.append(param)
+            elif isinstance(param, dict):
+                param_objects.append(Parameter(
+                    name=param.get('name', ''),
+                    type_annotation=param.get('type'),
+                    default=param.get('default'),
+                ))
+            elif isinstance(param, str):
+                param_objects.append(Parameter(name=param))
+            else:
+                param_objects.append(param)
+        
+        return FunctionDef(
+            name=name,
+            params=param_objects,
+            return_type=return_type,
+            body=body,
+        )
     
     # Stub methods for other declarations
     def parse_tool_declaration(self):
         """Parse tool declaration."""
+        from namel3ss.ast import ToolDefinition
+        
         tool_token = self.expect(TokenType.TOOL)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"tool:{name}", tool_token.line)
         config = self.parse_block()
-        return {"type": "tool", "name": name, **config}
+        
+        return ToolDefinition(name=name, **config)
     
     def parse_connector_declaration(self):
         """Parse connector declaration."""
+        from namel3ss.ast import Connector
+        
         conn_token = self.expect(TokenType.CONNECTOR)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"connector:{name}", conn_token.line)
         config = self.parse_block()
-        return {"type": "connector", "name": name, **config}
+        
+        return Connector(name=name, **config)
     
     def parse_template_declaration(self):
         """Parse template declaration."""
+        from namel3ss.ast import Template
+        
         template_token = self.expect(TokenType.TEMPLATE)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"template:{name}", template_token.line)
         config = self.parse_block()
-        return {"type": "template", "name": name, **config}
+        
+        return Template(name=name, **config)
     
     def parse_model_declaration(self):
         """Parse model declaration."""
+        from namel3ss.ast import Model
+        
         model_token = self.expect(TokenType.MODEL)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"model:{name}", model_token.line)
         config = self.parse_block()
-        return {"type": "model", "name": name, **config}
+        
+        return Model(name=name, **config)
     
     def parse_training_declaration(self):
         """Parse training declaration."""
+        from namel3ss.ast import TrainingJob
+        
         training_token = self.expect(TokenType.TRAINING)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"training:{name}", training_token.line)
         config = self.parse_block()
-        return {"type": "training", "name": name, **config}
+        
+        return TrainingJob(name=name, **config)
     
     def parse_policy_declaration(self):
         """Parse policy declaration."""
