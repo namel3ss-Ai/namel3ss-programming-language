@@ -909,8 +909,16 @@ class ExpressionParsingMixin:
         return {"type": "table", "name": table_name}
     
     def parse_chain_step(self) -> Dict[str, Any]:
-        """Parse a chain step definition."""
-        # Simple identifier reference
+        """
+        Parse a chain step definition (DEPRECATED - use parse.py's _parse_step_block).
+        
+        This method is kept for backward compatibility but should not be used
+        for new chain definitions. Chain steps are now parsed as part of
+        parse_chain_declaration using the 'step' keyword and proper ChainStep AST nodes.
+        
+        Legacy behavior: parse simple identifier reference or expression.
+        """
+        # Simple identifier reference (legacy)
         if self.match(TokenType.IDENTIFIER):
             step_ref = self.advance().value
             

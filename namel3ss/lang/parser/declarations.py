@@ -321,12 +321,36 @@ class DeclarationParsingMixin:
     
     def parse_chain_declaration(self):
         """
-        Parse chain declaration.
+        Parse chain declaration with full workflow support.
+        
+        Supports both:
+        1. Block syntax with 'step' definitions:
+           chain "name" {
+               step "step_name" {
+                   kind: prompt
+                   target: "prompt_name"
+                   options: { ... }
+               }
+           }
+        
+        2. Config with steps list (legacy):
+           chain "name" {
+               steps: ["input", "rag:x", "prompt:y"]
+               input_key: "data"
+           }
         
         Grammar:
-            ChainDecl = "chain" , QuotedName , Block ;
+            ChainDecl = "chain" , QuotedName , "{" , (StepDef | ConfigItem)* , "}" ;
+            StepDef = "step" , QuotedName , "{" , StepField* , "}" ;
+            StepField = "kind" ":" Value
+                      | "target" ":" Value
+                      | "options" ":" Value
+                      | "name" ":" Value
+                      | "stop_on_error" ":" Boolean
+                      | "evaluation" ":" Value ;
         """
-        from namel3ss.ast import Chain
+        from namel3ss.ast import Chain, ChainStep, StepEvaluationConfig, WorkflowIfBlock, WorkflowForBlock, WorkflowWhileBlock
+        from namel3ss.lang.parser.errors import create_syntax_error
         
         chain_token = self.expect(TokenType.CHAIN)
         name_token = self.expect(TokenType.STRING)
@@ -334,36 +358,439 @@ class DeclarationParsingMixin:
         
         self.declare_symbol(f"chain:{name}", chain_token.line)
         
-        # Parse block to get steps
+        # Parse block to get steps and config
         self.expect(TokenType.LBRACE)
         self.skip_newlines()
+        
+        # Skip indent if present (lexer may insert it after opening brace)
+        self.consume_if(TokenType.INDENT)
         
         steps = []
         config = {}
         
-        # Look for step definitions or config
+        # Parse chain body: steps, control flow, or config
         while not self.match(TokenType.RBRACE):
-            # Check if it's a key:value config or a step definition
-            if self.peek(1) and self.peek(1).type == TokenType.COLON:
-                # It's a config item
+            # Skip any dedent/indent tokens between lines
+            while self.consume_if(TokenType.DEDENT):
+                pass
+            
+            # Check for closing brace after consuming dedents
+            if self.match(TokenType.RBRACE):
+                break
+                
+            # Skip indent tokens
+            while self.consume_if(TokenType.INDENT):
+                pass
+            
+            # Check again for closing brace
+            if self.match(TokenType.RBRACE):
+                break
+            
+            # Check for 'step' keyword
+            if self.match(TokenType.STEP):
+                step_node = self._parse_step_block()
+                steps.append(step_node)
+            # Check for control flow (if/for/while)
+            elif self.match(TokenType.IF):
+                if_block = self._parse_workflow_if()
+                steps.append(if_block)
+            elif self.match(TokenType.FOR):
+                for_block = self._parse_workflow_for()
+                steps.append(for_block)
+            elif self.match(TokenType.WHILE):
+                while_block = self._parse_workflow_while()
+                steps.append(while_block)
+            # Check if it's a key:value config
+            elif self.peek(1) and self.peek(1).type == TokenType.COLON:
                 key = self.expect(TokenType.IDENTIFIER).value
                 self.expect(TokenType.COLON)
-                config[key] = self.parse_value()
+                value = self.parse_value()
+                config[key] = value
+                
+                # Special handling for 'steps' list (legacy format)
+                if key == "steps" and isinstance(value, list):
+                    # Convert legacy step references to ChainStep objects
+                    for step_ref in value:
+                        if isinstance(step_ref, str):
+                            # Parse step reference like "prompt:name" or "rag:name"
+                            if ":" in step_ref:
+                                kind, target = step_ref.split(":", 1)
+                            else:
+                                kind = "unknown"
+                                target = step_ref
+                            steps.append(ChainStep(
+                                kind=kind,
+                                target=target,
+                                options={},
+                                stop_on_error=True,
+                            ))
             else:
-                # It's a step definition
-                step = self.parse_chain_step()
-                steps.append(step)
+                # Unknown syntax
+                current = self.current()
+                raise create_syntax_error(
+                    "Expected 'step', control flow (if/for/while), or config field in chain definition",
+                    path=self.path,
+                    line=current.line if current else None,
+                    column=current.column if current else None,
+                    suggestion="Use 'step \"name\" { kind: ... }' or config like 'input_key: \"data\"'",
+                )
             
             self.skip_newlines()
+        
+        # Skip dedent if present before closing brace
+        self.consume_if(TokenType.DEDENT)
         
         self.expect(TokenType.RBRACE)
         self.skip_newlines()
         
+        # Extract known chain config fields
+        input_key = config.pop("input_key", "input")
+        metadata = config.pop("metadata", {})
+        declared_effect = config.pop("declared_effect", None)
+        policy_name = config.pop("policy_name", None)
+        
+        # Remaining config items are metadata
+        if config:
+            if isinstance(metadata, dict):
+                metadata.update(config)
+            else:
+                metadata = config
+        
         return Chain(
             name=name,
+            input_key=input_key,
             steps=steps,
-            **config,
+            metadata=metadata,
+            declared_effect=declared_effect,
+            effects=set(),
+            policy_name=policy_name,
         )
+    
+    def _parse_step_block(self):
+        """
+        Parse a step block within a chain.
+        
+        Grammar:
+            StepBlock = "step" , QuotedName , "{" , StepField* , "}" ;
+            StepField = "kind" ":" Value
+                      | "target" ":" Value  
+                      | "options" ":" Value
+                      | "arguments" ":" Value  (alias for options)
+                      | "name" ":" Value
+                      | "stop_on_error" ":" Boolean
+                      | "evaluation" ":" Value ;
+        
+        Returns ChainStep AST node.
+        """
+        from namel3ss.ast import ChainStep, StepEvaluationConfig
+        from namel3ss.lang.parser.errors import create_syntax_error
+        
+        step_token = self.expect(TokenType.STEP)
+        
+        # Step can have optional name in quotes
+        step_name = None
+        if self.match(TokenType.STRING):
+            step_name = self.advance().value
+        
+        self.expect(TokenType.LBRACE)
+        self.skip_newlines()
+        
+        # Skip indent if present
+        self.consume_if(TokenType.INDENT)
+        
+        # Parse step fields
+        kind = None
+        target = None
+        options = {}
+        stop_on_error = True
+        evaluation_config = None
+        
+        while not self.match(TokenType.RBRACE):
+            # Skip any dedent/indent tokens between lines
+            while self.consume_if(TokenType.DEDENT):
+                pass
+            
+            # Check for closing brace
+            if self.match(TokenType.RBRACE):
+                break
+                
+            # Skip indent tokens
+            while self.consume_if(TokenType.INDENT):
+                pass
+            
+            # Check again for closing brace
+            if self.match(TokenType.RBRACE):
+                break
+            
+            if not self.match(TokenType.IDENTIFIER):
+                current = self.current()
+                raise create_syntax_error(
+                    "Expected field name in step block",
+                    path=self.path,
+                    line=current.line if current else None,
+                    column=current.column if current else None,
+                    suggestion="Valid fields: kind, target, options, arguments, stop_on_error, evaluation",
+                )
+            
+            field_name = self.advance().value
+            self.expect(TokenType.COLON)
+            
+            if field_name == "kind":
+                kind_value = self.parse_value()
+                if isinstance(kind_value, str):
+                    kind = kind_value
+                else:
+                    raise create_syntax_error(
+                        "Step 'kind' must be a string",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                        suggestion="Valid kinds: prompt, llm, tool, python, react, rag, chain, memory_read, memory_write, knowledge_query",
+                    )
+            elif field_name == "target":
+                target_value = self.parse_value()
+                if isinstance(target_value, str):
+                    target = target_value
+                else:
+                    raise create_syntax_error(
+                        "Step 'target' must be a string",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                    )
+            elif field_name in ("options", "arguments"):  # 'arguments' is alias for 'options'
+                opts_value = self.parse_value()
+                if isinstance(opts_value, dict):
+                    options.update(opts_value)
+                else:
+                    raise create_syntax_error(
+                        f"Step '{field_name}' must be an object/dict",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                    )
+            elif field_name == "stop_on_error":
+                stop_value = self.parse_value()
+                if isinstance(stop_value, bool):
+                    stop_on_error = stop_value
+                else:
+                    raise create_syntax_error(
+                        "Step 'stop_on_error' must be a boolean",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                    )
+            elif field_name == "evaluation":
+                eval_value = self.parse_value()
+                if isinstance(eval_value, dict):
+                    evaluators = eval_value.get("evaluators", [])
+                    guardrail = eval_value.get("guardrail", None)
+                    evaluation_config = StepEvaluationConfig(
+                        evaluators=evaluators if isinstance(evaluators, list) else [],
+                        guardrail=guardrail if isinstance(guardrail, str) else None,
+                    )
+                else:
+                    raise create_syntax_error(
+                        "Step 'evaluation' must be an object with optional 'evaluators' (list) and 'guardrail' (string)",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                    )
+            else:
+                # Unknown field - add to options
+                options[field_name] = self.parse_value()
+            
+            self.skip_newlines()
+        
+        # Skip dedent if present before closing brace
+        self.consume_if(TokenType.DEDENT)
+        
+        self.expect(TokenType.RBRACE)
+        self.skip_newlines()
+        
+        # Validate required fields
+        if kind is None:
+            raise create_syntax_error(
+                "Step block missing required field 'kind'",
+                path=self.path,
+                line=step_token.line,
+                column=step_token.column,
+                suggestion="Add 'kind: prompt' (or llm, tool, python, rag, etc.)",
+            )
+        if target is None:
+            raise create_syntax_error(
+                "Step block missing required field 'target'",
+                path=self.path,
+                line=step_token.line,
+                column=step_token.column,
+                suggestion="Add 'target: \"resource_name\"' to specify what to invoke",
+            )
+        
+        return ChainStep(
+            kind=kind,
+            target=target,
+            options=options,
+            name=step_name,
+            stop_on_error=stop_on_error,
+            evaluation=evaluation_config,
+        )
+    
+    def _parse_workflow_if(self):
+        """
+        Parse if/elif/else block in a workflow.
+        
+        Grammar:
+            IfBlock = "if" , Expression , ":" , WorkflowNode+ ,
+                      ("elif" , Expression , ":" , WorkflowNode+)* ,
+                      ("else" , ":" , WorkflowNode+)? ;
+        
+        Returns WorkflowIfBlock AST node.
+        """
+        from namel3ss.ast import WorkflowIfBlock
+        
+        self.expect(TokenType.IF)
+        condition = self.parse_expression()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        
+        # Parse then steps (indented block)
+        then_steps = self._parse_workflow_block()
+        
+        # Parse elif branches
+        elif_branches = []
+        while self.match(TokenType.IDENTIFIER) and self.current() and self.current().value == "elif":
+            self.advance()
+            elif_condition = self.parse_expression()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            elif_steps = self._parse_workflow_block()
+            elif_branches.append((elif_condition, elif_steps))
+        
+        # Parse else branch
+        else_steps = []
+        if self.match(TokenType.ELSE):
+            self.advance()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            else_steps = self._parse_workflow_block()
+        
+        return WorkflowIfBlock(
+            condition=condition,
+            then_steps=then_steps,
+            elif_steps=elif_branches,
+            else_steps=else_steps,
+        )
+    
+    def _parse_workflow_for(self):
+        """
+        Parse for loop in a workflow.
+        
+        Grammar:
+            ForBlock = "for" , Identifier , "in" , Expression , ":" , WorkflowNode+ ;
+        
+        Returns WorkflowForBlock AST node.
+        """
+        from namel3ss.ast import WorkflowForBlock
+        
+        self.expect(TokenType.FOR)
+        loop_var = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.IN)
+        
+        # Determine source kind
+        source_kind = "expression"
+        source_name = None
+        source_expression = None
+        
+        # Check for dataset/table/frame reference
+        if self.match(TokenType.DATASET):
+            self.advance()
+            source_kind = "dataset"
+            source_name = self.expect(TokenType.STRING).value
+        elif self.match(TokenType.TABLE):
+            self.advance()
+            source_kind = "table"
+            source_name = self.expect(TokenType.IDENTIFIER).value
+        elif self.match(TokenType.FRAME):
+            self.advance()
+            source_kind = "frame"
+            source_name = self.expect(TokenType.STRING).value
+        else:
+            # Generic expression
+            source_expression = self.parse_expression()
+        
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        
+        body = self._parse_workflow_block()
+        
+        return WorkflowForBlock(
+            loop_var=loop_var,
+            source_kind=source_kind,
+            source_name=source_name,
+            source_expression=source_expression,
+            body=body,
+            max_iterations=None,
+        )
+    
+    def _parse_workflow_while(self):
+        """
+        Parse while loop in a workflow.
+        
+        Grammar:
+            WhileBlock = "while" , Expression , ":" , WorkflowNode+ ;
+        
+        Returns WorkflowWhileBlock AST node.
+        """
+        from namel3ss.ast import WorkflowWhileBlock
+        
+        self.expect(TokenType.WHILE)
+        condition = self.parse_expression()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        
+        body = self._parse_workflow_block()
+        
+        return WorkflowWhileBlock(
+            condition=condition,
+            body=body,
+            max_iterations=None,
+        )
+    
+    def _parse_workflow_block(self):
+        """
+        Parse a block of workflow nodes (steps or control flow).
+        
+        Returns list of WorkflowNode objects.
+        """
+        nodes = []
+        
+        # Handle indentation if present
+        indent_level = 0
+        if self.match(TokenType.INDENT):
+            indent_level += 1
+            self.advance()
+            self.skip_newlines()
+        
+        while not self.match(TokenType.DEDENT) and not self.match(TokenType.RBRACE) and not self.match(TokenType.EOF):
+            if self.match(TokenType.STEP):
+                nodes.append(self._parse_step_block())
+            elif self.match(TokenType.IF):
+                nodes.append(self._parse_workflow_if())
+            elif self.match(TokenType.FOR):
+                nodes.append(self._parse_workflow_for())
+            elif self.match(TokenType.WHILE):
+                nodes.append(self._parse_workflow_while())
+            else:
+                # End of block
+                break
+            
+            self.skip_newlines()
+        
+        # Consume dedent if we had indent
+        if indent_level > 0 and self.match(TokenType.DEDENT):
+            self.advance()
+        
+        return nodes
     
     def parse_rag_pipeline_declaration(self):
         """

@@ -35,6 +35,7 @@ class TokenType(Enum):
     AGENT = auto()
     PROMPT = auto()
     CHAIN = auto()
+    STEP = auto()
     RAG_PIPELINE = auto()
     INDEX = auto()
     DATASET = auto()
@@ -163,6 +164,7 @@ KEYWORDS = {
     "agent": TokenType.AGENT,
     "prompt": TokenType.PROMPT,
     "chain": TokenType.CHAIN,
+    "step": TokenType.STEP,
     "rag_pipeline": TokenType.RAG_PIPELINE,
     "index": TokenType.INDEX,
     "dataset": TokenType.DATASET,
