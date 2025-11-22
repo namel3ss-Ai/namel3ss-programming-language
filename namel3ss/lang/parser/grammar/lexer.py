@@ -88,6 +88,10 @@ class TokenType(Enum):
     MONGODB = auto()
     TABLE = auto()
     
+    # Keywords - Inline blocks
+    PYTHON = auto()
+    REACT = auto()
+    
     # Operators
     PLUS = auto()
     MINUS = auto()
@@ -212,6 +216,10 @@ KEYWORDS = {
     "mysql": TokenType.MYSQL,
     "mongodb": TokenType.MONGODB,
     "table": TokenType.TABLE,
+    
+    # Inline blocks
+    "python": TokenType.PYTHON,
+    "react": TokenType.REACT,
 }
 
 

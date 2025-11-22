@@ -195,6 +195,14 @@ class ExpressionParsingMixin:
         if token.type == TokenType.FN:
             return self.parse_lambda_expression()
         
+        # Inline Python block: python { ... }
+        if token.type == TokenType.PYTHON:
+            return self.parse_inline_python_block()
+        
+        # Inline React block: react { ... }
+        if token.type == TokenType.REACT:
+            return self.parse_inline_react_block()
+        
         # Identifier (could be function ref or start of expression)
         if token.type == TokenType.IDENTIFIER:
             # Try to parse as full expression
@@ -935,8 +943,192 @@ class ExpressionParsingMixin:
                 "connector": connector,
             }
         
-        # Could be an inline expression
-        return self.parse_expression()
+        raise self.error("Expected chain step")
+    
+    def parse_inline_python_block(self) -> Dict[str, Any]:
+        """
+        Parse inline Python code block.
+        
+        Syntax: python { <python code> }
+        
+        Returns AST representation of InlinePythonBlock.
+        The code is extracted verbatim, preserving whitespace and indentation.
+        Nested braces are handled correctly.
+        """
+        from namel3ss.ast import InlinePythonBlock
+        from namel3ss.ast.source_location import SourceLocation
+        
+        # Consume 'python' keyword
+        python_token = self.expect(TokenType.PYTHON)
+        start_line = python_token.line
+        start_column = python_token.column
+        
+        # Expect opening brace
+        self.expect(TokenType.LBRACE)
+        
+        # Extract code until matching closing brace
+        code = self._extract_inline_code_block()
+        
+        # Create source location
+        end_token = self.current() or python_token
+        location = SourceLocation(
+            file=self.path,
+            line=start_line,
+            column=start_column,
+            end_line=end_token.line,
+            end_column=getattr(end_token, 'column', 0),
+        )
+        
+        # Return InlinePythonBlock node
+        return InlinePythonBlock(
+            code=code,
+            location=location,
+        )
+    
+    def parse_inline_react_block(self) -> Dict[str, Any]:
+        """
+        Parse inline React/JSX code block.
+        
+        Syntax: react { <jsx code> }
+        
+        Returns AST representation of InlineReactBlock.
+        The JSX code is extracted verbatim, preserving formatting.
+        Nested braces are handled correctly.
+        """
+        from namel3ss.ast import InlineReactBlock
+        from namel3ss.ast.source_location import SourceLocation
+        
+        # Consume 'react' keyword
+        react_token = self.expect(TokenType.REACT)
+        start_line = react_token.line
+        start_column = react_token.column
+        
+        # Expect opening brace
+        self.expect(TokenType.LBRACE)
+        
+        # Extract code until matching closing brace
+        code = self._extract_inline_code_block()
+        
+        # Create source location
+        end_token = self.current() or react_token
+        location = SourceLocation(
+            file=self.path,
+            line=start_line,
+            column=start_column,
+            end_line=end_token.line,
+            end_column=getattr(end_token, 'column', 0),
+        )
+        
+        # Return InlineReactBlock node
+        return InlineReactBlock(
+            code=code,
+            location=location,
+        )
+    
+    def _extract_inline_code_block(self) -> str:
+        """
+        Extract raw code from inline block, handling nested braces.
+        
+        Assumes opening brace has already been consumed.
+        Consumes tokens until matching closing brace is found.
+        Preserves original source text including whitespace and formatting.
+        
+        Returns:
+            Raw code string without leading/trailing braces.
+        
+        Raises:
+            SyntaxError if closing brace is never found.
+        """
+        # Track brace depth to handle nested braces
+        brace_depth = 1
+        code_tokens = []
+        prev_token_type = None
+        
+        while brace_depth > 0:
+            token = self.current()
+            
+            if not token or token.type == TokenType.EOF:
+                raise self.error("Unclosed inline block: expected '}'")
+            
+            # Track brace depth
+            if token.type == TokenType.LBRACE:
+                brace_depth += 1
+                code_tokens.append('{')
+                prev_token_type = TokenType.LBRACE
+                self.advance()
+            elif token.type == TokenType.RBRACE:
+                brace_depth -= 1
+                if brace_depth > 0:
+                    code_tokens.append('}')
+                    prev_token_type = TokenType.RBRACE
+                self.advance()
+            else:
+                # Add space before token if needed (not after newline/indent)
+                if (prev_token_type is not None and 
+                    prev_token_type not in (TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT) and
+                    token.type not in (TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT, 
+                                      TokenType.LPAREN, TokenType.RPAREN, TokenType.COMMA, 
+                                      TokenType.COLON, TokenType.DOT, TokenType.LBRACKET, TokenType.RBRACKET)):
+                    code_tokens.append(' ')
+                
+                # Preserve token value
+                if hasattr(token, 'value') and token.value is not None:
+                    code_tokens.append(str(token.value))
+                elif token.type == TokenType.NEWLINE:
+                    code_tokens.append('\n')
+                elif token.type == TokenType.INDENT:
+                    code_tokens.append('    ')  # 4 spaces
+                elif token.type == TokenType.DEDENT:
+                    pass  # Skip dedent tokens in inline code
+                else:
+                    # For operators/keywords, use token name or symbol
+                    token_map = {
+                        TokenType.COLON: ':',
+                        TokenType.COMMA: ',',
+                        TokenType.DOT: '.',
+                        TokenType.LPAREN: '(',
+                        TokenType.RPAREN: ')',
+                        TokenType.LBRACKET: '[',
+                        TokenType.RBRACKET: ']',
+                        TokenType.ARROW: '->',
+                        TokenType.FAT_ARROW: '=>',
+                        TokenType.PLUS: '+',
+                        TokenType.MINUS: '-',
+                        TokenType.STAR: '*',
+                        TokenType.SLASH: '/',
+                        TokenType.ASSIGN: '=',
+                        TokenType.LT: '<',
+                        TokenType.GT: '>',
+                    }
+                    code_tokens.append(token_map.get(token.type, token.type.name.lower()))
+                
+                prev_token_type = token.type
+                self.advance()
+        
+        # Join tokens and strip leading/trailing whitespace from each line
+        # but preserve relative indentation
+        code = ''.join(code_tokens)
+        
+        # Strip leading/trailing blank lines
+        lines = code.splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        
+        # Find minimum indentation (excluding blank lines)
+        min_indent = float('inf')
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped:  # Non-blank line
+                indent = len(line) - len(stripped)
+                min_indent = min(min_indent, indent)
+        
+        # Remove common leading indentation
+        if min_indent != float('inf') and min_indent > 0:
+            lines = [line[min_indent:] if line.strip() else line for line in lines]
+        
+        return '\n'.join(lines)
 
 
 __all__ = ["ExpressionParsingMixin"]

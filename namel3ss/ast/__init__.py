@@ -45,6 +45,11 @@ from .expressions import (
     QueryExpr,
     UnifyExpr,
 )
+from .inline_blocks import (
+    InlineBlock,
+    InlinePythonBlock,
+    InlineReactBlock,
+)
 from .datasets import (
     AggregateOp,
     CachePolicy,
@@ -402,4 +407,8 @@ __all__ = [
     "RuleClause",
     "QueryExpr",
     "UnifyExpr",
+    # Inline blocks
+    "InlineBlock",
+    "InlinePythonBlock",
+    "InlineReactBlock",
 ]
