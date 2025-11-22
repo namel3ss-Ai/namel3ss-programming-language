@@ -12,3 +12,18 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local temp outputs from debugging/builds
+tmp_backend*
+tmp_debug_backend*
+tmp_debug_sample_backend
+tmp_debug_backend_scope
+tmp_debug_backend_stream*
+tmp_generated_frontend
+tmp_observe_backend
+tmp_runtime_inspect
+tmp_training_cli
+tmp_rebuild_app.n3
