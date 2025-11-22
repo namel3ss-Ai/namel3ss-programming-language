@@ -11,6 +11,7 @@ from .dependencies import (
     init_db_pool,
     close_db_pool,
 )
+from .security import User, create_access_token
 from .errors import (
     validation_exception_handler,
     general_exception_handler,
@@ -28,6 +29,8 @@ __all__ = [
     "require_api_key",
     "init_db_pool",
     "close_db_pool",
+    "User",
+    "create_access_token",
     "validation_exception_handler",
     "general_exception_handler",
     "not_found_handler",

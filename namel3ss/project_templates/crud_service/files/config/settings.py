@@ -73,6 +73,33 @@ class Settings(BaseSettings):
     enable_multi_tenancy: bool = Field(default=False, description="Enable multi-tenant mode")
     tenant_header: str = Field(default="X-Tenant-ID", description="Tenant identifier header")
     
+    # Authentication - JWT Configuration
+    jwt_secret_key: str = Field(
+        ...,
+        description="Secret key for JWT signing (required, use strong random key)"
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT signing algorithm (HS256, RS256, etc.)"
+    )
+    jwt_access_token_expire_minutes: int = Field(
+        default=30,
+        ge=1,
+        description="Access token expiration time in minutes"
+    )
+    jwt_issuer: Optional[str] = Field(
+        default=None,
+        description="JWT issuer claim for validation (optional)"
+    )
+    jwt_audience: Optional[str] = Field(
+        default=None,
+        description="JWT audience claim for validation (optional)"
+    )
+    auth_disabled: bool = Field(
+        default=False,
+        description="Disable authentication (ONLY for local dev, never in production)"
+    )
+    
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, v: PostgresDsn) -> PostgresDsn:
@@ -90,6 +117,20 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Check if running in development."""
         return self.environment == "development"
+    
+    def validate_auth_config(self) -> None:
+        """Validate authentication configuration."""
+        if self.is_production and self.auth_disabled:
+            raise ValueError(
+                "Authentication cannot be disabled in production. "
+                "Set AUTH_DISABLED=false or remove the setting."
+            )
+        
+        if not self.auth_disabled and len(self.jwt_secret_key) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters. "
+                "Use a cryptographically secure random key."
+            )
 
 
 # Global settings instance

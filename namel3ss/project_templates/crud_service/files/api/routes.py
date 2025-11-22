@@ -17,7 +17,8 @@ from models.schemas import (
     {{ entity_name }}List,
     ErrorResponse,
 )
-from api.dependencies import get_repository, get_settings, get_tenant_id
+from api.dependencies import get_repository, get_settings, get_tenant_id, require_auth
+from api.security import User
 from repository import {{ entity_name }}Repository
 from config.settings import Settings
 
@@ -38,10 +39,11 @@ router = APIRouter(
     response_model={{ entity_name }}Response,
     status_code=status.HTTP_201_CREATED,
     summary="Create new {{ entity_name | lower }}",
-    description="Create a new {{ entity_name | lower }} with the provided data.",
+    description="Create a new {{ entity_name | lower }} with the provided data. **Requires authentication.**",
     responses={
         201: {"description": "{{ entity_name }} created successfully"},
         400: {"model": ErrorResponse, "description": "Validation error"},
+        401: {"model": ErrorResponse, "description": "Unauthorized - authentication required"},
         409: {"model": ErrorResponse, "description": "{{ entity_name }} already exists"},
     },
 )
@@ -49,6 +51,7 @@ async def create_item(
     item_data: {{ entity_name }}Create,
     repository: {{ entity_name }}Repository = Depends(get_repository),
     tenant_id: Optional[str] = Depends(get_tenant_id),
+    current_user: User = Depends(require_auth),
 ) -> {{ entity_name }}Response:
     """
     Create a new {{ entity_name | lower }}.
@@ -244,10 +247,11 @@ async def search_items(
     "/{item_id}",
     response_model={{ entity_name }}Response,
     summary="Update {{ entity_name | lower }}",
-    description="Update an existing {{ entity_name | lower }}. Only provided fields are updated.",
+    description="Update an existing {{ entity_name | lower }}. Only provided fields are updated. **Requires authentication.**",
     responses={
         200: {"description": "{{ entity_name }} updated successfully"},
         400: {"model": ErrorResponse, "description": "Validation error"},
+        401: {"model": ErrorResponse, "description": "Unauthorized - authentication required"},
         404: {"model": ErrorResponse, "description": "{{ entity_name }} not found"},
     },
 )
@@ -256,6 +260,7 @@ async def update_item(
     item_data: {{ entity_name }}Update,
     repository: {{ entity_name }}Repository = Depends(get_repository),
     tenant_id: Optional[str] = Depends(get_tenant_id),
+    current_user: User = Depends(require_auth),
 ) -> {{ entity_name }}Response:
     """
     Update an existing {{ entity_name | lower }}.
@@ -298,9 +303,10 @@ async def update_item(
     "/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete {{ entity_name | lower }}",
-    description="Delete a {{ entity_name | lower }} (soft delete by default).",
+    description="Delete a {{ entity_name | lower }} (soft delete by default). **Requires authentication.**",
     responses={
         204: {"description": "{{ entity_name }} deleted successfully"},
+        401: {"model": ErrorResponse, "description": "Unauthorized - authentication required"},
         404: {"model": ErrorResponse, "description": "{{ entity_name }} not found"},
     },
 )
@@ -309,6 +315,7 @@ async def delete_item(
     hard: bool = Query(False, description="Hard delete (permanent)"),
     repository: {{ entity_name }}Repository = Depends(get_repository),
     tenant_id: Optional[str] = Depends(get_tenant_id),
+    current_user: User = Depends(require_auth),
 ) -> None:
     """
     Delete a {{ entity_name | lower }}.
@@ -336,9 +343,10 @@ async def delete_item(
     "/{item_id}/restore",
     response_model={{ entity_name }}Response,
     summary="Restore deleted {{ entity_name | lower }}",
-    description="Restore a soft-deleted {{ entity_name | lower }}.",
+    description="Restore a soft-deleted {{ entity_name | lower }}. **Requires authentication.**",
     responses={
         200: {"description": "{{ entity_name }} restored successfully"},
+        401: {"model": ErrorResponse, "description": "Unauthorized - authentication required"},
         404: {"model": ErrorResponse, "description": "{{ entity_name }} not found or not deleted"},
     },
 )
@@ -346,6 +354,7 @@ async def restore_item(
     item_id: UUID,
     repository: {{ entity_name }}Repository = Depends(get_repository),
     tenant_id: Optional[str] = Depends(get_tenant_id),
+    current_user: User = Depends(require_auth),
 ) -> {{ entity_name }}Response:
     """
     Restore a soft-deleted {{ entity_name | lower }}.

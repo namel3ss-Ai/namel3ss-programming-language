@@ -64,6 +64,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting {settings.app_name} in {settings.environment} mode")
     
     try:
+        # Validate authentication configuration
+        settings.validate_auth_config()
+        logger.info("Authentication configuration validated")
+        
         # Initialize database connection pool
         await init_db_pool(settings)
         logger.info("Database connection pool initialized")

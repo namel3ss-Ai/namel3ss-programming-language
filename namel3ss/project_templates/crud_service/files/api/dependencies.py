@@ -7,14 +7,27 @@ Provides shared dependencies like database connections, settings, and authentica
 from typing import AsyncGenerator, Optional
 
 import asyncpg
-from fastapi import Header, Request
+from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from config.settings import Settings, get_settings
 from repository import Postgres{{ entity_name }}Repository, {{ entity_name }}Repository
+from api.security import (
+    User,
+    decode_jwt_token,
+    token_data_to_user,
+    AuthenticationError,
+    TokenExpiredError,
+    TokenInvalidError,
+    TokenValidationError,
+)
 
 
 # Database connection pool (initialized at startup)
 _db_pool: Optional[asyncpg.Pool] = None
+
+# Security scheme for bearer token authentication
+security = HTTPBearer(auto_error=False)
 
 
 async def init_db_pool(settings: Settings) -> asyncpg.Pool:
@@ -105,56 +118,148 @@ def get_tenant_id(
 
 
 async def get_current_user(
-    request: Request,
-    settings: Settings = get_settings(),
-) -> Optional[dict]:
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    settings: Settings = Depends(get_settings),
+) -> Optional[User]:
     """
-    Get current authenticated user.
+    Get current authenticated user from JWT bearer token.
     
-    Extension point for authentication. Current implementation is a placeholder.
+    Extracts bearer token from Authorization header, validates it, and returns
+    the authenticated user. Returns None if no token provided or if auth is disabled.
     
-    To add authentication:
-    1. Install authentication library (e.g., python-jose, passlib)
-    2. Implement token validation
-    3. Return user information
-    4. Add this as a dependency to protected routes
+    This dependency can be used directly in routes that need optional authentication,
+    or via require_auth() for routes requiring authentication.
+    
+    **Integration with External Identity Providers:**
+    
+    To integrate with Auth0, Cognito, Azure AD, or other IdPs:
+    
+    1. Configure JWT validation settings in environment:
+       - JWT_SECRET_KEY: For HS256, or public key for RS256
+       - JWT_ALGORITHM: "RS256" for RSA signatures (most IdPs)
+       - JWT_ISSUER: Your IdP's issuer URL
+       - JWT_AUDIENCE: Your application's audience/client ID
+    
+    2. For JWKS (public key discovery):
+       - Extend this function to fetch JWKS from IdP
+       - Cache public keys for performance
+       - Validate using public key instead of shared secret
+    
+    3. Customize User model mapping:
+       - Modify token_data_to_user() in security.py
+       - Map IdP-specific claims to User fields
+       - Extract roles from IdP format (e.g., groups, scopes)
     
     Args:
-        request: FastAPI request
+        credentials: Bearer token from Authorization header
         settings: Application settings
         
     Returns:
-        User information if authenticated, None otherwise
+        User object if authenticated, None if no token or auth disabled
+        
+    Raises:
+        HTTPException 401: If token is invalid, expired, or validation fails
     """
-    # TODO: Implement authentication
-    # Example with JWT:
-    # authorization = request.headers.get("Authorization")
-    # if not authorization or not authorization.startswith("Bearer "):
-    #     raise HTTPException(status_code=401, detail="Not authenticated")
-    # token = authorization.split(" ")[1]
-    # payload = decode_jwt(token)
-    # return {"user_id": payload["sub"], "username": payload["username"]}
+    # Allow disabling auth for local development only
+    if settings.auth_disabled:
+        if settings.is_production:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication is disabled but environment is production",
+            )
+        # Return None to indicate no auth in dev mode
+        return None
     
-    return None
+    # No token provided - return None (let require_auth handle if needed)
+    if not credentials:
+        return None
+    
+    token = credentials.credentials
+    
+    try:
+        # Decode and validate JWT token
+        token_data = decode_jwt_token(token, settings)
+        
+        # Convert token data to User model
+        user = token_data_to_user(token_data)
+        
+        # Additional user validation can be added here
+        # Example: Check if user is active in database, verify tenant access, etc.
+        
+        return user
+        
+    except TokenExpiredError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
+    
+    except TokenInvalidError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
+    
+    except TokenValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token validation failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
+    
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
+    
+    except Exception as e:
+        # Log unexpected errors but don't leak details to client
+        import logging
+        logging.error(f"Unexpected authentication error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
-def require_auth(user: Optional[dict] = get_current_user) -> dict:
+def require_auth(user: Optional[User] = Depends(get_current_user)) -> User:
     """
     Require authentication for a route.
     
-    Use as a dependency on protected routes.
+    Use as a dependency on protected routes to enforce authentication.
+    Raises 401 if user is not authenticated.
+    
+    **Usage:**
+    ```python
+    @router.get("/protected")
+    async def protected_route(user: User = Depends(require_auth)):
+        return {"user_id": user.id, "message": "Access granted"}
+    ```
+    
+    **Role-Based Access Control:**
+    
+    To require specific roles, create custom dependencies:
+    ```python
+    def require_admin(user: User = Depends(require_auth)) -> User:
+        if "admin" not in user.roles:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        return user
+    ```
     
     Args:
         user: Current user from get_current_user
         
     Returns:
-        User information
+        User object
         
     Raises:
-        HTTPException: If not authenticated
+        HTTPException 401: If not authenticated
     """
-    from fastapi import HTTPException, status
-    
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -5,6 +5,9 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
+# Authentication
+pyjwt[crypto]>=2.8.0
+
 # Optional but recommended
 gunicorn>=21.2.0
 
