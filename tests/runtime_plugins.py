@@ -1,4 +1,4 @@
-﻿"""Test-only helper models for experiment integration."""
+"""Test-only helper models for experiment integration."""
 
 from __future__ import annotations
 

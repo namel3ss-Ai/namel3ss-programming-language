@@ -1,4 +1,4 @@
-﻿"""Runtime tests for experiment and frame integration."""
+"""Runtime tests for experiment and frame integration."""
 
 from __future__ import annotations
 

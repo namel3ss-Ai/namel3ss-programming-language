@@ -65,7 +65,7 @@ class HttpTool(BaseTool):
         - Handle both success and error cases
         - Check metadata.status_code for HTTP details
         - Include retry logic for transient failures (5xx)
-    \"\"\"
+    """
     
     def __init__(
         self,
@@ -80,8 +80,7 @@ class HttpTool(BaseTool):
         timeout: float = 30.0,
         **config: Any,
     ):
-        """
-        Initialize HTTP tool.
+        """Initialize HTTP tool.
         
         Args:
             name: Tool identifier
