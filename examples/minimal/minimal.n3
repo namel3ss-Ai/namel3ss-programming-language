@@ -1,0 +1,16 @@
+# Minimal Example
+# Basic N3 application
+
+app "Basic App" {
+  description: "Simple test application"
+}
+
+llm "test_model" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+}
+
+prompt "hello" {
+  model: "test_model"
+  template: "Hello {{name}}!"
+}

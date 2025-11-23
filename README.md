@@ -4,6 +4,8 @@
 
 Unlike frameworks that bolt AI onto existing languages, Namel3ss treats **prompts, memory, agents, chains, and RAG** as first-class language constructs—compiled, type-checked, and optimized into FastAPI backends and modern frontends.
 
+For all documentation, follow the shared [Style Guide](docs/STYLE_GUIDE.md) and link glossary terms on first use via [docs/reference/GLOSSARY.md](docs/reference/GLOSSARY.md). Documentation should target experienced engineers and use consistent terms such as [N3](docs/reference/GLOSSARY.md#n3), [Agent](docs/reference/GLOSSARY.md#agent), [Runtime](docs/reference/GLOSSARY.md#runtime), and [Compilation](docs/reference/GLOSSARY.md#compilation).
+
 ## What Makes Namel3ss an AI Language?
 
 Namel3ss is designed from the ground up for AI-first development:

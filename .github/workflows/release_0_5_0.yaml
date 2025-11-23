@@ -1,0 +1,61 @@
+name: Release 0.5.0 to TestPyPI
+
+on:
+  push:
+    tags:
+      - "v0.5.0"
+    branches:
+      - release/0.5.0
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+      - name: Install project dev deps
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest
+      - name: Build distributions
+        run: python -m build
+      - name: Twine check
+        run: python -m twine check dist/*
+      - name: Upload to TestPyPI
+        if: ${{ github.event_name == 'push' }}
+        env:
+          TESTPYPI_USERNAME: ${{ secrets.TESTPYPI_USERNAME }}
+          TESTPYPI_PASSWORD: ${{ secrets.TESTPYPI_PASSWORD }}
+        run: |
+          python -m twine upload \
+            --repository-url https://test.pypi.org/legacy/ \
+            -u "${TESTPYPI_USERNAME}" \
+            -p "${TESTPYPI_PASSWORD}" \
+            dist/*
+
+  validate-install:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install twine
+      - name: Validate clean install and CLI
+        env:
+          TESTPYPI_USERNAME: ${{ secrets.TESTPYPI_USERNAME }}
+          TESTPYPI_PASSWORD: ${{ secrets.TESTPYPI_PASSWORD }}
+        run: |
+          bash scripts/validate_testpypi_install.sh

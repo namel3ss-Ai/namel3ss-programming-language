@@ -13,6 +13,7 @@ recursive-include namel3ss/codegen/frontend/templates *.js
 graft namel3ss/project_templates
 recursive-include namel3ss/project_templates *.py *.md *.txt *.yml *.yaml *.sql *.ini *.n3
 recursive-include namel3ss/project_templates .env* .gitignore Dockerfile* Makefile*
+recursive-include namel3ss/project_templates/crud_service/files/config *.py .env*
 
 # Exclude compiled Python files and caches
 global-exclude __pycache__

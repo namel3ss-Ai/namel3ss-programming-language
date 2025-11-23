@@ -1,0 +1,604 @@
+# Hybrid RAG Document Processing Platform
+# Production multimodal RAG with advanced search and intelligent content extraction
+
+app "Hybrid RAG Platform" {
+  description: "Enterprise document processing with multimodal RAG and intelligent search"
+  version: "1.0.0"
+}
+
+# Document storage and indexing
+dataset "documents" {
+  name: "Document Repository"
+  description: "Multimodal document storage with metadata and processing status"
+  
+  schema: {
+    document_id: uuid(primary_key=true)
+    filename: string(required=true, max_length=500)
+    file_path: string(required=true, max_length=1000)
+    file_type: enum("pdf", "docx", "txt", "html", "md", "pptx", "xlsx", "image")
+    file_size: integer(required=true, min=0)
+    mime_type: string(max_length=100)
+    title: string(max_length=500)
+    author: string(max_length=200)
+    description: text
+    tags: array(string, max_length=50)
+    language: string(max_length=10, default="en")
+    processing_status: enum("pending", "processing", "completed", "failed")
+    content_hash: string(max_length=64)
+    extracted_text: text
+    extracted_metadata: json
+    upload_source: string(max_length=100)
+    created_at: timestamp(auto_now_add=true)
+    processed_at: timestamp
+    last_accessed: timestamp
+  }
+}
+
+dataset "document_chunks" {
+  name: "Document Chunk Store"
+  description: "Chunked document content with embeddings and metadata"
+  
+  schema: {
+    chunk_id: uuid(primary_key=true)
+    document_id: uuid(foreign_key="documents.document_id")
+    chunk_index: integer(required=true, min=0)
+    content: text(required=true)
+    content_type: enum("text", "table", "image", "diagram", "code")
+    chunk_size: integer(required=true, min=1)
+    start_position: integer
+    end_position: integer
+    page_number: integer
+    section_title: string(max_length=300)
+    keywords: array(string, max_length=30)
+    embedding_vector: vector(1536)
+    sparse_vector: json
+    created_at: timestamp(auto_now_add=true)
+  }
+}
+
+dataset "search_queries" {
+  name: "Search Query Log"
+  description: "User search queries and results for analytics and optimization"
+  
+  schema: {
+    query_id: uuid(primary_key=true)
+    user_id: string(max_length=100)
+    query_text: text(required=true)
+    query_type: enum("semantic", "keyword", "hybrid", "sql")
+    filters: json
+    results_count: integer(min=0)
+    response_time: float
+    relevance_scores: json
+    user_feedback: enum("helpful", "not_helpful", "partially_helpful")
+    clicked_documents: array(uuid)
+    session_id: string(max_length=100)
+    created_at: timestamp(auto_now_add=true)
+  }
+}
+
+# AI Models for different tasks
+llm "gpt-4o" {
+  provider: "openai"
+  model: "gpt-4o"
+  temperature: 0.1
+  max_tokens: 4000
+}
+
+llm "claude-sonnet" {
+  provider: "anthropic"
+  model: "claude-3-sonnet-20240229"
+  temperature: 0.0
+  max_tokens: 3000
+}
+
+# Memory for conversation and query context
+memory "search_context" {
+  scope: "session"
+  kind: "conversation"
+  max_items: 20
+}
+
+memory "document_analysis" {
+  scope: "document"
+  kind: "structured"
+  max_items: 10
+}
+
+memory "user_preferences" {
+  scope: "user"
+  kind: "key_value"
+  max_items: 100
+}
+
+# Vector and hybrid search indices
+index "semantic_index" {
+  source_dataset: "document_chunks"
+  embedding_model: "text-embedding-3-large"
+  vector_dimension: 3072
+  chunk_size: 512
+  overlap: 100
+  metadata_fields: ["content_type", "section_title", "page_number", "keywords"]
+}
+
+index "multimodal_index" {
+  source_dataset: "documents"
+  embedding_model: "clip-vit-large-patch14"
+  extract_images: true
+  extract_tables: true
+  image_chunk_size: 1024
+  text_chunk_size: 512
+  overlap: 50
+}
+
+# RAG pipelines for different search strategies
+rag_pipeline "semantic_search" {
+  query_encoder: "text-embedding-3-large"
+  index: "semantic_index"
+  enable_reranking: true
+  reranker_model: "ms-marco-MiniLM-L-6-v2"
+  top_k: 10
+  similarity_threshold: 0.7
+}
+
+rag_pipeline "hybrid_search" {
+  query_encoder: "text-embedding-3-large"
+  index: "semantic_index"
+  enable_hybrid: true
+  sparse_model: "bm25-okapi"
+  dense_weight: 0.7
+  sparse_weight: 0.3
+  enable_reranking: true
+  reranker_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  top_k: 15
+}
+
+rag_pipeline "multimodal_search" {
+  query_encoder: "clip-vit-large-patch14"
+  index: "multimodal_index"
+  enable_cross_modal: true
+  text_weight: 0.6
+  image_weight: 0.4
+  top_k: 8
+}
+
+# Tools for document processing
+tool "document_processor" {
+  description: "Process and extract content from various document formats"
+  
+  parameters: {
+    document_path: {
+      type: "string"
+      description: "Path to document file"
+      required: true
+    }
+    extraction_mode: {
+      type: "string"
+      description: "Content extraction mode"
+      enum: ["text_only", "full_content", "structured", "tables_only", "images_only"]
+      default: "full_content"
+    }
+    ocr_enabled: {
+      type: "boolean"
+      description: "Enable OCR for scanned documents"
+      default: true
+    }
+    language: {
+      type: "string"
+      description: "Document language for processing"
+      default: "auto"
+    }
+  }
+  
+  returns: {
+    type: "object"
+    properties: {
+      extracted_text: "string"
+      metadata: "object"
+      images: "array"
+      tables: "array"
+      structure: "object"
+      confidence: "number"
+    }
+  }
+}
+
+tool "content_enricher" {
+  description: "Enrich document content with additional metadata and annotations"
+  
+  parameters: {
+    content: {
+      type: "string"
+      description: "Document content to enrich"
+      required: true
+    }
+    enrichment_types: {
+      type: "array"
+      description: "Types of enrichment to perform"
+      items: {
+        type: "string"
+        enum: ["entities", "topics", "summary", "keywords", "sentiment", "categories"]
+      }
+      default: ["entities", "topics", "keywords"]
+    }
+  }
+  
+  returns: {
+    type: "object"
+    properties: {
+      entities: "array"
+      topics: "array"
+      keywords: "array"
+      summary: "string"
+      sentiment: "object"
+      categories: "array"
+    }
+  }
+}
+
+tool "similarity_scorer" {
+  description: "Calculate similarity scores between queries and documents"
+  
+  parameters: {
+    query: {
+      type: "string"
+      description: "Search query"
+      required: true
+    }
+    documents: {
+      type: "array"
+      description: "Array of document content to score"
+      required: true
+    }
+    method: {
+      type: "string"
+      description: "Similarity calculation method"
+      enum: ["cosine", "euclidean", "dot_product", "bm25", "hybrid"]
+      default: "cosine"
+    }
+  }
+  
+  returns: {
+    type: "array"
+    items: {
+      type: "object"
+      properties: {
+        document_id: "string"
+        similarity_score: "number"
+        relevance_explanation: "string"
+      }
+    }
+  }
+}
+
+# AI prompts for intelligent document interaction
+prompt "document_summarizer" {
+  model: "claude-sonnet"
+  template: """
+You are an expert document analyst. Create a comprehensive summary of this document.
+
+Document Title: {{document_title}}
+Document Type: {{document_type}}
+Content: {{document_content}}
+
+Provide a structured summary including:
+1. Executive summary (2-3 sentences)
+2. Key points and main topics
+3. Important entities (people, organizations, dates, locations)
+4. Action items or recommendations (if applicable)
+5. Technical details or specifications (if applicable)
+
+Format the summary in clear, professional markdown.
+"""
+}
+
+prompt "query_enhancer" {
+  model: "gpt-4o"
+  template: """
+You are a search optimization expert. Enhance this user query for better document retrieval.
+
+Original Query: {{user_query}}
+Search Context: {{search_context}}
+Available Filters: {{available_filters}}
+User History: {{user_preferences}}
+
+Enhance the query by:
+1. Expanding with relevant synonyms and related terms
+2. Suggesting appropriate filters
+3. Identifying intent (informational, navigational, transactional)
+4. Recommending search strategy (semantic, keyword, hybrid)
+5. Predicting relevant document types
+
+Provide enhanced query parameters in JSON format.
+"""
+}
+
+prompt "answer_synthesizer" {
+  model: "claude-sonnet"
+  template: """
+You are an expert research assistant. Synthesize information from multiple documents to answer the user's question.
+
+User Question: {{user_question}}
+Search Results:
+{{#each search_results}}
+Document {{@index}}: {{this.title}}
+Relevance: {{this.score}}
+Content: {{this.content}}
+Source: {{this.metadata.source}}
+
+{{/each}}
+
+Search Context: {{search_context}}
+
+Provide a comprehensive answer that:
+- Directly addresses the user's question
+- Synthesizes information from multiple sources
+- Indicates confidence levels and source quality
+- Highlights any conflicting information
+- Suggests related questions or topics
+- Cites specific documents and page numbers
+
+Format as professional markdown with proper citations.
+"""
+}
+
+# Intelligent agents
+agent "document_ingestion" {
+  description: "Processes and indexes new documents with intelligent content extraction"
+  llm: "gpt-4o"
+  memory: document_analysis
+  tools: ["document_processor", "content_enricher"]
+  system: "You are a document processing specialist. Extract maximum value from documents while maintaining accuracy and structure."
+}
+
+agent "search_optimizer" {
+  description: "Optimizes search queries and recommends search strategies"
+  llm: "gpt-4o"
+  memory: search_context
+  tools: ["similarity_scorer"]
+  system: "You are a search expert focused on helping users find the most relevant information efficiently."
+}
+
+agent "answer_generator" {
+  description: "Generates comprehensive answers from retrieved document content"
+  llm: "claude-sonnet"
+  memory: search_context
+  tools: ["similarity_scorer"]
+  system: "You are a research assistant expert at synthesizing information from multiple sources into clear, accurate answers."
+}
+
+# API endpoints for document processing and search
+api "rag_api" {
+  base_path: "/api/v1"
+  
+  endpoint POST "/documents/upload" {
+    description: "Upload and process new documents"
+    input: {
+      file_data: binary
+      filename: string
+      metadata: object
+      processing_options: object
+    }
+    
+    chain: [
+      step "store_document" {
+        action: "create"
+        dataset: documents
+        data: {
+          filename: "{{input.filename}}"
+          file_path: "{{upload.path}}"
+          file_type: "{{upload.type}}"
+          file_size: "{{upload.size}}"
+          processing_status: "pending"
+        }
+      }
+      
+      step "process_content" {
+        agent: document_ingestion
+        tool: document_processor
+        input: {
+          document_path: "{{store_document.file_path}}"
+          extraction_mode: "{{input.processing_options.mode}}"
+        }
+      }
+      
+      step "enrich_content" {
+        agent: document_ingestion
+        tool: content_enricher
+        input: {
+          content: "{{process_content.extracted_text}}"
+          enrichment_types: ["entities", "topics", "keywords", "summary"]
+        }
+      }
+      
+      step "create_chunks" {
+        action: "chunk_and_embed"
+        dataset: document_chunks
+        source: {
+          document_id: "{{store_document.document_id}}"
+          content: "{{process_content.extracted_text}}"
+          metadata: "{{enrich_content}}"
+        }
+        parameters: {
+          chunk_size: 512
+          overlap: 100
+          embedding_model: "text-embedding-3-large"
+        }
+      }
+      
+      step "update_status" {
+        action: "update"
+        dataset: documents
+        filter: { document_id: "{{store_document.document_id}}" }
+        data: {
+          processing_status: "completed"
+          extracted_text: "{{process_content.extracted_text}}"
+          extracted_metadata: "{{enrich_content}}"
+          processed_at: "{{now}}"
+        }
+      }
+    ]
+    
+    output: {
+      document_id: "{{store_document.document_id}}"
+      status: "processed"
+      extracted_content: "{{process_content.extracted_text}}"
+      enrichments: "{{enrich_content}}"
+      chunks_created: "{{create_chunks.count}}"
+    }
+  }
+  
+  endpoint POST "/search" {
+    description: "Perform hybrid RAG search across documents"
+    input: {
+      query: string
+      search_type: string
+      filters: object
+      top_k: integer
+      include_metadata: boolean
+    }
+    
+    chain: [
+      step "enhance_query" {
+        agent: search_optimizer
+        prompt: query_enhancer
+        input: {
+          user_query: "{{input.query}}"
+          search_context: "{{memory.search_context}}"
+          available_filters: "{{system.filters}}"
+          user_preferences: "{{memory.user_preferences}}"
+        }
+      }
+      
+      step "execute_search" {
+        rag: hybrid_search
+        query: "{{enhance_query.enhanced_query}}"
+        filters: "{{enhance_query.filters}}"
+        top_k: "{{input.top_k or 10}}"
+      }
+      
+      step "multimodal_search" {
+        rag: multimodal_search
+        query: "{{input.query}}"
+        top_k: 5
+      }
+      
+      step "score_results" {
+        agent: search_optimizer
+        tool: similarity_scorer
+        input: {
+          query: "{{input.query}}"
+          documents: "{{execute_search.results}}"
+          method: "hybrid"
+        }
+      }
+      
+      step "generate_answer" {
+        agent: answer_generator
+        prompt: answer_synthesizer
+        input: {
+          user_question: "{{input.query}}"
+          search_results: "{{execute_search.results}}"
+          search_context: "{{memory.search_context}}"
+        }
+      }
+      
+      step "log_search" {
+        action: "create"
+        dataset: search_queries
+        data: {
+          query_text: "{{input.query}}"
+          query_type: "hybrid"
+          results_count: "{{execute_search.count}}"
+          response_time: "{{system.response_time}}"
+          relevance_scores: "{{score_results.scores}}"
+        }
+      }
+    ]
+    
+    output: {
+      answer: "{{generate_answer.content}}"
+      sources: "{{execute_search.results}}"
+      multimodal_results: "{{multimodal_search.results}}"
+      confidence: "{{generate_answer.confidence}}"
+      search_metadata: {
+        query_enhanced: "{{enhance_query.enhanced_query}}"
+        results_count: "{{execute_search.count}}"
+        response_time: "{{system.response_time}}"
+        search_strategy: "{{enhance_query.strategy}}"
+      }
+    }
+  }
+  
+  endpoint GET "/documents/{{document_id}}/summary" {
+    description: "Get AI-generated summary of a specific document"
+    
+    chain: [
+      step "get_document" {
+        action: "read"
+        dataset: documents
+        filter: { document_id: "{{path.document_id}}" }
+      }
+      
+      step "generate_summary" {
+        agent: answer_generator
+        prompt: document_summarizer
+        input: {
+          document_title: "{{get_document.title}}"
+          document_type: "{{get_document.file_type}}"
+          document_content: "{{get_document.extracted_text}}"
+        }
+      }
+    ]
+    
+    output: {
+      document_id: "{{path.document_id}}"
+      title: "{{get_document.title}}"
+      summary: "{{generate_summary.content}}"
+      generated_at: "{{now}}"
+    }
+  }
+}
+
+# Backend configuration
+backend "rag_backend" {
+  api: rag_api
+  datasets: [documents, document_chunks, search_queries]
+  agents: [document_ingestion, search_optimizer, answer_generator]
+  indices: [semantic_index, multimodal_index]
+  
+  server {
+    host: "0.0.0.0"
+    port: 8082
+  }
+  
+  database {
+    type: "postgresql"
+    url: "${DATABASE_URL}"
+    vector_extension: "pgvector"
+  }
+  
+  providers {
+    openai {
+      api_key: "${OPENAI_API_KEY}"
+    }
+    anthropic {
+      api_key: "${ANTHROPIC_API_KEY}"
+    }
+  }
+  
+  storage {
+    type: "s3"
+    bucket: "${DOCUMENT_STORAGE_BUCKET}"
+    region: "${AWS_REGION}"
+    access_key: "${AWS_ACCESS_KEY_ID}"
+    secret_key: "${AWS_SECRET_ACCESS_KEY}"
+  }
+  
+  processing {
+    max_file_size: "100MB"
+    supported_formats: ["pdf", "docx", "txt", "html", "md", "pptx", "xlsx", "png", "jpg", "jpeg"]
+    chunk_size: 512
+    overlap: 100
+    embedding_batch_size: 32
+  }
+}

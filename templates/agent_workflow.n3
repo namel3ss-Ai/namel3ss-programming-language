@@ -1,0 +1,458 @@
+# Intelligent Agent Workflow System
+# Production agent orchestration with tool calling and reasoning chains
+
+app "Agent Workflow" {
+  description: "Multi-agent system for complex task automation and reasoning"
+  version: "1.0.0"
+}
+
+# Data models for workflow state
+dataset "workflow_executions" {
+  name: "Workflow Execution Log"
+  description: "Track agent workflow runs and results"
+  
+  schema: {
+    execution_id: uuid(primary_key=true)
+    workflow_name: string(required=true, max_length=200)
+    input_data: json
+    output_data: json
+    status: enum("running", "completed", "failed", "cancelled")
+    started_at: timestamp(auto_now_add=true)
+    completed_at: timestamp
+    error_message: text
+    agent_steps: json
+  }
+}
+
+dataset "task_queue" {
+  name: "Agent Task Queue"
+  description: "Pending and active agent tasks"
+  
+  schema: {
+    task_id: uuid(primary_key=true)
+    workflow_id: uuid(foreign_key="workflow_executions.execution_id")
+    agent_name: string(required=true, max_length=100)
+    task_type: string(required=true, max_length=50)
+    input_data: json(required=true)
+    priority: integer(default=5, min=1, max=10)
+    status: enum("pending", "running", "completed", "failed")
+    retries: integer(default=0, min=0, max=3)
+    created_at: timestamp(auto_now_add=true)
+    started_at: timestamp
+    completed_at: timestamp
+  }
+}
+
+# AI Models
+llm "gpt-4o-mini" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.1
+  max_tokens: 2000
+}
+
+llm "claude-haiku" {
+  provider: "anthropic"
+  model: "claude-3-haiku-20240307"
+  temperature: 0.0
+  max_tokens: 1500
+}
+
+# Memory systems for agents
+memory "workflow_context" {
+  scope: "workflow"
+  kind: "conversation"
+  max_items: 100
+}
+
+memory "agent_state" {
+  scope: "agent"
+  kind: "structured"
+  max_items: 50
+}
+
+memory "tool_results" {
+  scope: "session"
+  kind: "list"
+  max_items: 20
+}
+
+# External tools and APIs
+tool "web_search" {
+  description: "Search the web for current information"
+  
+  parameters: {
+    query: {
+      type: "string"
+      description: "Search query"
+      required: true
+      max_length: 500
+    }
+    num_results: {
+      type: "integer"
+      description: "Number of results to return"
+      default: 5
+      min: 1
+      max: 20
+    }
+    language: {
+      type: "string"
+      description: "Search language (ISO 639-1)"
+      default: "en"
+    }
+  }
+  
+  returns: {
+    type: "array"
+    items: {
+      type: "object"
+      properties: {
+        title: "string"
+        url: "string"
+        snippet: "string"
+        published_date: "string"
+      }
+    }
+  }
+}
+
+tool "document_analyzer" {
+  description: "Analyze documents and extract structured information"
+  
+  parameters: {
+    document_url: {
+      type: "string"
+      description: "URL or path to document"
+      required: true
+    }
+    analysis_type: {
+      type: "string"
+      description: "Type of analysis to perform"
+      enum: ["summary", "entities", "sentiment", "topics", "full"]
+      default: "summary"
+    }
+    output_format: {
+      type: "string"
+      description: "Desired output format"
+      enum: ["json", "markdown", "plain"]
+      default: "json"
+    }
+  }
+  
+  returns: {
+    type: "object"
+    properties: {
+      summary: "string"
+      entities: "array"
+      sentiment: "object"
+      topics: "array"
+      confidence: "number"
+    }
+  }
+}
+
+tool "database_query" {
+  description: "Execute database queries and return results"
+  
+  parameters: {
+    query: {
+      type: "string"
+      description: "SQL query to execute"
+      required: true
+    }
+    parameters: {
+      type: "object"
+      description: "Query parameters for prepared statements"
+    }
+    limit: {
+      type: "integer"
+      description: "Maximum number of rows to return"
+      default: 100
+      max: 1000
+    }
+  }
+  
+  returns: {
+    type: "object"
+    properties: {
+      rows: "array"
+      count: "integer"
+      execution_time: "number"
+    }
+  }
+}
+
+tool "notification_system" {
+  description: "Send notifications via email, SMS, or webhook"
+  
+  parameters: {
+    type: {
+      type: "string"
+      description: "Notification type"
+      enum: ["email", "sms", "webhook", "slack"]
+      required: true
+    }
+    recipient: {
+      type: "string"
+      description: "Notification recipient"
+      required: true
+    }
+    message: {
+      type: "string"
+      description: "Notification message"
+      required: true
+    }
+    priority: {
+      type: "string"
+      description: "Notification priority"
+      enum: ["low", "normal", "high", "urgent"]
+      default: "normal"
+    }
+  }
+  
+  returns: {
+    type: "object"
+    properties: {
+      notification_id: "string"
+      status: "string"
+      delivered_at: "string"
+    }
+  }
+}
+
+# Specialized AI prompts
+prompt "task_planner" {
+  model: "gpt-4o-mini"
+  template: """
+You are an expert task planning agent. Break down this complex request into actionable steps.
+
+Request: {{user_request}}
+Available Tools: {{available_tools}}
+Context: {{workflow_context}}
+
+Create a detailed execution plan with:
+1. Sequential steps with clear dependencies
+2. Tool assignments for each step
+3. Success criteria and validation
+4. Error handling and fallback strategies
+5. Expected outputs and data flow
+
+Respond with a structured JSON plan.
+"""
+}
+
+prompt "data_synthesizer" {
+  model: "claude-haiku"
+  template: """
+You are a data synthesis expert. Combine information from multiple sources into a coherent response.
+
+Sources:
+{{#each data_sources}}
+Source {{@index}}: {{this.type}}
+Data: {{this.content}}
+Reliability: {{this.confidence}}
+
+{{/each}}
+
+User Question: {{user_question}}
+Synthesis Requirements: {{requirements}}
+
+Provide a comprehensive answer that:
+- Synthesizes information from all relevant sources
+- Notes any conflicting information
+- Indicates confidence levels
+- Cites sources appropriately
+- Addresses the user's specific question
+
+Format as structured markdown with citations.
+"""
+}
+
+prompt "decision_maker" {
+  model: "gpt-4o-mini"
+  template: """
+You are a decision-making agent with access to analysis results and business context.
+
+Analysis Results: {{analysis_results}}
+Business Context: {{business_context}}
+Decision Options: {{options}}
+Constraints: {{constraints}}
+Success Metrics: {{metrics}}
+
+Make a recommendation including:
+1. Preferred option with detailed reasoning
+2. Risk assessment and mitigation strategies
+3. Implementation timeline and dependencies
+4. Success metrics and monitoring plan
+5. Alternative options if primary fails
+
+Provide decision in structured format with confidence score.
+"""
+}
+
+# Intelligent agents
+agent "task_coordinator" {
+  description: "Orchestrates complex workflows and coordinates other agents"
+  llm: "gpt-4o-mini"
+  memory: workflow_context
+  tools: ["database_query", "notification_system"]
+  system: "You are a senior workflow coordinator responsible for breaking down complex tasks and orchestrating agent teams. Focus on efficient execution and clear communication."
+}
+
+agent "research_analyst" {
+  description: "Conducts research and gathers information from multiple sources"
+  llm: "claude-haiku"
+  memory: tool_results
+  tools: ["web_search", "document_analyzer"]
+  system: "You are a thorough research analyst. Gather comprehensive information from multiple sources, validate findings, and provide well-cited analysis."
+}
+
+agent "decision_engine" {
+  description: "Makes informed decisions based on analysis and business rules"
+  llm: "gpt-4o-mini"
+  memory: agent_state
+  tools: ["database_query", "notification_system"]
+  system: "You are a strategic decision maker. Analyze all available information, consider business implications, and make well-reasoned recommendations."
+}
+
+# API for workflow execution
+api "workflow_api" {
+  base_path: "/api/v1/workflows"
+  
+  endpoint POST "/execute" {
+    description: "Execute a complex workflow with multiple agents"
+    input: {
+      workflow_type: string
+      user_request: string
+      parameters: object
+      priority: integer
+    }
+    
+    chain: [
+      step "plan_workflow" {
+        agent: task_coordinator
+        prompt: task_planner
+        input: {
+          user_request: "{{input.user_request}}"
+          available_tools: "{{system.available_tools}}"
+          workflow_context: "{{memory.workflow_context}}"
+        }
+      }
+      
+      step "conduct_research" {
+        agent: research_analyst
+        tools: ["web_search", "document_analyzer"]
+        input: {
+          research_tasks: "{{plan_workflow.research_steps}}"
+          search_queries: "{{plan_workflow.queries}}"
+          documents: "{{plan_workflow.documents}}"
+        }
+      }
+      
+      step "synthesize_data" {
+        agent: research_analyst
+        prompt: data_synthesizer
+        input: {
+          data_sources: "{{conduct_research.results}}"
+          user_question: "{{input.user_request}}"
+          requirements: "{{plan_workflow.synthesis_requirements}}"
+        }
+      }
+      
+      step "make_decision" {
+        agent: decision_engine
+        prompt: decision_maker
+        input: {
+          analysis_results: "{{synthesize_data.content}}"
+          business_context: "{{system.business_rules}}"
+          options: "{{plan_workflow.decision_options}}"
+          constraints: "{{plan_workflow.constraints}}"
+          metrics: "{{plan_workflow.success_metrics}}"
+        }
+      }
+      
+      step "execute_actions" {
+        agent: task_coordinator
+        tools: ["database_query", "notification_system"]
+        input: {
+          action_plan: "{{make_decision.implementation_plan}}"
+          stakeholders: "{{plan_workflow.stakeholders}}"
+          monitoring_plan: "{{make_decision.monitoring_plan}}"
+        }
+      }
+    ]
+    
+    output: {
+      workflow_id: "{{plan_workflow.workflow_id}}"
+      execution_plan: "{{plan_workflow.content}}"
+      research_summary: "{{synthesize_data.content}}"
+      decision: "{{make_decision.recommendation}}"
+      actions_taken: "{{execute_actions.results}}"
+      confidence_score: "{{make_decision.confidence}}"
+      next_steps: "{{execute_actions.next_steps}}"
+    }
+  }
+  
+  endpoint GET "/status/{{workflow_id}}" {
+    description: "Get workflow execution status and results"
+    
+    chain: [
+      step "get_execution" {
+        action: "read"
+        dataset: workflow_executions
+        filter: { execution_id: "{{path.workflow_id}}" }
+      }
+      
+      step "get_tasks" {
+        action: "read"
+        dataset: task_queue
+        filter: { workflow_id: "{{path.workflow_id}}" }
+      }
+    ]
+    
+    output: {
+      workflow_id: "{{get_execution.execution_id}}"
+      status: "{{get_execution.status}}"
+      progress: "{{get_tasks.completed_count}}/{{get_tasks.total_count}}"
+      results: "{{get_execution.output_data}}"
+      started_at: "{{get_execution.started_at}}"
+      completed_at: "{{get_execution.completed_at}}"
+    }
+  }
+}
+
+# Backend infrastructure
+backend "workflow_backend" {
+  api: workflow_api
+  datasets: [workflow_executions, task_queue]
+  agents: [task_coordinator, research_analyst, decision_engine]
+  
+  server {
+    host: "0.0.0.0"
+    port: 8081
+  }
+  
+  database {
+    type: "postgresql"
+    url: "${DATABASE_URL}"
+  }
+  
+  providers {
+    openai {
+      api_key: "${OPENAI_API_KEY}"
+    }
+    anthropic {
+      api_key: "${ANTHROPIC_API_KEY}"
+    }
+  }
+  
+  worker_pool {
+    size: 4
+    queue: "task_queue"
+    retry_policy: {
+      max_retries: 3
+      backoff_strategy: "exponential"
+      base_delay: 1000
+    }
+  }
+}

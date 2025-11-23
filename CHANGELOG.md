@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file. The format 
 
 - Nothing yet.
 
-## [0.5.0] - 2025-11-22
+## [0.5.0] - 2025-03-17
 
 ### Added
 - **Async/Streaming Runtime**: Complete asynchronous chain execution with streaming endpoints, delivering 90x throughput improvement (5 → 450 req/sec), 8.8x faster P50 latency (18.5s → 2.1s), and 6-10x faster time-to-first-token with SSE-based streaming. Production-ready with support for 4,000 concurrent requests per instance.
@@ -18,12 +18,14 @@ All notable changes to this project will be documented in this file. The format 
 - **CRUD Service Scaffolding**: Complete project templates for CRUD services with authentication, database migrations, Docker configuration, API documentation, and test suites.
 - **Tool Adapters**: Extensible tool system for integrating external HTTP APIs and Python functions into LLM workflows with automatic schema validation.
 - **Comprehensive Benchmarking**: Locust-based load testing suite with threshold validation, performance regression detection, and detailed metrics reporting.
+- **Release Automation**: TestPyPI-first release workflow with scripted build, upload, and clean-environment validation (CLI build/run/test against production-grade `.n3` examples).
 
 ### Changed
 - **Concurrency Model**: All LLM connectors, chain execution, and workflow operations now use async/await patterns with proper cancellation handling, rate limiting, and timeout management.
 - **Router Architecture**: Updated all FastAPI routes to properly await async operations, improving request handling efficiency and enabling concurrent execution.
 - **Parser Infrastructure**: Unified configuration parsing with centralized validation, consistent error reporting, and improved support for complex nested structures.
 - **Documentation**: Added comprehensive guides for async/streaming patterns, inline block syntax, agent orchestration, RLHF training workflows, and performance tuning.
+- **Packaging & CI**: MANIFEST/pyproject tightened to ship runtime templates and CRUD scaffolding; GitHub Actions workflow added for tag-based TestPyPI releases plus clean-install validation.
 
 ### Fixed
 - **Page and Layout Encoding**: Fixed AST representation of `Page` and `LayoutMeta` to match backend encoder expectations, resolving serialization issues.

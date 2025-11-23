@@ -1,340 +1,175 @@
-(function(global) {
-    'use strict';
+/**
+ * N3 Realtime Runtime
+ *
+ * Provides resilient WebSocket + fallback polling to keep pages in sync with
+ * backend events. Integrates with widget core hydration and renderer.
+ *
+ * Exposed API on window.N3Realtime:
+ *  - connectPage(slug, options)
+ *  - disconnectPage(slug)
+ *  - applySnapshot(slug, snapshot, meta?)
+ *  - applyRealtimeUpdate(event)
+ */
+(() => {
+  'use strict';
 
-    var realtime = global.N3Realtime || (global.N3Realtime = {});
-    var connections = realtime.__connections || (realtime.__connections = {});
-    var stateStore = realtime.__state || (realtime.__state = {});
+  /** @type {any} */
+  const globalScope = typeof window !== 'undefined' ? window : globalThis;
+  const realtimeNs = (globalScope.N3Realtime = globalScope.N3Realtime || {});
+  const widgetsNs = globalScope.N3Widgets || {};
+  const connections = new Map();
 
-    function toIntervalMs(value) {
-        if (typeof value === 'number' && value > 0) {
-            return value * 1000;
-        }
-        var parsed = parseInt(value, 10);
-        if (!isNaN(parsed) && parsed > 0) {
-            return parsed * 1000;
-        }
-        return null;
+  const DEFAULT_BACKOFF = [500, 1000, 2000, 5000];
+
+  function normalizePath(path) {
+    if (!path) return '';
+    return path.startsWith('/') ? path : `/${path}`;
+  }
+
+  function buildWsUrl(slug, options = {}) {
+    if (options.wsUrl) return options.wsUrl;
+    if (typeof window === 'undefined' || !window.location) return null;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const path = options.wsPath || `/ws/pages/${encodeURIComponent(slug)}`;
+    return `${protocol}//${host}${normalizePath(path)}`;
+  }
+
+  function buildPageUrl(slug, options = {}) {
+    const base = options.baseUrl ? options.baseUrl.replace(/\/$/, '') : '';
+    const path = options.pageUrl || `/api/pages/${slug}`;
+    return `${base}${normalizePath(path)}`;
+  }
+
+  function backoff(attempt) {
+    return DEFAULT_BACKOFF[Math.min(attempt, DEFAULT_BACKOFF.length - 1)];
+  }
+
+  class RealtimeClient {
+    constructor(slug, options = {}) {
+      this.slug = slug;
+      this.options = options;
+      this.socket = null;
+      this.retry = 0;
+      this.fallbackTimer = null;
+      this.closed = false;
     }
 
-    function dispatchEvent(name, detail) {
-        if (typeof document === 'undefined' || typeof document.dispatchEvent !== 'function') {
-            return;
-        }
+    connect() {
+      const wsUrl = buildWsUrl(this.slug, this.options);
+      if (!wsUrl) {
+        this.startFallback();
+        return;
+      }
+      try {
+        this.socket = new WebSocket(wsUrl);
+      } catch (err) {
+        console.warn('[N3Realtime] WebSocket failed, using fallback', err);
+        this.startFallback();
+        return;
+      }
+      this.socket.onopen = () => {
+        this.retry = 0;
+        this.stopFallback();
+      };
+      this.socket.onmessage = (event) => {
         try {
-            var evt;
-            if (typeof CustomEvent === 'function') {
-                evt = new CustomEvent(name, { detail: detail });
-            } else {
-                evt = document.createEvent('CustomEvent');
-                evt.initCustomEvent(name, true, true, detail);
-            }
-            document.dispatchEvent(evt);
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          realtimeNs.applyRealtimeUpdate(payload);
         } catch (err) {
-            console.warn('N3Realtime dispatch failed', err);
+          console.warn('[N3Realtime] message parse failed', err);
         }
+      };
+      this.socket.onclose = () => {
+        if (this.closed) return;
+        this.scheduleReconnect();
+      };
+      this.socket.onerror = () => {
+        this.socket && this.socket.close();
+      };
     }
 
-    function normalizePath(path) {
-        if (typeof path !== 'string') {
-            return '';
-        }
-        if (!path) {
-            return '';
-        }
-        return path.charAt(0) === '/' ? path : '/' + path;
+    scheduleReconnect() {
+      this.retry += 1;
+      const delay = backoff(this.retry);
+      setTimeout(() => this.connect(), delay);
     }
 
-    function buildWsUrl(slug, options) {
-        if (!slug) {
-            return null;
-        }
-        var explicit = options && options.wsUrl;
-        if (explicit) {
-            return explicit;
-        }
-        if (typeof window === 'undefined' || !window.location || !window.location.host) {
-            return null;
-        }
-        var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        var host = window.location.host;
-        var base = protocol + '//' + host;
-        var path = options && options.wsPath ? options.wsPath : '/ws/pages/' + encodeURIComponent(slug);
-        return base.replace(/[/]$/, '') + normalizePath(path);
-    }
-
-    function buildPageUrl(slug, options) {
-        var path = options && options.pageUrl ? options.pageUrl : '/api/pages/' + slug;
-        var base = options && options.baseUrl;
-        if (base) {
-            return base.replace(/[/]$/, '') + normalizePath(path);
-        }
-        return normalizePath(path);
-    }
-
-    function getConnection(slug) {
-        var state = connections[slug];
-        if (!state) {
-            state = connections[slug] = {
-                slug: slug,
-                active: false,
-                retries: 0,
-                fallbackIntervalMs: null,
-                reconnectTimer: null,
-                fallbackTimer: null,
-                websocket: null,
-                options: {},
-            };
-        }
-        return state;
-    }
-
-    function stopReconnect(state) {
-        if (state.reconnectTimer) {
-            clearTimeout(state.reconnectTimer);
-            state.reconnectTimer = null;
-        }
-    }
-
-    function stopFallback(state) {
-        if (state.fallbackTimer) {
-            clearInterval(state.fallbackTimer);
-            state.fallbackTimer = null;
-        }
-    }
-
-    function cloneObject(value) {
-        if (!value || typeof value !== 'object') {
-            return {};
-        }
+    startFallback() {
+      if (this.fallbackTimer) return;
+      const intervalMs = (this.options.fallbackInterval || 30) * 1000;
+      if (!intervalMs) return;
+      this.fallbackTimer = setInterval(async () => {
         try {
-            return JSON.parse(JSON.stringify(value));
+          const res = await fetch(buildPageUrl(this.slug, this.options), {
+            headers: { Accept: 'application/json' },
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          realtimeNs.applySnapshot(this.slug, data, { source: 'polling' });
         } catch (err) {
-            var copy = Array.isArray(value) ? [] : {};
-            Object.keys(value).forEach(function(key) {
-                var entry = value[key];
-                if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-                    copy[key] = cloneObject(entry);
-                } else if (Array.isArray(entry)) {
-                    copy[key] = entry.slice();
-                } else {
-                    copy[key] = entry;
-                }
-            });
-            return copy;
+          console.warn('[N3Realtime] fallback polling failed', err);
         }
+      }, intervalMs);
     }
 
-    function deepMerge(target, source) {
-        if (!source || typeof source !== 'object') {
-            return target;
-        }
-        Object.keys(source).forEach(function(key) {
-            var incoming = source[key];
-            if (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) {
-                if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key])) {
-                    target[key] = {};
-                }
-                deepMerge(target[key], incoming);
-            } else {
-                target[key] = incoming;
-            }
-        });
-        return target;
+    stopFallback() {
+      if (this.fallbackTimer) {
+        clearInterval(this.fallbackTimer);
+        this.fallbackTimer = null;
+      }
     }
 
-    function fetchSnapshot(slug, state, reason) {
-        if (typeof fetch !== 'function') {
-            return;
-        }
-        var baseUrl = buildPageUrl(slug, state.options);
-        if (!baseUrl) {
-            return;
-        }
-        var separator = baseUrl.indexOf('?') === -1 ? '?' : '&';
-        var url = baseUrl + separator + '_ts=' + Date.now();
-        var crud = global.N3Crud;
-        crud.fetchResource(url)
-            .then(function(payload) {
-                realtime.applyEvent(slug, {
-                    type: 'snapshot',
-                    slug: slug,
-                    payload: payload,
-                    meta: { source: reason || 'poll' },
-                });
-            })
-            .catch(function(err) {
-                console.warn('N3Realtime polling failed for ' + slug + ':', err);
-            });
+    disconnect() {
+      this.closed = true;
+      this.stopFallback();
+      if (this.socket && this.socket.readyState <= 1) {
+        this.socket.close();
+      }
+      this.socket = null;
     }
+  }
 
-    function startFallback(slug, state, reason) {
-        stopFallback(state);
-        if (!state.fallbackIntervalMs) {
-            return;
-        }
-        fetchSnapshot(slug, state, reason || 'fallback-start');
-        state.fallbackTimer = setInterval(function() {
-            fetchSnapshot(slug, state, 'fallback-tick');
-        }, state.fallbackIntervalMs);
+  function applyRealtimeUpdate(event) {
+    if (!event) return;
+    const slug = event.slug || event.page || event.channel;
+    const payload = event.payload || event.data || event;
+    if (slug && widgetsNs.hydratePage) {
+      widgetsNs.hydratePage(slug, payload);
     }
+  }
 
-    function applyEvent(slug, event) {
-        if (!event || typeof event !== 'object') {
-            return;
-        }
-        if (!event.slug) {
-            event.slug = slug;
-        }
-        if (event.type === 'snapshot' || event.type === 'hydration') {
-            stateStore[slug] = event.payload || {};
-        } else if (event.payload && typeof event.payload === 'object') {
-            var currentState = stateStore[slug] || {};
-            var crud = global.N3Crud;
-            if (crud && typeof crud.mergePartial === 'function') {
-                stateStore[slug] = crud.mergePartial(currentState, event.payload, { copy: true });
-            } else {
-                stateStore[slug] = deepMerge(cloneObject(currentState), event.payload);
-            }
-        }
-        if (global.N3Widgets && typeof global.N3Widgets.applyRealtimeUpdate === 'function') {
-            try {
-                global.N3Widgets.applyRealtimeUpdate(event);
-            } catch (err) {
-                console.error('N3Realtime failed to update widgets', err);
-            }
-        }
-        dispatchEvent('n3:realtime:' + (event.type || 'message'), {
-            slug: slug,
-            event: event,
-        });
+  function applySnapshot(slug, snapshot, meta) {
+    if (!slug || !snapshot) return;
+    if (widgetsNs.hydratePage) {
+      widgetsNs.hydratePage(slug, snapshot);
     }
-
-    function handleMessage(slug, state, raw) {
-        var data = raw;
-        if (typeof raw === 'string') {
-            try {
-                data = JSON.parse(raw);
-            } catch (err) {
-                console.warn('N3Realtime received non-JSON message', raw);
-                return;
-            }
-        }
-        applyEvent(slug, data);
+    if (widgetsNs.bus) {
+      widgetsNs.bus.emit('realtime:snapshot', { slug, snapshot, meta });
     }
+  }
 
-    function scheduleReconnect(slug, state) {
-        stopReconnect(state);
-        if (!state.active) {
-            return;
-        }
-        state.retries += 1;
-        var delay = Math.min(30000, Math.pow(2, state.retries) * 250);
-        state.reconnectTimer = setTimeout(function() {
-            openWebSocket(slug, state);
-        }, delay);
-        if (state.fallbackIntervalMs) {
-            startFallback(slug, state, 'reconnect-wait');
-        }
+  function connectPage(slug, options = {}) {
+    if (!slug) return null;
+    disconnectPage(slug);
+    const client = new RealtimeClient(slug, options);
+    connections.set(slug, client);
+    client.connect();
+    return client;
+  }
+
+  function disconnectPage(slug) {
+    const existing = connections.get(slug);
+    if (existing) {
+      existing.disconnect();
+      connections.delete(slug);
     }
+  }
 
-    function openWebSocket(slug, state) {
-        stopReconnect(state);
-        if (!state.active) {
-            return;
-        }
-        var url = buildWsUrl(slug, state.options);
-        if (!url) {
-            if (state.fallbackIntervalMs) {
-                startFallback(slug, state, 'no-websocket');
-            }
-            return;
-        }
-        try {
-            var socket = new WebSocket(url);
-            state.websocket = socket;
-            socket.onopen = function() {
-                state.retries = 0;
-                stopFallback(state);
-                dispatchEvent('n3:realtime:connected', { slug: slug });
-            };
-            socket.onmessage = function(evt) {
-                handleMessage(slug, state, evt.data);
-            };
-            socket.onerror = function(err) {
-                console.warn('N3Realtime websocket error for ' + slug + ':', err);
-            };
-            socket.onclose = function() {
-                state.websocket = null;
-                dispatchEvent('n3:realtime:disconnected', { slug: slug });
-                if (state.active) {
-                    scheduleReconnect(slug, state);
-                } else {
-                    stopFallback(state);
-                }
-            };
-        } catch (err) {
-            console.warn('N3Realtime failed to open websocket for ' + slug + ':', err);
-            if (state.fallbackIntervalMs) {
-                startFallback(slug, state, 'websocket-error');
-            }
-        }
-    }
-
-    realtime.connectPage = function(slug, options) {
-        if (!slug) {
-            return;
-        }
-        var state = getConnection(slug);
-        state.active = true;
-        state.options = options || {};
-        state.fallbackIntervalMs = toIntervalMs(state.options.fallbackInterval);
-        if (state.websocket && (state.websocket.readyState === 0 || state.websocket.readyState === 1)) {
-            return;
-        }
-        var skipWebSocket = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
-        if (skipWebSocket) {
-            startFallback(slug, state, 'file-protocol');
-            return;
-        }
-        openWebSocket(slug, state);
-        if (!state.websocket && state.fallbackIntervalMs) {
-            startFallback(slug, state, 'websocket-unavailable');
-        }
-    };
-
-    realtime.disconnectPage = function(slug) {
-        var state = connections[slug];
-        if (!state) {
-            return;
-        }
-        state.active = false;
-        stopReconnect(state);
-        stopFallback(state);
-        if (state.websocket && state.websocket.readyState <= 1) {
-            try {
-                state.websocket.close();
-            } catch (err) {
-                // ignore
-            }
-        }
-        state.websocket = null;
-    };
-
-    realtime.applyEvent = function(slug, event) {
-        applyEvent(slug, event);
-    };
-
-    realtime.applySnapshot = function(slug, payload, meta) {
-        applyEvent(slug, {
-            type: 'snapshot',
-            slug: slug,
-            payload: payload || {},
-            meta: meta || {},
-        });
-    };
-
-    realtime.getState = function(slug) {
-        return stateStore[slug];
-    };
-
-})(typeof window !== 'undefined' ? window : this);
+  Object.assign(realtimeNs, {
+    connectPage,
+    disconnectPage,
+    applySnapshot,
+    applyRealtimeUpdate,
+  });
+})();

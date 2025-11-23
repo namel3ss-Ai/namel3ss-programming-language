@@ -1,0 +1,48 @@
+# Content Analysis Agent
+# AI agent for analyzing and categorizing text content
+
+app "Content Analyzer" {
+  description: "AI-powered content analysis and categorization system"
+}
+
+# LLM for content analysis
+llm "content_analyzer_model" {
+  provider: "anthropic"
+  model: "claude-3-haiku-20240307"
+  temperature: 0.1
+}
+
+# Memory for analysis context
+memory "analysis_context" {
+  scope: "session"
+  kind: "list"
+  max_items: 10
+}
+
+# Prompt for content analysis
+prompt "analyze_content" {
+  model: "content_analyzer_model"
+  template: """
+You are an expert content analyst. Analyze the following text and provide structured insights.
+
+Content to analyze: {{content}}
+
+Provide analysis in this format:
+1. Content Type: (article, blog post, documentation, email, etc.)
+2. Primary Topic: (main subject matter)
+3. Sentiment: (positive, negative, neutral)
+4. Key Entities: (people, places, organizations mentioned)
+5. Action Items: (any tasks or next steps mentioned)
+6. Summary: (2-sentence overview)
+
+Be precise and objective in your analysis.
+"""
+}
+
+# Content analysis agent
+agent "content_analyst" {
+  description: "AI agent specialized in content analysis and categorization"
+  llm: "content_analyzer_model"
+  memory: analysis_context
+  system: "You are a professional content analyst with expertise in text classification, sentiment analysis, and information extraction."
+}

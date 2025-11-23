@@ -1,163 +1,122 @@
-# Namel3ss CLI Documentation
+# Namel3ss CLI Reference
 
-## Overview
-
-The Namel3ss CLI provides a complete toolset for building and running full-stack applications from `.n3` source files.
+The Namel3ss CLI compiles `.n3` source into a runnable [Runtime](docs/reference/GLOSSARY.md#runtime), serves it for development, and executes evaluation hooks. This guide targets experienced engineers and uses terminology defined in the [Glossary](docs/reference/GLOSSARY.md).
 
 ## Installation
-
 ```bash
 pip install namel3ss
+pip install uvicorn[standard]  # required for dev server
 ```
 
-For development server support, also install uvicorn:
-```bash
-pip install uvicorn[standard]
-```
+## Command Summary
+- `namel3ss build`: Compile `.n3` into frontend and backend runtime assets.
+- `namel3ss run`: Compile and start a development server with reload.
+- `namel3ss eval`: Execute experiment definitions.
+- `namel3ss train`: Invoke training hooks bound to model definitions.
+- `namel3ss deploy`: Invoke deployment hooks bound to model definitions.
 
-## Commands
+## namel3ss build
+Compile an [Application](docs/reference/GLOSSARY.md#application) into artifacts.
 
-### `namel3ss build`
-
-Generate static site and/or backend scaffold from a `.n3` file.
-
-**Usage:**
+**Usage**
 ```bash
 namel3ss build <file> [options]
 ```
 
-**Options:**
-- `--out, -o <dir>` - Output directory for static files (default: `build`)
-- `--print-ast` - Print the parsed AST as JSON and exit
-- `--build-backend` - Also generate FastAPI backend scaffold
-- `--backend-only` - Only generate backend, skip static site
-- `--backend-out <dir>` - Output directory for backend scaffold (default: `backend_build`)
-- `--target <static|react-vite>` - Choose the frontend generator (default: `static`)
-- `--realtime` - Include websocket streaming scaffolding in the generated backend
-- `--embed-insights` - Inline insight payloads into dataset responses
-- `--env KEY=VALUE` - Set environment variables during generation (repeatable)
+**Key Options**
+- `--out, -o <dir>`: Frontend output directory (default: `build`).
+- `--backend-out <dir>`: Backend output directory (default: `backend_build`).
+- `--build-backend`: Generate backend in addition to the frontend.
+- `--backend-only`: Generate only the backend.
+- `--target <static|react-vite>`: Select frontend generator (default: `static`).
+- `--realtime`: Include WebSocket/SSE helpers.
+- `--print-ast`: Emit parsed AST as JSON and exit.
+- `--env KEY=VALUE`: Set environment variables during compilation (repeatable).
 
-**Examples:**
-
-Generate static site only:
+**Examples**
 ```bash
+# Frontend only
 namel3ss build app.n3
 namel3ss build app.n3 --out dist
-```
 
-Generate both static site and backend:
-```bash
-namel3ss build app.n3 --build-backend
+# Backend + frontend
 namel3ss build app.n3 --build-backend --backend-out api
+
+# Backend only
+namel3ss build app.n3 --backend-only --backend-out runtime_api
 ```
 
-Generate backend only:
-```bash
-namel3ss build app.n3 --backend-only --backend-out backend
-```
+> **Best Practice**  
+> Use `--env KEY=VALUE` to provide secrets at build time. Do not hard-code provider credentials in `.n3` files.
 
-Print AST for debugging:
-```bash
-namel3ss build app.n3 --print-ast
-```
+## namel3ss run
+Compile and start a development server for a single `.n3` file.
 
-### `namel3ss run`
-
-Start a development server with hot reload for rapid iteration.
-
-**Usage:**
+**Usage**
 ```bash
 namel3ss run <file> [options]
 ```
 
-**Options:**
-- `--backend-out <dir>` - Output directory for backend scaffold (default: temp directory)
-- `--host <host>` - Host to bind server to (default: `127.0.0.1`)
-- `--port <port>` - Port to bind server to (default: `8000`)
-- `--no-reload` - Disable hot reload
-- `--dev` - Force dev-server mode even when targeting a chain name
-- `--json` - Emit structured JSON when executing an AI chain
-- `--realtime` - Enable websocket streaming helpers in the generated backend
-- `--embed-insights` - Inline insight payloads into dataset responses
-- `--env KEY=VALUE` - Set environment variables before launching the server (repeatable)
+**Key Options**
+- `--backend-out <dir>`: Backend output directory (default: temp directory).
+- `--host <host>` / `--port <port>`: Bind address (default: `127.0.0.1:8000`).
+- `--no-reload`: Disable hot reload.
+- `--dev`: Force dev mode even when targeting a Chain.
+- `--json`: Emit structured JSON when executing a Chain.
+- `--realtime`: Enable WebSocket/SSE helpers in the generated backend.
+- `--embed-insights`: Inline insight payloads into dataset responses.
+- `--env KEY=VALUE`: Set environment variables before launch.
 
-**What it does:**
-1. Parses your `.n3` file
-2. Generates a FastAPI backend scaffold
-3. Starts a uvicorn development server with hot reload
-4. Displays the server URL
+**Lifecycle**
+1. Parse `.n3`.
+2. Generate a FastAPI backend scaffold.
+3. Start uvicorn with reload unless disabled.
 
-**Examples:**
-
-Basic dev server (uses temp directory):
+**Examples**
 ```bash
 namel3ss run app.n3
-```
-
-Custom port and host:
-```bash
 namel3ss run app.n3 --port 3000 --host 0.0.0.0
+namel3ss run app.n3 --backend-out dev_backend --no-reload
 ```
 
-Specify backend directory:
-```bash
-namel3ss run app.n3 --backend-out dev_backend
-```
+> **Warning**  
+> `uvicorn` must be available (`pip install uvicorn[standard]`). The command fails fast if missing.
 
-Disable hot reload:
-```bash
-namel3ss run app.n3 --no-reload
-```
+## namel3ss eval
+Execute experiment variants declared in `.n3`.
 
-**Requirements:**
-- `uvicorn` must be installed: `pip install uvicorn[standard]`
-- If uvicorn is not installed, you'll get a helpful error message
-
-**Output:**
-```
-✓ Parsed: My App
-✓ Backend generated in: /tmp/.namel3ss_dev_backend
-
-Namel3ss dev server running at http://127.0.0.1:8000
-Press CTRL+C to stop
-```
-
-### `namel3ss eval`
-
-Evaluate experiment variants defined in your `.n3` program.
-
-**Usage:**
+**Usage**
 ```bash
 namel3ss eval <experiment> [-f <file>] [--format <json|text>]
 ```
 
-**Options:**
-- `-f, --file <path>` - Path to the `.n3` file (defaults to the first `.n3` in the working directory)
-- `--format <json|text>` - Output format (default: `json`)
+**Options**
+- `-f, --file <path>`: Path to `.n3` (default: first `.n3` in the working directory).
+- `--format <json|text>`: Output format (default: `json`).
 
-When the experiment or runtime hooks fail, the command returns a structured error payload with `status="error"`.
+On failure, the command returns structured JSON with `status="error"` and diagnostics.
 
-### `namel3ss train`
+## namel3ss train
+Invoke training hooks bound to a model definition.
 
-Invoke user-provided training hooks registered on models.
-
-**Usage:**
+**Usage**
 ```bash
 namel3ss train <file> --model <name>
 ```
 
-If a model lacks a `trainer` hook, the command exits with a JSON error payload describing the missing configuration.
+If the model has no `trainer` hook, the command exits with structured JSON describing the missing configuration.
 
-### `namel3ss deploy`
+## namel3ss deploy
+Invoke deployment hooks bound to a model definition.
 
-Trigger user-provided deployment hooks for models.
-
-**Usage:**
+**Usage**
 ```bash
 namel3ss deploy <file> --model <name>
 ```
 
-Similar to `train`, this command surfaces clear JSON errors when deploy hooks are missing or raise exceptions.
+If deployment hooks are absent or fail, the command returns structured JSON diagnostics.
+
+> **See Also:** [Style Guide](docs/STYLE_GUIDE.md), [Glossary](docs/reference/GLOSSARY.md)
 
 ### `namel3ss doctor`
 

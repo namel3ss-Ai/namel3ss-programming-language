@@ -160,6 +160,7 @@ include = ["namel3ss", "namel3ss.*"]
     "**/.gitignore",
     "**/Dockerfile*",
     "**/Makefile*",
+    "crud_service/files/config/*",
 ]
 
 [tool.pytest.ini_options]

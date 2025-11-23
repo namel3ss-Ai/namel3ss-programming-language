@@ -78,51 +78,39 @@ git push origin main
 git push origin v<VERSION>
 ```
 
-### 4. Build Distribution Packages
+### 4. Build & Upload (TestPyPI-first)
 
+Preferred (scripted, reproducible):
 ```bash
-# Clean old builds
-rm -rf dist/ build/ *.egg-info
+# Ensure env vars are set:
+#   TESTPYPI_USERNAME=__token__
+#   TESTPYPI_PASSWORD=<api-token>
 
-# Build wheel and source distribution
+make release-testpypi          # runs pytest, builds sdist+wheel, twine uploads to TestPyPI
+make validate-testpypi-install # clean venv, installs from TestPyPI, runs CLI build/run/test on examples
+```
+
+Manual (if debugging):
+```bash
 python -m build
-
-# Verify contents
-twine check dist/*
+python -m twine check dist/*
+python -m twine upload --repository-url https://test.pypi.org/legacy/ -u "$TESTPYPI_USERNAME" -p "$TESTPYPI_PASSWORD" dist/*
 ```
 
-### 5. Upload to PyPI
+### 5. Verify Installation + CLI (from TestPyPI)
 
-**Test PyPI** (recommended first):
-```bash
-twine upload --repository testpypi dist/*
-```
+`make validate-testpypi-install` performs:
+- Creates `.venv_release_0_5_0`
+- Installs `namel3ss==0.5.0` from TestPyPI (with PyPI as fallback)
+- Verifies `namel3ss.__version__`
+- Runs `namel3ss build/run/test` against `examples/production_app.n3`
 
-**Production PyPI**:
-```bash
-twine upload dist/*
-```
+### 6. Promote to Production PyPI (after TestPyPI success)
 
-### 6. Verify Installation
+> **Do not run unless TestPyPI validation passes and approval is granted.**
 
 ```bash
-# Create fresh virtual environment
-python -m venv test_env
-source test_env/bin/activate
-
-# Install from PyPI
-pip install namel3ss
-
-# Verify version
-namel3ss --version
-
-# Run basic smoke test
-echo 'app "test".' > test.n3
-namel3ss build test.n3
-
-# Cleanup
-deactivate
-rm -rf test_env test.n3
+python -m twine upload dist/*   # Requires PYPI token env vars
 ```
 
 ### 7. GitHub Release
