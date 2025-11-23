@@ -334,12 +334,14 @@ class AppTypeChecker:
                 self._raise(f"LLM '{llm.name}' has invalid provider '{llm.provider}'. "
                            f"Must be one of: {', '.join(valid_providers)}")
             
-            # Validate numeric parameters
-            if llm.temperature < 0 or llm.temperature > 2:
-                self._raise(f"LLM '{llm.name}' temperature must be between 0 and 2")
+            # Validate numeric parameters (optional)
+            if llm.temperature is not None:
+                if llm.temperature < 0 or llm.temperature > 2:
+                    self._raise(f"LLM '{llm.name}' temperature must be between 0 and 2")
             
-            if llm.max_tokens < 1:
-                self._raise(f"LLM '{llm.name}' max_tokens must be positive")
+            if llm.max_tokens is not None:
+                if llm.max_tokens < 1:
+                    self._raise(f"LLM '{llm.name}' max_tokens must be positive")
             
             if llm.top_p is not None and (llm.top_p < 0 or llm.top_p > 1):
                 self._raise(f"LLM '{llm.name}' top_p must be between 0 and 1")
