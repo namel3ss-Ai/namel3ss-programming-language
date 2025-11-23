@@ -5,6 +5,7 @@ This module provides a comprehensive exception hierarchy for CLI operations,
 with rich context, error codes, and user-friendly formatting.
 """
 
+import os
 import sys
 import traceback
 from typing import Any, Dict, Optional
@@ -311,6 +312,32 @@ def wrap_exception(
     return error_class(message, **kwargs)
 
 
+def _env_flag(name: str) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return False
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def cli_verbose_enabled(verbose_flag: bool = False) -> bool:
+    """
+    Determine whether verbose error output is enabled.
+    
+    Respects an explicit flag and the NAMEL3SS_VERBOSE/NAMEL3SS_DEBUG
+    environment variables.
+    """
+    return verbose_flag or _env_flag("NAMEL3SS_VERBOSE") or _env_flag("NAMEL3SS_DEBUG")
+
+
+def cli_reraise_enabled() -> bool:
+    """
+    Determine whether exceptions should be re-raised instead of exiting.
+    
+    Controlled by NAMEL3SS_RERAISE or NAMEL3SS_DEBUG environment variables.
+    """
+    return _env_flag("NAMEL3SS_RERAISE") or _env_flag("NAMEL3SS_DEBUG")
+
+
 def handle_cli_exception(
     exc: BaseException,
     *,
@@ -331,11 +358,17 @@ def handle_cli_exception(
     Note:
         This function calls sys.exit() and does not return.
     """
+    verbose_effective = cli_verbose_enabled(verbose)
+    if cli_reraise_enabled():
+        if verbose_effective:
+            raise
+        raise exc
+
     # Format and print error
     error_message = format_cli_error(
         exc,
-        verbose=verbose,
-        include_traceback=verbose
+        verbose=verbose_effective,
+        include_traceback=verbose_effective
     )
     print(error_message, file=sys.stderr)
     

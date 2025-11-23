@@ -114,7 +114,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
             print(json.dumps(result, indent=2))
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
 
 
 def cmd_eval_suite(args: argparse.Namespace) -> None:
@@ -336,4 +336,4 @@ def cmd_eval_suite(args: argparse.Namespace) -> None:
             ) from exc
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))

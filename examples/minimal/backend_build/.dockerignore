@@ -1,0 +1,15 @@
+__pycache__
+*.py[cod]
+*.log
+.git
+.github
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+node_modules
+frontend
+deploy/terraform/.terraform
+tmp_*
+tests
+*/__pycache__

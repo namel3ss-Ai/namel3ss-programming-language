@@ -1,69 +1,47 @@
-# Research Assistant
-# Multi-step research workflow with information gathering and synthesis
+# Research Assistant Example
 
 app "Research Assistant" {
-  description: "AI research assistant for information gathering and analysis"
+  description: "Multi-turn research assistant that can summarize and synthesize information."
 }
 
-# LLM for research tasks
-llm "research_model" {
+llm "research_llm" {
   provider: "openai"
-  model: "gpt-4o"
-  temperature: 0.2
+  model: "gpt-4o-mini"
+  temperature: 0.4
+  max_tokens: 1024
+
+  # Must be system_prompt
+  system_prompt: """
+  You are a meticulous research assistant.
+
+  - Ask clarifying questions when needed
+  - Keep track of the conversation so far
+  - Cite sources when they are provided
+  - Use bullet points and short paragraphs.
+  """
 }
 
-# Memory for research context
-memory "research_session" {
-  scope: "session"
-  kind: "conversation"
-  max_items: 30
-}
+prompt "research_answer" {
+  model: "research_llm"
 
-# Research planning prompt
-prompt "research_planner" {
-  model: "research_model"
   template: """
-You are a research planning expert. Create a structured research plan for this request.
+  User question:
+  {{question}}
 
-Research Request: {{research_question}}
-Available Resources: {{resources}}
+  Conversation so far:
+  {{history}}
 
-Create a research plan with:
-1. Key research objectives
-2. Information sources to investigate
-3. Specific questions to answer
-4. Expected deliverables
-5. Success criteria
-
-Provide a structured, actionable research plan.
-"""
+  Produce a concise, well-structured answer:
+  - Summarize key points
+  - List open questions
+  - Suggest next steps
+  """
 }
 
-# Information synthesis prompt
-prompt "synthesize_findings" {
-  model: "research_model"
-  template: """
-You are a research analyst. Synthesize the gathered information into a comprehensive report.
+agent "ResearchAgent" {
+  llm: "research_llm"
 
-Research Question: {{original_question}}
-Gathered Information: {{findings}}
-Sources: {{sources}}
-
-Provide a comprehensive research report with:
-1. Executive Summary
-2. Key Findings
-3. Supporting Evidence
-4. Conclusions and Recommendations
-5. Areas for Further Research
-
-Cite sources appropriately and maintain objectivity.
-"""
-}
-
-# Research assistant agent
-agent "researcher" {
-  description: "AI research assistant for comprehensive information analysis"
-  llm: "research_model"
-  memory: research_session
-  system: "You are a professional research analyst skilled at gathering, analyzing, and synthesizing information from multiple sources."
+  # For a research assistant, conversation history is important:
+  # choose between "conversation_window" or "full_history".
+  memory: "conversation_window"
 }

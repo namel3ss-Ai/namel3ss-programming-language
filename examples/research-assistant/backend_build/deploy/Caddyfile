@@ -1,0 +1,23 @@
+# Example Caddyfile for Research Assistant
+example.com {
+  encode gzip
+  log
+
+  @api {
+    path /api/* /metrics /healthz /readyz
+  }
+  reverse_proxy @api backend:8000
+
+  @ws {
+    path /ws/*
+  }
+  reverse_proxy @ws backend:8000 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+
+  handle /* {
+    root * /srv/frontend
+    file_server
+  }
+}

@@ -58,4 +58,4 @@ def cmd_doctor(args: argparse.Namespace) -> None:
             sys.exit(1)
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))

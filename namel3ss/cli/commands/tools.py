@@ -71,7 +71,7 @@ def cmd_test(args: argparse.Namespace) -> None:
         ctx.plugin_manager.emit_workspace(task="test", command=command, args=args)
         _invoke_tool(command, "test")
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
 
 
 def cmd_lint(args: argparse.Namespace) -> None:
@@ -101,7 +101,7 @@ def cmd_lint(args: argparse.Namespace) -> None:
         ctx.plugin_manager.emit_workspace(task="lint", command=command, args=args)
         _invoke_tool(command, "lint")
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
 
 
 def cmd_typecheck(args: argparse.Namespace) -> None:
@@ -131,7 +131,7 @@ def cmd_typecheck(args: argparse.Namespace) -> None:
         ctx.plugin_manager.emit_workspace(task="typecheck", command=command, args=args)
         _invoke_tool(command, "typecheck")
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
 
 
 def cmd_lsp(args: argparse.Namespace) -> None:
@@ -179,4 +179,4 @@ def cmd_lsp(args: argparse.Namespace) -> None:
             ) from exc
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))

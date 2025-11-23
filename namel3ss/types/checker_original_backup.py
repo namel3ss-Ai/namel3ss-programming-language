@@ -415,18 +415,29 @@ class AppTypeChecker:
             
             # Validate memory config
             if agent.memory_config:
-                policy = agent.memory_config.policy
-                if policy not in valid_memory_policies:
-                    self._raise(
-                        f"Agent '{agent.name}' has invalid memory policy '{policy}'",
-                        hint=f"Valid policies: {', '.join(valid_memory_policies)}"
-                    )
-                
-                if agent.memory_config.max_items is not None and agent.memory_config.max_items < 1:
-                    self._raise(f"Agent '{agent.name}' memory max_items must be positive")
-                
-                if agent.memory_config.window_size is not None and agent.memory_config.window_size < 1:
-                    self._raise(f"Agent '{agent.name}' memory window_size must be positive")
+                # Handle both string and MemoryConfig object cases
+                if isinstance(agent.memory_config, str):
+                    # Simple string policy
+                    policy = agent.memory_config
+                    if policy not in valid_memory_policies:
+                        self._raise(
+                            f"Agent '{agent.name}' has invalid memory policy '{policy}'",
+                            hint=f"Valid policies: {', '.join(valid_memory_policies)}"
+                        )
+                else:
+                    # MemoryConfig object
+                    policy = agent.memory_config.policy
+                    if policy not in valid_memory_policies:
+                        self._raise(
+                            f"Agent '{agent.name}' has invalid memory policy '{policy}'",
+                            hint=f"Valid policies: {', '.join(valid_memory_policies)}"
+                        )
+                    
+                    if agent.memory_config.max_items is not None and agent.memory_config.max_items < 1:
+                        self._raise(f"Agent '{agent.name}' memory max_items must be positive")
+                    
+                    if agent.memory_config.window_size is not None and agent.memory_config.window_size < 1:
+                        self._raise(f"Agent '{agent.name}' memory window_size must be positive")
             
             # Validate numeric parameters
             if agent.max_turns is not None and agent.max_turns < 1:

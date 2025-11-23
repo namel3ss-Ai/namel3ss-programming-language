@@ -19,7 +19,14 @@ from ..loader import load_program
 from ..parser import N3SyntaxError
 from ..resolver import ModuleResolutionError, resolve_program
 from ..types import N3TypeError
-from .errors import CLIError, CLIFileNotFoundError, CLIValidationError, format_cli_error
+from .errors import (
+    CLIError,
+    CLIFileNotFoundError,
+    CLIValidationError,
+    format_cli_error,
+    cli_verbose_enabled,
+    cli_reraise_enabled,
+)
 from .utils import get_program_root
 
 
@@ -70,18 +77,21 @@ def load_n3_app(source_path: Path) -> App:
         ) from exc
         
     except ModuleResolutionError as exc:
-        # Module resolution errors have custom formatting
-        print(format_cli_error(exc), file=sys.stderr)
+        if cli_reraise_enabled():
+            raise
+        print(format_cli_error(exc, include_traceback=cli_verbose_enabled(), verbose=cli_verbose_enabled()), file=sys.stderr)
         sys.exit(1)
         
     except N3SyntaxError as exc:
-        # Syntax errors have custom formatting
-        print(format_cli_error(exc), file=sys.stderr)
+        if cli_reraise_enabled():
+            raise
+        print(format_cli_error(exc, include_traceback=cli_verbose_enabled(), verbose=cli_verbose_enabled()), file=sys.stderr)
         sys.exit(1)
         
     except N3TypeError as exc:
-        # Type errors have custom formatting
-        print(format_cli_error(exc), file=sys.stderr)
+        if cli_reraise_enabled():
+            raise
+        print(format_cli_error(exc, include_traceback=cli_verbose_enabled(), verbose=cli_verbose_enabled()), file=sys.stderr)
         sys.exit(1)
 
 

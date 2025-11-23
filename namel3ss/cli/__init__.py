@@ -113,6 +113,11 @@ def main(argv: Optional[list] = None) -> None:
         help='Path to a namel3ss.toml configuration file'
     )
     parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Print full tracebacks and detailed CLI errors (or set NAMEL3SS_VERBOSE=1)'
+    )
+    parser.add_argument(
         '--workspace',
         default=str(workspace_root),
         help='Workspace root directory (defaults to current working directory)'
@@ -520,6 +525,7 @@ def main(argv: Optional[list] = None) -> None:
         config=config,
         plugin_manager=plugin_manager,
     )
+    args.verbose = getattr(args, "verbose", False)
     
     # Execute the command
     args.func(args)

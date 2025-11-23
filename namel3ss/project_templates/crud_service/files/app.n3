@@ -54,8 +54,8 @@ dataset {{ dataset_name }} {
         // Tags format validation
         rule "tags_alphanumeric" {
             field: tags
-            condition: all(tags, tag => tag.matches(/^[a-z0-9_-]+$/))
-            message: "Tags must contain only lowercase alphanumeric, hyphens, and underscores"
+            condition: all(tags, tag => tag.length > 0)
+            message: "Tags must be non-empty"
         }
     }
 }

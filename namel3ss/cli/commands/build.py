@@ -230,4 +230,4 @@ def cmd_build(args: argparse.Namespace) -> None:
         )
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
