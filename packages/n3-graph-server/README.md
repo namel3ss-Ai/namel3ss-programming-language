@@ -1,6 +1,6 @@
 # N3 Graph Server
 
-Backend server for the N3 Graph Editor. Parses `.n3` files using the Python N3 compiler and serves graph data via REST API. Also manages WebSocket connections for real-time collaborative editing.
+Backend server for the N3 Graph Editor. Parses `.ai` files using the Python N3 compiler and serves graph data via REST API. Also manages WebSocket connections for real-time collaborative editing.
 
 ## Features
 
@@ -8,7 +8,7 @@ Backend server for the N3 Graph Editor. Parses `.n3` files using the Python N3 c
 - **Graph Transformation**: Converts AST to graph structure (nodes + edges)
 - **REST API**: Serves graph data and file listings
 - **WebSocket Server**: Manages Yjs collaboration via y-websocket
-- **File Watching**: Detects changes to `.n3` files and notifies clients
+- **File Watching**: Detects changes to `.ai` files and notifies clients
 - **CORS Enabled**: Allows cross-origin requests from frontend
 
 ## Technology Stack
@@ -54,7 +54,7 @@ Set environment variables:
 
 ```bash
 PORT=3001                    # HTTP server port
-WORKSPACE_PATH=/path/to/n3   # Path to .n3 files workspace
+WORKSPACE_PATH=/path/to/n3   # Path to .ai files workspace
 ```
 
 Or create a `.env` file:
@@ -68,10 +68,10 @@ WORKSPACE_PATH=/Users/username/projects/n3-workspace
 
 ### GET `/api/parse`
 
-Parse a `.n3` file and return graph structure.
+Parse a `.ai` file and return graph structure.
 
 **Query Parameters:**
-- `file` (required): Relative or absolute path to `.n3` file
+- `file` (required): Relative or absolute path to `.ai` file
 
 **Response:**
 ```json
@@ -103,7 +103,7 @@ Parse a `.n3` file and return graph structure.
   },
   "module": {
     "type": "Module",
-    "path": "demo_app.n3",
+    "path": "demo_app.ai",
     "body": [ ... ]
   }
 }
@@ -111,7 +111,7 @@ Parse a `.n3` file and return graph structure.
 
 **Example:**
 ```bash
-curl "http://localhost:3001/api/parse?file=demo_app.n3"
+curl "http://localhost:3001/api/parse?file=demo_app.ai"
 ```
 
 ### POST `/api/parse`
@@ -122,7 +122,7 @@ Parse N3 source code without a file.
 ```json
 {
   "source": "app \"My App\"\n\nllm gpt4:\n  provider: openai\n  model: gpt-4",
-  "fileName": "source.n3"
+  "fileName": "source.ai"
 }
 ```
 
@@ -132,20 +132,20 @@ Parse N3 source code without a file.
 ```bash
 curl -X POST http://localhost:3001/api/parse \
   -H "Content-Type: application/json" \
-  -d '{"source": "app \"Test\"\n", "fileName": "test.n3"}'
+  -d '{"source": "app \"Test\"\n", "fileName": "test.ai"}'
 ```
 
 ### GET `/api/files`
 
-List all `.n3` files in the workspace.
+List all `.ai` files in the workspace.
 
 **Response:**
 ```json
 {
   "files": [
-    "demo_app.n3",
-    "examples/agent_example.n3",
-    "examples/rag_example.n3"
+    "demo_app.ai",
+    "examples/agent_example.ai",
+    "examples/rag_example.ai"
   ]
 }
 ```
@@ -157,12 +157,12 @@ curl http://localhost:3001/api/files
 
 ### POST `/api/save`
 
-Save graph changes back to `.n3` file (not yet implemented).
+Save graph changes back to `.ai` file (not yet implemented).
 
 **Body:**
 ```json
 {
-  "file": "demo_app.n3",
+  "file": "demo_app.ai",
   "graph": { ... }
 }
 ```
@@ -209,7 +209,7 @@ The server uses a Python bridge script (`parser-bridge.py`) to interface with th
 ### How it works:
 
 1. Node.js spawns a Python subprocess
-2. Passes `.n3` file path or source code via stdin
+2. Passes `.ai` file path or source code via stdin
 3. Python script imports `namel3ss.lang.grammar.parse_module`
 4. Parses the file and serializes AST to JSON
 5. Outputs JSON to stdout
@@ -219,10 +219,10 @@ The server uses a Python bridge script (`parser-bridge.py`) to interface with th
 
 ```bash
 # Parse a file
-python3 parser-bridge.py demo_app.n3
+python3 parser-bridge.py demo_app.ai
 
 # Parse from stdin
-echo 'app "Test"' | python3 parser-bridge.py --stdin test.n3
+echo 'app "Test"' | python3 parser-bridge.py --stdin test.ai
 ```
 
 ## Graph Transformation
@@ -261,7 +261,7 @@ Initial layout arranges nodes by type in columns:
 
 ## File Watching
 
-The server watches for changes to `.n3` files:
+The server watches for changes to `.ai` files:
 
 - Uses `chokidar` for cross-platform file watching
 - Clears cache when file changes

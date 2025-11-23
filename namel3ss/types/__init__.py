@@ -24,11 +24,16 @@ from .core import (
 )
 from .frame import FrameColumnType, N3FrameType
 from namel3ss.errors import N3TypeError
-from .checker import check_app, check_module
+from .checker import (
+    check_app, check_module,
+    check_app_with_stdlib, check_program_with_stdlib, check_module_with_stdlib,
+    check_app_enhanced, check_module_enhanced,
+    EnhancedAppTypeChecker
+)
 
 __all__ = [
 	"ANY_TYPE",
-	"AnyType",
+	"AnyType", 
 	"DatasetType",
 	"ExpressionType",
 	"FrameTypeRef",
@@ -52,5 +57,12 @@ __all__ = [
 	"check_app",
 	"check_module",
 	"N3TypeError",
+	# Standard library enhanced functions
+	"check_app_with_stdlib",
+	"check_program_with_stdlib", 
+	"check_module_with_stdlib",
+	"check_app_enhanced",
+	"check_module_enhanced", 
+	"EnhancedAppTypeChecker",
 ]
 

@@ -135,7 +135,7 @@ class CLIFileNotFoundError(CLIError):
     Required file or directory not found.
     
     Raised when:
-    - Source .n3 file doesn't exist
+    - Source .ai file doesn't exist
     - Configuration file is missing
     - Required directory is not present
     """

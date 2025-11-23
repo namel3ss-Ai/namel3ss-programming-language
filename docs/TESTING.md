@@ -20,7 +20,7 @@ This document describes the testing infrastructure for Namel3ss, covering all as
 
 The Namel3ss test suite ensures:
 
-- **Language correctness**: All `.n3` syntax compiles and resolves correctly
+- **Language correctness**: All `.ai` syntax compiles and resolves correctly
 - **Runtime behavior**: Generated backends respond with correct schemas and status codes
 - **AI features**: Structured prompts, chains, memory, and agents work as documented
 - **Error quality**: Developers receive clear, actionable error messages
@@ -90,7 +90,7 @@ pytest tests/test_memory_system.py::test_memory_registry_basic -v
 
 ### 1. Language Tests
 
-**Purpose**: Validate that `.n3` source files compile through the full pipeline without errors.
+**Purpose**: Validate that `.ai` source files compile through the full pipeline without errors.
 
 **Location**: `tests/test_language_integration.py`
 
@@ -98,16 +98,16 @@ pytest tests/test_memory_system.py::test_memory_registry_basic -v
 - Parsing: Syntax is correctly recognized and AST is built
 - Resolution: Symbols are resolved, types are checked, references are valid
 - Code generation: Backend and frontend are generated without errors
-- Examples: All `.n3` files in `examples/` compile successfully
+- Examples: All `.ai` files in `examples/` compile successfully
 
 **Example**:
 
 ```python
 def test_demo_app_compiles():
-    """Test that demo_app.n3 compiles through full pipeline."""
+    """Test that demo_app.ai compiles through full pipeline."""
     from namel3ss.loader import load_program, extract_single_app
     
-    program = load_program("demo_app.n3")
+    program = load_program("demo_app.ai")
     app = extract_single_app(program)
     
     assert app is not None
@@ -488,7 +488,7 @@ jobs:
 CI fails if:
 - Any test fails
 - Coverage drops below threshold (80%)
-- Any `.n3` example fails to compile
+- Any `.ai` example fails to compile
 - Linting errors are present (`ruff`, `mypy`)
 
 ---
@@ -532,7 +532,7 @@ tests/
 ├── test_loader.py                       # Module loading and discovery
 ├── test_resolver.py                     # Symbol resolution and type checking
 │
-├── test_language_integration.py         # End-to-end .n3 compilation tests
+├── test_language_integration.py         # End-to-end .ai compilation tests
 ├── test_backend_integration.py          # Generated backend endpoint tests
 ├── test_frontend_integration.py         # React frontend integration tests
 │

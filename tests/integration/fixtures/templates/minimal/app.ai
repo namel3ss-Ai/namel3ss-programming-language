@@ -1,0 +1,16 @@
+# Minimal app template for integration testing
+app "Test Minimal App" {
+    description: "Minimal application template for testing"
+}
+
+llm "main_llm" {
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    temperature: 0.7
+    max_tokens: 100
+}
+
+prompt "greeting" {
+    model: "main_llm"
+    template: "Hello, this is a test application!"
+}

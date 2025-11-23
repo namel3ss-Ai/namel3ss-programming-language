@@ -122,10 +122,10 @@ Use the CLI to build indices from your datasets:
 
 ```bash
 # Build a specific index
-namel3ss build-index app.n3 docs_index --verbose
+namel3ss build-index app.ai docs_index --verbose
 
 # Override the source dataset
-namel3ss build-index app.n3 docs_index --dataset alternative_docs
+namel3ss build-index app.ai docs_index --dataset alternative_docs
 ```
 
 The build process:
@@ -349,8 +349,8 @@ export OPENAI_API_KEY="your-key"
 export NAMEL3SS_PG_DSN="postgresql://user:pass@localhost/dbname"
 
 # Build the index
-namel3ss build-index app.n3 docs_index --verbose
+namel3ss build-index app.ai docs_index --verbose
 ```
 
-See `examples/rag_demo.n3` for the reference implementation.
+See `examples/rag_demo.ai` for the reference implementation.
 

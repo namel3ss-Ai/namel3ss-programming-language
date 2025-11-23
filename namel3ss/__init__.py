@@ -2,7 +2,7 @@
 Nameless (N3) programming language package.
 
 This package contains the core components required to parse a Namel3ss
-(`.n3`) file and generate a working application.  The language is a
+(`.ai`) file and generate a working application.  The language is a
 human‑friendly, declarative language designed for rapidly building
 internal tools, dashboards and full‑stack applications.  By writing in
 simple English‑like syntax, developers describe the structure of an

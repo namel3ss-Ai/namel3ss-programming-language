@@ -68,8 +68,8 @@ Run N3 workflows directly in your Python process:
 ```python
 from namel3ss_sdk import N3InProcessRuntime
 
-# Load .n3 file
-runtime = N3InProcessRuntime("./app.n3")
+# Load .ai file
+runtime = N3InProcessRuntime("./app.ai")
 
 # Execute chain
 result = runtime.chains.run("summarize", text="...")

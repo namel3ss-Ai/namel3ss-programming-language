@@ -28,7 +28,7 @@ def check_wheel_contents(wheel_path: Path) -> tuple[list[str], list[str]]:
         "namel3ss/project_templates/crud_service/files/README.md",
         "namel3ss/project_templates/crud_service/files/GETTING_STARTED.md",
         "namel3ss/project_templates/crud_service/files/AUTHENTICATION.md",
-        "namel3ss/project_templates/crud_service/files/app.n3",
+        "namel3ss/project_templates/crud_service/files/app.ai",
         "namel3ss/project_templates/crud_service/files/requirements.txt",
         "namel3ss/project_templates/crud_service/files/requirements-dev.txt",
         "namel3ss/project_templates/crud_service/files/pytest.ini",

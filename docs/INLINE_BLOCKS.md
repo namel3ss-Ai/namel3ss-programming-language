@@ -358,7 +358,7 @@ All inline blocks track source location for debugging:
 ```python
 inline_block.location
 # SourceLocation(
-#     file='app.n3',
+#     file='app.ai',
 #     line=42,
 #     column=5,
 #     end_line=48,

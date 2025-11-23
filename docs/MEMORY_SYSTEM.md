@@ -579,7 +579,7 @@ await append_memory("chat_history", {
 
 **Error**: `MemoryNotFoundError: Memory 'xyz' not found`
 
-**Solution**: Ensure memory is defined in your `.n3` file:
+**Solution**: Ensure memory is defined in your `.ai` file:
 
 ```n3
 memory "xyz" {

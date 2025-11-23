@@ -78,7 +78,7 @@ The API will be available at http://localhost:8000
 
 ```
 {{ project_name }}/
-├── app.n3                 # N3 DSL configuration (declarative)
+├── app.ai                 # N3 DSL configuration (declarative)
 ├── main.py                # FastAPI application entry point
 ├── n3_integration.py      # N3 runtime integration
 ├── requirements.txt       # Python dependencies
@@ -173,7 +173,7 @@ ENABLE_MULTI_TENANCY=false
 
 ### N3 Configuration
 
-The `app.n3` file provides declarative configuration:
+The `app.ai` file provides declarative configuration:
 
 ```n3
 dataset {{ dataset_name }} {

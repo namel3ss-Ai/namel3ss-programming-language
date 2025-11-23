@@ -8,6 +8,9 @@ if TYPE_CHECKING:
     from .helpers import _Line
 
 from namel3ss.ast import (
+    LogLevel,
+    LogStatement, 
+    Literal,
     Page,
     PageStatement,
     ShowChart,
@@ -65,6 +68,9 @@ class PagesParserMixin:
                 continue
             if stripped.startswith('for '):
                 statements.append(self._parse_for_loop(line, indent))
+                continue
+            if stripped.startswith('log '):
+                statements.append(self._parse_log_statement(line))
                 continue
             self._unsupported(line, "page statement")
         return statements
@@ -176,6 +182,58 @@ class PagesParserMixin:
             entries[key] = value
             self._advance()
         return entries
+
+    def _parse_log_statement(self, line: _Line) -> LogStatement:
+        """Parse log statement: log [level] "message" """
+        from namel3ss.ast.source_location import SourceLocation
+        
+        stripped = line.text.strip()
+        
+        # Pattern for log statement with optional level
+        # Matches: log "message" OR log info "message" OR log error "message"
+        match = re.match(
+            r'^log(?:\s+(debug|info|warn|error))?\s+"([^"]*)"$',
+            stripped,
+        )
+        
+        if not match:
+            raise self._error(
+                'Expected: log "message" or log level "message" where level is debug|info|warn|error',
+                line
+            )
+        
+        level_str = match.group(1)
+        message_text = match.group(2)
+        
+        # Default to info level if not specified
+        if level_str is None:
+            level = LogLevel.INFO
+        else:
+            try:
+                level = LogLevel(level_str)
+            except ValueError:
+                raise self._error(
+                    f'Invalid log level "{level_str}". Valid levels: debug, info, warn, error',
+                    line
+                )
+        
+        # For now, treat message as a literal string
+        # TODO: Support interpolated expressions like "Score: {{score}}"
+        message = Literal(message_text)
+        
+        # Create source location for error reporting
+        source_location = SourceLocation(
+            file=getattr(self, '_source_path', '<unknown>'),
+            line=line.number,
+            column=0
+        )
+        
+        self._advance()
+        return LogStatement(
+            level=level,
+            message=message,
+            source_location=source_location
+        )
 
 
 __all__ = ['PagesParserMixin']

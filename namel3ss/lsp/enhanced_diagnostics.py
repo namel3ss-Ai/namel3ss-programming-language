@@ -212,13 +212,68 @@ def enhance_document_diagnostics(document_state) -> None:
     original_rebuild = document_state.rebuild
     
     def enhanced_rebuild():
-        """Enhanced rebuild that includes legacy syntax warnings."""
+        """Enhanced rebuild that includes legacy syntax warnings and semantic analysis."""
         # Run original rebuild
         original_rebuild()
         
         # Add legacy syntax warnings
         legacy_warnings = enhanced_provider.check_for_legacy_syntax_warnings(document_state.text)
         document_state.diagnostics.extend(legacy_warnings)
+        
+        # Add semantic lint findings
+        try:
+            from namel3ss.linter import SemanticLinter, get_default_rules
+            from lsprotocol.types import DiagnosticSeverity as LspSeverity
+            
+            linter = SemanticLinter(get_default_rules())
+            result = linter.lint_document(document_state.text, document_state.uri)
+            
+            if result.success():  # Only add findings if linting succeeded
+                for finding in result.findings:
+                    # Map linter severity to LSP severity
+                    lsp_severity = LspSeverity.Error
+                    if finding.severity.value == "warning":
+                        lsp_severity = LspSeverity.Warning
+                    elif finding.severity.value == "info":
+                        lsp_severity = LspSeverity.Information
+                    elif finding.severity.value == "hint":
+                        lsp_severity = LspSeverity.Hint
+                    
+                    # Create diagnostic from finding
+                    line = max((finding.line or 1) - 1, 0)
+                    start_char = finding.column or 0
+                    end_char = start_char + 1  # Default range
+                    
+                    # Try to get better range from context
+                    lines = document_state.text.splitlines()
+                    if line < len(lines) and finding.code_context:
+                        line_text = lines[line]
+                        context_pos = line_text.find(finding.code_context.strip())
+                        if context_pos >= 0:
+                            start_char = context_pos
+                            end_char = context_pos + len(finding.code_context.strip())
+                    
+                    diagnostic = Diagnostic(
+                        range=Range(
+                            start=Position(line=line, character=start_char),
+                            end=Position(line=line, character=end_char)
+                        ),
+                        message=finding.message,
+                        severity=lsp_severity,
+                        source="namel3ss-semantic",
+                        code=finding.rule_id
+                    )
+                    
+                    document_state.diagnostics.append(diagnostic)
+        
+        except ImportError:
+            # Semantic linter not available, skip
+            pass
+        except Exception as exc:
+            # Log error but don't fail diagnostics
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Semantic linting failed: {exc}")
     
     # Replace rebuild method  
     document_state.rebuild = enhanced_rebuild

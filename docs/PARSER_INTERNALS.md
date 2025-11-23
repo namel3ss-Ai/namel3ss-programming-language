@@ -414,7 +414,7 @@ class N3TypeError(N3Error):
 
 #### Format
 ```
-File: demo_app.n3
+File: demo_app.ai
 Line 6:3 | [SYNTAX_ERROR] Unexpected token
 Expected: identifier
 Found: filter
@@ -615,9 +615,9 @@ Test complete N3 files:
 
 ```python
 @pytest.mark.parametrize("example", [
-    "demo_app.n3",
-    "rag_demo.n3",
-    "provider_demo.n3"
+    "demo_app.ai",
+    "rag_demo.ai",
+    "provider_demo.ai"
 ])
 def test_official_examples(example):
     """Test all official examples parse successfully."""

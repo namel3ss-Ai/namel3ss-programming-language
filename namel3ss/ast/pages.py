@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Literal, Union, TYPE_CHECKING, Set
 
-from .base import Expression
+from .base import Expression, LogStatement
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from .models import InferenceTarget
@@ -236,6 +236,7 @@ PageStatement = Union[
     PredictStatement,
     BreakStatement,
     ContinueStatement,
+    LogStatement,
 ]
 
 
@@ -267,4 +268,5 @@ __all__ = [
     "ActionOperation",
     "ActionOperationType",
     "PageStatement",
+    "LogStatement",
 ]

@@ -1,0 +1,13 @@
+[workspace]
+name = "simple-package-example"
+description = "Basic package example demonstrating core concepts"
+
+# Look for packages in the packages directory
+package_paths = ["packages"]
+
+# Modules can be in the root or src directory  
+module_paths = [".", "src"]
+
+[workspace.settings]
+default_llm_provider = "openai"
+enable_type_checking = true

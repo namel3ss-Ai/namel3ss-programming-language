@@ -126,7 +126,7 @@ async def build_rag_index(
     Build a RAG index from a dataset.
     
     Args:
-        source_file: Path to .n3 file
+        source_file: Path to .ai file
         index_name: Name of the index to build
         dataset_name: Override source dataset (optional)
         verbose: Print detailed progress

@@ -4,7 +4,15 @@ import re
 
 from typing import Optional
 
-from namel3ss.ast import LayoutMeta, Page, PageStatement, RefreshPolicy
+from namel3ss.ast import (
+    LayoutMeta,
+    Literal, 
+    LogLevel,
+    LogStatement,
+    Page,
+    PageStatement, 
+    RefreshPolicy,
+)
 from namel3ss.lang import (
     PAGE_STATEMENT_KEYWORDS,
     suggest_keyword,
@@ -329,13 +337,17 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
         # Action handler
         if stripped.startswith('action '):
             return self._parse_action(line, parent_indent)
+            
+        # Log statement
+        if stripped.startswith('log '):
+            return self._parse_log_statement(line, line_no)
         
         # Unknown statement - provide helpful suggestion
         first_word = stripped.split()[0] if stripped.split() else stripped
         suggestion = suggest_keyword(first_word, 'page-statement')
         
         valid_keywords = ', '.join(sorted([
-            'set', 'show', 'if', 'for', 'while', 'break', 'continue', 'predict', 'action'
+            'set', 'show', 'if', 'for', 'while', 'break', 'continue', 'predict', 'action', 'log'
         ]))
         
         error_msg = f"Unknown page statement: '{first_word}'"
@@ -345,4 +357,82 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
             hint = f"Valid page statement keywords: {valid_keywords}"
         
         raise self._error(error_msg, line_no, line, hint=hint)
+
+    def _parse_log_statement(self, line: str, line_no: int) -> LogStatement:
+        """
+        Parse log statement: log [level] "message"
+        
+        Supported forms:
+        - log "message"              # defaults to info level
+        - log info "message"         # explicit level
+        - log debug "debug info"     # debug level (only shown with --log-level debug)
+        - log warn "warning msg"     # warning level
+        - log error "error msg"      # error level
+        
+        Future: will support interpolation like log info "Score: {{score}}"
+        
+        Args:
+            line: Source line containing log statement
+            line_no: Line number for error reporting
+            
+        Returns:
+            LogStatement: Parsed log statement AST node
+            
+        Raises:
+            N3SyntaxError: On syntax errors
+        """
+        from namel3ss.ast.source_location import SourceLocation
+        
+        stripped = line.strip()
+        
+        # Pattern for log statement with optional level
+        # Matches: log "message" OR log level "message"
+        match = re.match(
+            r'^log(?:\s+(debug|info|warn|error))?\s+"([^"]*)"$',
+            stripped,
+        )
+        
+        if not match:
+            # Better error message with examples
+            raise self._error(
+                'Invalid log statement syntax',
+                line_no,
+                line,
+                hint='Expected: log "message" or log level "message" (levels: debug, info, warn, error)'
+            )
+        
+        level_str = match.group(1)
+        message_text = match.group(2)
+        
+        # Default to info level if not specified
+        if level_str is None:
+            level = LogLevel.INFO
+        else:
+            try:
+                level = LogLevel(level_str)
+            except ValueError:
+                # This shouldn't happen due to regex, but defensive programming
+                raise self._error(
+                    f'Invalid log level "{level_str}"',
+                    line_no,
+                    line,
+                    hint='Valid log levels: debug, info, warn, error'
+                )
+        
+        # For now, treat message as a literal string
+        # TODO: Support interpolated expressions like "Score: {{score}}"
+        message = Literal(message_text)
+        
+        # Create source location for error reporting and debugging
+        source_location = SourceLocation(
+            file=getattr(self, 'path', '<unknown>'),
+            line=line_no,
+            column=0
+        )
+        
+        return LogStatement(
+            level=level,
+            message=message,
+            source_location=source_location
+        )
 

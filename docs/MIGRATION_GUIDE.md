@@ -364,13 +364,13 @@ def migrate_file(content: str) -> str:
 
 def migrate_directory(path: Path):
     """Migrate all N3 files in directory."""
-    for file in path.rglob("*.n3"):
+    for file in path.rglob("*.ai"):
         print(f"Migrating {file}...")
         content = file.read_text()
         migrated = migrate_file(content)
         
         # Backup original
-        backup = file.with_suffix('.n3.bak')
+        backup = file.with_suffix('.ai.bak')
         file.rename(backup)
         
         # Write migrated version
@@ -469,8 +469,8 @@ After migration, validate your N3 files:
 python -c "
 from namel3ss.lang.parser import parse_module
 
-with open('your_file.n3') as f:
-    module = parse_module(f.read(), 'your_file.n3')
+with open('your_file.ai') as f:
+    module = parse_module(f.read(), 'your_file.ai')
     print('✓ Syntax valid!')
 "
 

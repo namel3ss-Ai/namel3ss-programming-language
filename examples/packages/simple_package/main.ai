@@ -1,0 +1,33 @@
+module main
+
+# Import from our local package
+use example.utils::validation
+use example.utils::formatting as fmt
+
+app "SimpleApp" {
+    name: "Simple Package Example"
+    description: "Demonstrates basic package usage"
+    version: "1.0.0"
+}
+
+llm "main_model" {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.3
+}
+
+prompt "welcome_user" {
+    template: "Welcome to our application, {{user_name}}!"
+}
+
+prompt "process_data" {
+    template: "Processing data: {{data}} using validation and formatting utilities"
+}
+
+workflow "user_onboarding" {
+    steps: [
+        "validate_user_input",
+        "format_welcome_message", 
+        "send_welcome"
+    ]
+}

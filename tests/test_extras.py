@@ -226,7 +226,7 @@ class TestObservabilityExtras:
             assert span is not None
 
 
-class TestExtrasCombinat ions:
+class TestExtrasCombinations:
     """Test combinations of extras work together."""
     
     @pytest.mark.skipif(

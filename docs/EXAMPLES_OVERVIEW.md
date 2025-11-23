@@ -13,7 +13,7 @@ All examples follow production patterns with:
 
 ## 📋 Available Examples
 
-### 1. Minimal Application (`minimal.n3`)
+### 1. Minimal Application (`minimal.ai`)
 **Purpose**: Basic N3 application structure  
 **Demonstrates**: Core language constructs, LLM configuration, simple prompts
 
@@ -24,13 +24,13 @@ All examples follow production patterns with:
 
 **Build & Run**:
 ```bash
-namel3ss build examples/minimal.n3
-namel3ss run examples/minimal.n3
+namel3ss build examples/minimal.ai
+namel3ss run examples/minimal.ai
 ```
 
 ---
 
-### 2. Content Analyzer (`content_analyzer.n3`)
+### 2. Content Analyzer (`content_analyzer.ai`)
 **Purpose**: AI-powered content analysis and categorization  
 **Demonstrates**: Structured analysis, sentiment detection, entity extraction
 
@@ -48,13 +48,13 @@ namel3ss run examples/minimal.n3
 
 **Build & Run**:
 ```bash
-namel3ss build examples/content_analyzer.n3
-namel3ss run examples/content_analyzer.n3
+namel3ss build examples/content_analyzer.ai
+namel3ss run examples/content_analyzer.ai
 ```
 
 ---
 
-### 3. Research Assistant (`research_assistant.n3`)
+### 3. Research Assistant (`research_assistant.ai`)
 **Purpose**: Multi-step research workflow with information synthesis  
 **Demonstrates**: Research planning, information gathering, synthesis workflows
 
@@ -72,8 +72,8 @@ namel3ss run examples/content_analyzer.n3
 
 **Build & Run**:
 ```bash
-namel3ss build examples/research_assistant.n3
-namel3ss run examples/research_assistant.n3
+namel3ss build examples/research_assistant.ai
+namel3ss run examples/research_assistant.ai
 ```
 
 ---
@@ -104,11 +104,11 @@ Ensure your Namel3ss installation includes:
 2. **Set up environment variables** for the required AI providers
 3. **Build the application**:
    ```bash
-   namel3ss build examples/[example-name].n3
+   namel3ss build examples/[example-name].ai
    ```
 4. **Run the application**:
    ```bash
-   namel3ss run examples/[example-name].n3
+   namel3ss run examples/[example-name].ai
    ```
 
 ## 🧪 Testing Examples
@@ -117,13 +117,13 @@ To validate example functionality:
 
 ```bash
 # Test compilation of all examples
-for example in examples/*.n3; do
+for example in examples/*.ai; do
   echo "Testing $example..."
   namel3ss build "$example" || echo "❌ Build failed for $example"
 done
 
 # Run specific example tests (if available)
-namel3ss test examples/content_analyzer.n3
+namel3ss test examples/content_analyzer.ai
 ```
 
 ## 📚 Example Patterns

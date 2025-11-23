@@ -1,0 +1,161 @@
+module ticket_management
+
+use company.core::authentication
+use company.core::logging
+use database.connector::tickets_db
+
+# Ticket creation with AI categorization
+prompt "create_ticket" {
+    template: """
+    Create a support ticket with the following information:
+    
+    Customer: {{customer_id}} ({{customer_name}})
+    Issue: {{issue_description}}
+    Channel: {{contact_channel}}
+    Urgency: {{urgency_level}}
+    
+    Automatically categorize this ticket and assign:
+    - Category (technical, billing, general, etc.)
+    - Priority (low, medium, high, critical)
+    - Estimated resolution time
+    - Recommended assignee or team
+    
+    Provide reasoning for categorization decisions.
+    """
+}
+
+# Ticket status updates with AI insights
+prompt "update_ticket_status" {
+    template: """
+    Update ticket #{{ticket_id}} status:
+    
+    Current Status: {{current_status}}
+    New Status: {{new_status}}
+    Agent: {{agent_id}}
+    Update Notes: {{update_notes}}
+    Time Spent: {{time_spent}}
+    
+    Generate:
+    - Customer notification message
+    - Internal status summary
+    - Next action recommendations
+    - If escalation might be needed
+    """
+}
+
+# Intelligent ticket assignment
+prompt "assign_ticket" {
+    template: """
+    Assign ticket #{{ticket_id}} to the best available agent:
+    
+    Ticket Details:
+    - Category: {{category}}
+    - Priority: {{priority}}
+    - Customer Tier: {{customer_tier}}
+    - Complexity: {{complexity_score}}
+    
+    Available Agents:
+    {{#each available_agents}}
+    - {{name}}: Skills={{skills}}, Workload={{current_workload}}, Rating={{rating}}
+    {{/each}}
+    
+    Recommend:
+    - Best agent for assignment
+    - Reasoning for selection
+    - Expected resolution timeline
+    """
+}
+
+# Ticket resolution suggestions
+prompt "suggest_resolution" {
+    template: """
+    Analyze ticket #{{ticket_id}} and suggest resolution:
+    
+    Issue: {{issue_summary}}
+    Customer History: {{customer_history}}
+    Previous Similar Cases: {{similar_cases}}
+    Available Resources: {{knowledge_base_results}}
+    
+    Provide:
+    - Step-by-step resolution plan
+    - Knowledge base articles to reference
+    - Potential complications to watch for
+    - Success criteria
+    """
+}
+
+# Ticket database operations
+tool "ticket_db" {
+    type: "database"
+    description: "Ticket management database operations"
+    connection: "tickets_db"
+    
+    operations: [
+        "create_ticket",
+        "update_ticket",
+        "search_tickets",
+        "get_ticket_history",
+        "bulk_update"
+    ]
+}
+
+# SLA monitoring tool
+tool "sla_monitor" {
+    type: "monitoring"
+    description: "Track SLA compliance for tickets"
+    
+    config: {
+        "sla_targets": {
+            "response_time": "2 hours",
+            "resolution_time": "24 hours",
+            "customer_satisfaction": 4.5
+        },
+        "escalation_thresholds": {
+            "overdue_response": "30 minutes",
+            "overdue_resolution": "4 hours"
+        }
+    }
+}
+
+# Workflow for complete ticket lifecycle
+workflow "ticket_lifecycle" {
+    description: "Complete ticket management from creation to resolution"
+    
+    steps: [
+        {
+            name: "intake",
+            description: "Receive and validate ticket information",
+            actions: ["validate_customer", "capture_issue"]
+        },
+        {
+            name: "categorize",
+            description: "AI-powered ticket categorization", 
+            actions: ["analyze_issue", "assign_category", "set_priority"]
+        },
+        {
+            name: "assign",
+            description: "Route to appropriate agent",
+            actions: ["find_best_agent", "assign_ticket", "notify_agent"]
+        },
+        {
+            name: "resolve",
+            description: "Work toward resolution",
+            actions: ["investigate", "apply_solution", "test_resolution"]
+        },
+        {
+            name: "close",
+            description: "Complete ticket and gather feedback",
+            actions: ["confirm_resolution", "collect_feedback", "update_knowledge"]
+        }
+    ]
+}
+
+export {
+    "create_ticket",
+    "update_ticket_status",
+    "assign_ticket",
+    "suggest_resolution",
+    "ticket_db",
+    "sla_monitor",
+    "ticket_lifecycle"
+}

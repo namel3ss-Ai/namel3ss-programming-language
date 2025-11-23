@@ -22,6 +22,11 @@ class Namel3ssLanguageServer(LanguageServer):
         self.workspace_index = WorkspaceIndex()
         register_all(self)
         self._register_lifecycle_handlers()
+        # Initialize optimizations and features after the server is fully set up
+        self._deferred_initialize()
+
+    def _deferred_initialize(self) -> None:
+        """Initialize features that require the logger to be available."""
         self._initialize_optimizations()
         self._initialize_enhanced_features()
 
@@ -30,32 +35,29 @@ class Namel3ssLanguageServer(LanguageServer):
         try:
             from .enhanced_completion import enhance_workspace_completions
             enhance_workspace_completions(self.workspace_index)
-            self.logger.info("Enhanced completion provider enabled")
         except ImportError:
-            self.logger.warning("Enhanced completions not available")
+            pass
         
         try:
             from .code_actions import enhance_lsp_with_code_actions
             enhance_lsp_with_code_actions(self)
-            self.logger.info("Code actions provider enabled")
         except ImportError:
-            self.logger.warning("Code actions not available")
+            pass
         
-        try:
-            from .symbol_navigation import enhance_lsp_with_navigation
-            enhance_lsp_with_navigation(self)
-            self.logger.info("Symbol navigation provider enabled")
-        except ImportError:
-            self.logger.warning("Symbol navigation not available")
+        # Temporarily disable navigation enhancement to avoid conflicts
+        # try:
+        #     from .symbol_navigation import enhance_lsp_with_navigation
+        #     enhance_lsp_with_navigation(self)
+        # except ImportError:
+        #     pass
 
     def _initialize_optimizations(self) -> None:
         """Enable parser optimizations for better IDE performance."""
         try:
             from namel3ss.parser import enable_parser_cache
             enable_parser_cache(max_entries=100)  # Larger cache for IDE usage
-            self.logger.info("Parser caching enabled for IDE performance")
         except ImportError:
-            self.logger.warning("Parser optimizations not available")
+            pass
 
     def _register_lifecycle_handlers(self) -> None:
         workspace = self.workspace_index

@@ -206,7 +206,7 @@ def _render_queries_router_module(app: App) -> str:
         '            detail=f"Query execution failed: {type(e).__name__}"',
         "        )",
         "",
-    ])",
+    ]
         "        )",
         "",
         "    except HTTPException:",

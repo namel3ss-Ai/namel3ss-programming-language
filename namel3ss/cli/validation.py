@@ -282,9 +282,9 @@ def normalize_run_command_args(argv: List[str]) -> List[str]:
     Normalize 'run' command arguments for natural language syntax.
     
     Handles syntax like:
-    - n3 run app.n3 using prod
-    - n3 run app.n3 in development
-    - n3 run app.n3 on local
+    - n3 run app.ai using prod
+    - n3 run app.ai in development
+    - n3 run app.ai on local
     
     Converts prepositions to standard --env flag format.
     
@@ -295,10 +295,10 @@ def normalize_run_command_args(argv: List[str]) -> List[str]:
         Normalized arguments with --env flags
     
     Examples:
-        >>> normalize_run_command_args(['run', 'app.n3', 'using', 'prod'])
-        ['run', 'app.n3', '--env', 'prod']
-        >>> normalize_run_command_args(['run', 'app.n3', 'in', 'dev'])
-        ['run', 'app.n3', '--env', 'dev']
+        >>> normalize_run_command_args(['run', 'app.ai', 'using', 'prod'])
+        ['run', 'app.ai', '--env', 'prod']
+        >>> normalize_run_command_args(['run', 'app.ai', 'in', 'dev'])
+        ['run', 'app.ai', '--env', 'dev']
     """
     if not argv or argv[0] != 'run':
         return argv

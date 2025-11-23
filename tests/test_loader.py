@@ -17,7 +17,7 @@ def _write_app(path: Path, name: str) -> None:
 
 
 def test_load_program_from_file(tmp_path: Path) -> None:
-    source = tmp_path / "test_app.n3"
+    source = tmp_path / "test_app.ai"
     _write_app(source, "Test App")
 
     program = load_program(source)
@@ -34,8 +34,8 @@ def test_load_program_from_file(tmp_path: Path) -> None:
 
 
 def test_load_program_from_directory(tmp_path: Path) -> None:
-    first = tmp_path / "first.n3"
-    second = tmp_path / "nested" / "second.n3"
+    first = tmp_path / "first.ai"
+    second = tmp_path / "nested" / "second.ai"
     second.parent.mkdir(parents=True, exist_ok=True)
     _write_app(first, "First")
     _write_app(second, "Second")
@@ -51,8 +51,8 @@ def test_load_program_from_directory(tmp_path: Path) -> None:
 
 
 def test_extract_single_app_errors_for_multiple_modules(tmp_path: Path) -> None:
-    first = tmp_path / "one.n3"
-    second = tmp_path / "two.n3"
+    first = tmp_path / "one.ai"
+    second = tmp_path / "two.ai"
     second.parent.mkdir(parents=True, exist_ok=True)
     _write_app(first, "One")
     _write_app(second, "Two")
@@ -63,7 +63,7 @@ def test_extract_single_app_errors_for_multiple_modules(tmp_path: Path) -> None:
 
 
 def test_load_program_preserves_module_metadata(tmp_path: Path) -> None:
-    source = tmp_path / "module_app.n3"
+    source = tmp_path / "module_app.ai"
     source.write_text(
         'module my_app.billing\n'
         'import lib.tools as tools\n'
@@ -93,7 +93,7 @@ def test_load_program_preserves_module_metadata(tmp_path: Path) -> None:
 
 
 def test_resolve_program_derives_app_from_single_file(tmp_path: Path) -> None:
-    source = tmp_path / "app.n3"
+    source = tmp_path / "app.ai"
     _write_app(source, "Root App")
 
     program = load_program(source)

@@ -13,6 +13,7 @@ from namel3ss.ast import (
     ChainStep,
     ForLoop,
     IfBlock,
+    LogStatement,
     Page,
     RunChainOperation,
     RunPromptOperation,
@@ -109,6 +110,10 @@ class EffectAnalyzer:
                 self._analyze_action(page, statement)
             elif isinstance(statement, ShowForm):
                 self._analyze_form(page, statement)
+            elif isinstance(statement, LogStatement):
+                # Log statements are side effects but are generally benign
+                # They don't require special effect validation
+                pass  
             elif isinstance(statement, IfBlock):
                 self._visit_statements(page, statement.body)
                 for branch in statement.elifs:

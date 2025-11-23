@@ -1,6 +1,6 @@
 # Namel3ss Language Documentation
 
-**Namel3ss (N3)** is an AI programming language that compiles declarative `.n3` source files into full-stack applications with React/Vite frontends and FastAPI backends.
+**Namel3ss (N3)** is an AI programming language that compiles declarative `.ai` source files into full-stack applications with React/Vite frontends and FastAPI backends.
 
 This documentation provides comprehensive coverage of the language, its features, runtime behavior, and development workflow.
 
@@ -67,7 +67,7 @@ This documentation provides comprehensive coverage of the language, its features
 ### 5. Testing & Quality
 
 - **[Testing Guide](TESTING.md)** - Running tests, writing new tests, and test organization
-- **[Language Tests](TESTING.md#language-tests)** - Testing .n3 compilation pipeline
+- **[Language Tests](TESTING.md#language-tests)** - Testing .ai compilation pipeline
 - **[Backend Tests](TESTING.md#backend-tests)** - API endpoint validation
 - **[Frontend Tests](TESTING.md#frontend-tests)** - Component and integration testing
 - **[AI Feature Tests](TESTING.md#ai-tests)** - Structured prompts, chains, and validation

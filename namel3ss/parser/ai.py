@@ -1,4 +1,4 @@
-﻿"""
+"""
 Backward compatibility wrapper for AIParserMixin.
 
 The original 2,202-line AIParserMixin has been refactored into a modular

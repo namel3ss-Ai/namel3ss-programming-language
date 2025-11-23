@@ -1,0 +1,12 @@
+app "Test Dashboard" connects to postgres "LSP_DB".
+
+dataset "orders" from table warehouse.orders:
+  filter by: status == "READY"
+
+frame "orders_summary" from dataset "orders":
+  columns: id, customer_id, status, total
+
+page "Home" at "/":
+  show text "Orders"
+  show table "Recent" from dataset orders
+  show text "Status {orders_summary.status}"

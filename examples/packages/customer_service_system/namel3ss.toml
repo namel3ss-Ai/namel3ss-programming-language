@@ -1,0 +1,32 @@
+[workspace]
+name = "customer-service-system"
+description = "AI-powered customer service system with multiple packages"
+version = "2.0.0"
+
+# Application modules
+module_paths = [
+    "apps",
+    "services",
+    "workflows"
+]
+
+# Package discovery paths
+package_paths = [
+    "packages",      # Internal packages
+    "vendor",        # External packages
+    "integrations"   # Third-party integrations
+]
+
+# Workspace-level dependencies
+[dependencies]
+"company.core" = ">=2.1.0"
+"external.chat_api" = "^1.5.0"
+
+[dev-dependencies]
+"testing.framework" = ">=1.0.0"
+
+[workspace.settings]
+default_llm_provider = "openai"
+enable_type_checking = true
+max_module_depth = 5
+package_discovery_timeout = 60

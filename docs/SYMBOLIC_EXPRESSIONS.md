@@ -418,7 +418,7 @@ Per-app:
 ```toml
 [[apps]]
 name = "my_app"
-file = "app.n3"
+file = "app.ai"
 expr_max_depth = 100
 expr_max_steps = 20000
 ```
@@ -584,10 +584,10 @@ All existing N3 applications continue to work without modification. Symbolic exp
 ## Examples
 
 See `examples/` directory for complete applications:
-- `examples/symbolic_functions.n3` - Function examples
-- `examples/pattern_matching.n3` - Pattern matching showcase
-- `examples/rules_logic.n3` - Rule-based reasoning
-- `examples/higher_order.n3` - Functional programming patterns
+- `examples/symbolic_functions.ai` - Function examples
+- `examples/pattern_matching.ai` - Pattern matching showcase
+- `examples/rules_logic.ai` - Rule-based reasoning
+- `examples/higher_order.ai` - Functional programming patterns
 
 ## Troubleshooting
 

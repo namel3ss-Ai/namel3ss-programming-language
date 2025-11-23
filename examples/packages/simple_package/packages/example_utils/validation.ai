@@ -1,0 +1,54 @@
+module validation
+
+# Email validation prompt
+prompt "validate_email" {
+    template: """
+    Validate this email address: {{email}}
+    
+    Return true if valid, false if invalid.
+    Check for:
+    - Proper format (user@domain.com)
+    - Valid domain
+    - No invalid characters
+    """
+}
+
+# General input validation prompt
+prompt "validate_input" {
+    template: """
+    Validate the following input against the given rules:
+    
+    Input: {{input}}
+    Rules: {{rules}}
+    
+    Provide validation result and error messages if any.
+    """
+}
+
+# Phone number validation
+prompt "validate_phone" {
+    template: """
+    Validate this phone number: {{phone}}
+    
+    Check format and return standardized version.
+    Support formats: +1-555-123-4567, (555) 123-4567, 555.123.4567
+    """
+}
+
+# URL validation tool
+tool "url_validator" {
+    type: "validation"
+    description: "Validates URL format and accessibility"
+    config: {
+        "check_reachability": true,
+        "allowed_schemes": ["http", "https"]
+    }
+}
+
+# Export validation functions for use by other modules
+export {
+    "validate_email",
+    "validate_input", 
+    "validate_phone",
+    "url_validator"
+}

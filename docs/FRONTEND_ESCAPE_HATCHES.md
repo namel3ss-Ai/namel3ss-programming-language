@@ -276,7 +276,7 @@ export class N3ToolRegistry {
 
 **N3 Workflow:**
 ```python
-# approval_workflow.n3
+# approval_workflow.ai
 workflow PaymentApproval {
   steps: [
     {
@@ -448,7 +448,7 @@ export default function RootLayout({ children }) {
 
 **N3 Workflow:**
 ```python
-# document_verification.n3
+# document_verification.ai
 workflow DocumentVerification {
   steps: [
     {
@@ -673,7 +673,7 @@ export function N3FileUploadContainer() {
 
 **N3 Workflow:**
 ```python
-# background_sync.n3
+# background_sync.ai
 workflow BackgroundSync {
   steps: [
     {
@@ -1415,7 +1415,7 @@ Workflows that need access to browser-only APIs (camera, geolocation, clipboard,
 
 **N3 Workflow:**
 ```python
-# id_verification.n3
+# id_verification.ai
 workflow IDVerification {
   steps: [
     {
@@ -1678,7 +1678,7 @@ export function N3CameraContainer() {
 
 **N3 Workflow:**
 ```python
-# store_finder.n3
+# store_finder.ai
 workflow StoreFinder {
   steps: [
     {
@@ -1835,7 +1835,7 @@ export function GeolocationIndicator() {
 
 **N3 Workflow:**
 ```python
-# api_key_generation.n3
+# api_key_generation.ai
 workflow GenerateAPIKey {
   steps: [
     {
@@ -1922,7 +1922,7 @@ export const useClipboardTool = (): UITool => {
 
 **N3 Workflow:**
 ```python
-# background_report.n3
+# background_report.ai
 workflow GenerateReport {
   steps: [
     {
@@ -2052,7 +2052,7 @@ export function useNotificationClickHandler() {
 
 **N3 Workflow:**
 ```python
-# video_streaming.n3
+# video_streaming.ai
 workflow VideoStream {
   steps: [
     {
@@ -2233,7 +2233,7 @@ Workflows often need to control frontend navigation (redirect to success page, o
 
 **N3 Workflow:**
 ```python
-# payment_workflow.n3
+# payment_workflow.ai
 workflow ProcessPayment {
   steps: [
     {
@@ -2358,7 +2358,7 @@ export const useNavigationToolReactRouter = (): UITool => {
 
 **N3 Workflow:**
 ```python
-# search_workflow.n3
+# search_workflow.ai
 workflow SearchProducts {
   steps: [
     {
@@ -2453,7 +2453,7 @@ export const useURLStateTool = (): UITool => {
 
 **N3 Workflow:**
 ```python
-# cart_workflow.n3
+# cart_workflow.ai
 workflow AddToCart {
   steps: [
     {
@@ -2655,7 +2655,7 @@ export const useStateUpdateToolContext = (): UITool => {
 
 **N3 Workflow:**
 ```python
-# feature_access_workflow.n3
+# feature_access_workflow.ai
 workflow AccessPremiumFeature {
   steps: [
     {
@@ -2787,7 +2787,7 @@ function UpgradeModal({
 
 **N3 Workflow:**
 ```python
-# form_validation_workflow.n3
+# form_validation_workflow.ai
 workflow ValidateForm {
   steps: [
     {

@@ -1,0 +1,4 @@
+app "Type Errors".
+
+page "Bad" at "/bad":
+  show table "Unknown" from dataset missing_dataset

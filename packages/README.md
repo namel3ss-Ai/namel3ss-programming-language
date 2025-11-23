@@ -6,7 +6,7 @@ Production-ready visual graph editor companion for the **Namel3ss (N3)** program
 
 ### Core Functionality
 
-- **AST-to-Graph Visualization**: Automatically parses `.n3` files and generates interactive graph representations
+- **AST-to-Graph Visualization**: Automatically parses `.ai` files and generates interactive graph representations
 - **Rich Node Types**: Specialized components for apps, prompts, chains, agents, RAG pipelines, LLMs, tools, memories, datasets, and indices
 - **Real-time Collaboration**: Multiple users can edit the same graph simultaneously via Yjs + WebSockets
 - **Auto-layout**: Intelligent graph layout using dagre algorithm
@@ -105,13 +105,13 @@ npm run dev
 
 Editor opens at `http://localhost:3000`
 
-3. **Open the editor** in your browser and load a `.n3` file from the sidebar!
+3. **Open the editor** in your browser and load a `.ai` file from the sidebar!
 
 ## 📖 Usage
 
 ### Loading Files
 
-1. The sidebar displays all `.n3` files in your workspace
+1. The sidebar displays all `.ai` files in your workspace
 2. Click on a file to parse and visualize it
 3. The graph will render with automatic layout
 
@@ -200,7 +200,7 @@ Select any node to view its properties:
 ### Data Flow
 
 ```
-.n3 File
+.ai File
    ↓
 Python Parser (namel3ss.lang.grammar)
    ↓
@@ -262,7 +262,7 @@ See individual README files:
 
 - `GET /api/parse?file=<path>` - Parse and visualize a file
 - `POST /api/parse` - Parse source code
-- `GET /api/files` - List all .n3 files
+- `GET /api/files` - List all .ai files
 - `POST /api/save` - Save changes (TODO)
 - `GET /health` - Health check
 
@@ -344,7 +344,7 @@ npm run build
 
 - Ensure backend server is running on port 3001
 - Check browser console for errors
-- Verify `.n3` file path is correct
+- Verify `.ai` file path is correct
 
 ### WebSocket connection failed
 
@@ -396,7 +396,7 @@ For issues or questions:
 
 - Open an issue on [GitHub](https://github.com/SsebowaDisan/namel3ss-programming-language/issues)
 - Check existing [documentation](./docs/)
-- Review example `.n3` files
+- Review example `.ai` files
 
 ---
 

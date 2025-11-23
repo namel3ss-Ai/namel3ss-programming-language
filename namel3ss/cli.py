@@ -1,4 +1,4 @@
-﻿"""
+"""
 Command line interface for Namel3ss.
 
 DEPRECATED: This module is a backward compatibility wrapper.
@@ -6,9 +6,7 @@ Import from namel3ss.cli package instead.
 
 This module re-exports all CLI functionality from the refactored cli package
 to maintain backward compatibility with existing code and tests.
-"""
-
-# Re-export main entry point
+"""# Re-export main entry point
 from .cli import main
 
 # Re-export command functions

@@ -4,7 +4,7 @@ A production-ready visual graph editor for the Namel3ss (N3) programming languag
 
 ## Features
 
-- **AST-to-Graph Visualization**: Automatically parses `.n3` files and generates interactive graph representations
+- **AST-to-Graph Visualization**: Automatically parses `.ai` files and generates interactive graph representations
 - **Custom Node Types**: Specialized components for each N3 entity (prompts, chains, agents, RAG pipelines, LLMs, tools, etc.)
 - **Real-time Collaboration**: Powered by Yjs and WebSockets for synchronized multi-user editing
 - **Accessibility**: Full keyboard navigation, ARIA labels, and screen reader support
@@ -74,7 +74,7 @@ VITE_API_URL=http://localhost:3001
 
 ### Loading a File
 
-1. The sidebar shows all `.n3` files in your workspace
+1. The sidebar shows all `.ai` files in your workspace
 2. Click on a file to load and visualize it
 3. The graph will automatically render with proper layout
 
@@ -144,7 +144,7 @@ The editor communicates with the backend server:
 
 ### GET `/api/parse?file=<path>`
 
-Parse a `.n3` file and return graph structure.
+Parse a `.ai` file and return graph structure.
 
 **Response:**
 ```json
@@ -165,24 +165,24 @@ Parse N3 source code directly.
 ```json
 {
   "source": "...",
-  "fileName": "source.n3"
+  "fileName": "source.ai"
 }
 ```
 
 ### GET `/api/files`
 
-List all `.n3` files in workspace.
+List all `.ai` files in workspace.
 
 **Response:**
 ```json
 {
-  "files": ["demo_app.n3", "example.n3"]
+  "files": ["demo_app.ai", "example.ai"]
 }
 ```
 
 ### POST `/api/save`
 
-Save graph changes back to `.n3` file (not yet implemented).
+Save graph changes back to `.ai` file (not yet implemented).
 
 ## Architecture
 
@@ -224,7 +224,7 @@ npm run format
 
 - Ensure the backend server is running
 - Check browser console for errors
-- Verify the `.n3` file exists in the workspace
+- Verify the `.ai` file exists in the workspace
 
 ### WebSocket connection failed
 

@@ -52,7 +52,7 @@ def build_placeholder_page() -> ReactPage:
         "slug": "index",
         "route": "/",
         "title": "Welcome",
-        "description": "Add pages to your .n3 program to populate the React UI.",
+        "description": "Add pages to your .ai program to populate the React UI.",
         "reactive": False,
         "realtime": False,
         "widgets": [

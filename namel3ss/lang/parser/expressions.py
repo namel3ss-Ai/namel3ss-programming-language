@@ -708,7 +708,7 @@ class ExpressionParsingMixin:
     # Helper methods
     
     def parse_page_statement(self) -> Any:
-        """Parse a page statement (show, if, for, etc.)."""
+        """Parse a page statement (show, if, for, log, etc.)."""
         token = self.current()
         
         if not token:
@@ -724,6 +724,10 @@ class ExpressionParsingMixin:
         
         if token.type == TokenType.FOR:
             return self.parse_for_statement()
+            
+        # Log statement
+        if token.type == TokenType.IDENTIFIER and token.value == "log":
+            return self.parse_log_statement()
         
         # Expression statement
         return self.parse_expression()
@@ -754,6 +758,41 @@ class ExpressionParsingMixin:
             "component": component_type,
             "config": config,
         }
+    
+    def parse_log_statement(self) -> Dict[str, Any]:
+        """Parse log statement: log [level] "message" """
+        from namel3ss.ast import LogLevel, LogStatement, Literal
+        from namel3ss.ast.source_location import SourceLocation
+        
+        # Consume 'log' token
+        self.expect(TokenType.IDENTIFIER)  # 'log'
+        
+        # Check for optional level
+        level = LogLevel.INFO  # default
+        level_token = self.current()
+        
+        if (level_token and level_token.type == TokenType.IDENTIFIER and 
+            level_token.value in {'debug', 'info', 'warn', 'error'}):
+            level = LogLevel(level_token.value)
+            self.advance()
+        
+        # Expect message string
+        message_token = self.expect(TokenType.STRING)
+        message_text = message_token.value
+        
+        # Create AST node
+        message = Literal(message_text)
+        source_location = SourceLocation(
+            file=getattr(self, 'filename', '<unknown>'),
+            line=message_token.line,
+            column=message_token.column
+        )
+        
+        return LogStatement(
+            level=level,
+            message=message,
+            source_location=source_location
+        )
     
     def parse_if_statement(self) -> Dict[str, Any]:
         """Parse if statement."""

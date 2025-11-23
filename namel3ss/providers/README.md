@@ -237,8 +237,8 @@ async def test_generation():
 
 - **[Full Documentation](../../PROVIDER_SYSTEM.md)**: Complete system documentation
 - **[Migration Guide](../../PROVIDER_MIGRATION.md)**: Migrate from BaseLLM
-- **[Examples](../../examples/provider_demo.n3)**: Example .n3 files
-- **[Advanced Examples](../../examples/advanced_providers.n3)**: Advanced patterns
+- **[Examples](../../examples/provider_demo.ai)**: Example .ai files
+- **[Advanced Examples](../../examples/advanced_providers.ai)**: Advanced patterns
 
 ## Architecture
 
@@ -344,5 +344,5 @@ See LICENSE in repository root.
 
 - GitHub Issues: [Report bugs or request features]
 - Documentation: PROVIDER_SYSTEM.md
-- Examples: examples/provider_demo.n3
+- Examples: examples/provider_demo.ai
 - Migration: PROVIDER_MIGRATION.md

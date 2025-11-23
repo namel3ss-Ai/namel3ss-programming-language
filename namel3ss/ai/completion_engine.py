@@ -59,13 +59,13 @@ class CompletionEngine:
         self.symbol_navigator = symbol_navigator
         self.ai_providers: List[AIProvider] = []
         self.completion_cache: Dict[str, List[SmartCompletion]] = {}
-        self.n3_keywords = [
+        self.ai_keywords = [
             'app', 'page', 'frame', 'component', 'state', 'style', 'import', 'export',
             'at', 'with', 'when', 'if', 'else', 'for', 'in', 'let', 'const', 'async',
             'await', 'try', 'catch', 'throw', 'return', 'break', 'continue',
             'string', 'int', 'float', 'bool', 'list', 'dict', 'any'
         ]
-        self.n3_patterns = self._build_completion_patterns()
+        self.ai_patterns = self._build_completion_patterns()
     
     async def initialize_ai_providers(self):
         """Initialize available AI providers"""
@@ -111,7 +111,7 @@ class CompletionEngine:
         current_word = self._get_current_word(context)
         
         # Keyword completions
-        for keyword in self.n3_keywords:
+        for keyword in self.ai_keywords:
             if keyword.startswith(current_word.lower()):
                 completions.append(SmartCompletion(
                     text=keyword,
@@ -152,7 +152,7 @@ class CompletionEngine:
         completions = []
         
         # Analyze current context for patterns
-        for pattern_name, pattern_info in self.n3_patterns.items():
+        for pattern_name, pattern_info in self.ai_patterns.items():
             if pattern_info['condition'](context):
                 completion = SmartCompletion(
                     text=pattern_info['completion'],

@@ -1,18 +1,24 @@
-"""Module/import resolution for Namel3ss programs."""
+"""Module/import resolution for Namel3ss programs with package support."""
 
 from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set, Union
 
 from namel3ss.ast import App, Module, Program, ChainStep, WorkflowIfBlock, WorkflowForBlock, WorkflowWhileBlock
+from namel3ss.ast.modules import Import, UseStatement, ImportedName, ModuleDeclaration
 from namel3ss.lang import LANGUAGE_VERSION, SUPPORTED_LANGUAGE_VERSIONS
-from namel3ss.types import check_app
-from namel3ss.ast.modules import Import
+from namel3ss.types import check_app, check_program_with_stdlib
 from namel3ss.errors import N3ResolutionError
 from namel3ss.ast.expressions import FunctionDef, RuleDef
+from namel3ss.packages import ModuleReference, PackageInfo
+from namel3ss.packages.discovery import ModuleResolver
+from namel3ss.stdlib.typing_enhanced import (
+    is_stdlib_import, parse_stdlib_import, validate_stdlib_import,
+    get_stdlib_checker, StdLibImport, StdLibSymbol
+)
 
 
 EXPORT_ATTRS: Tuple[str, ...] = (
@@ -104,10 +110,24 @@ class ModuleExports:
 
 @dataclass
 class ResolvedImport:
-    statement: Import
+    statement: Union[Import, UseStatement]
     target_module: str
     alias: Optional[str]
     imported_symbols: Dict[str, ExportedSymbol]
+    stdlib_import: Optional[StdLibImport] = None
+    stdlib_symbols: Dict[str, StdLibSymbol] = field(default_factory=dict)
+    package_name: Optional[str] = None  # Package the module belongs to
+    module_reference: Optional[ModuleReference] = None  # Full module reference
+    
+    @property
+    def is_use_statement(self) -> bool:
+        """Check if this is a new-style use statement."""
+        return isinstance(self.statement, UseStatement)
+    
+    @property
+    def is_package_import(self) -> bool:
+        """Check if this imports from a package."""
+        return self.package_name is not None
 
 
 @dataclass
@@ -125,7 +145,22 @@ class ResolvedProgram:
     language_version: str
 
 
-def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None) -> ResolvedProgram:
+def resolve_program(
+    program: Program, 
+    *, 
+    entry_path: Optional[str | Path] = None,
+    packages: Optional[Dict[str, PackageInfo]] = None,
+    module_resolver: Optional[ModuleResolver] = None
+) -> ResolvedProgram:
+    """
+    Resolve a program with optional package support.
+    
+    Args:
+        program: The program to resolve
+        entry_path: Optional entry point file path
+        packages: Optional package information for cross-package imports
+        module_resolver: Optional module resolver for package-aware resolution
+    """
     module_by_name: Dict[str, Module] = {}
     for module in program.modules:
         if not module.name:
@@ -154,8 +189,15 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
             )
 
     language_version = _resolve_language_versions(resolved_modules)
+    
+    # Enhanced import resolution with package support
     for resolved in resolved_modules.values():
-        resolved.imports = _resolve_imports(resolved, resolved_modules)
+        resolved.imports = _resolve_imports(
+            resolved, 
+            resolved_modules,
+            packages=packages,
+            module_resolver=module_resolver
+        )
 
     _validate_prompts(resolved_modules)
     _validate_chains(resolved_modules)
@@ -164,8 +206,12 @@ def resolve_program(program: Program, *, entry_path: Optional[str | Path] = None
     _validate_training_artifacts(resolved_modules)
     _validate_symbolic_expressions(resolved_modules)
     merged_app = _merge_apps(resolved_modules, root)
-    check_app(merged_app, path=root.module.path)
-    return ResolvedProgram(modules=resolved_modules, root=root, app=merged_app, language_version=language_version)
+    
+    # Create resolved program for stdlib-aware type checking
+    resolved_program = ResolvedProgram(modules=resolved_modules, root=root, app=merged_app, language_version=language_version)
+    check_program_with_stdlib(resolved_program)
+    
+    return resolved_program
 
 
 def _build_module_exports(module: Module) -> ModuleExports:
@@ -300,36 +346,239 @@ def _collect_loose_declarations_into_app(
 def _resolve_imports(
     resolved_module: ResolvedModule,
     modules: Dict[str, ResolvedModule],
+    *,
+    packages: Optional[Dict[str, PackageInfo]] = None,
+    module_resolver: Optional[ModuleResolver] = None,
 ) -> List[ResolvedImport]:
+    """
+    Resolve imports for a module with package system support.
+    
+    Args:
+        resolved_module: The module whose imports to resolve
+        modules: All resolved modules in the current program  
+        packages: Available packages for cross-package imports
+        module_resolver: Module resolver for package-aware resolution
+    """
     imports: List[ResolvedImport] = []
+    stdlib_checker = get_stdlib_checker()
+    
     for entry in resolved_module.module.imports:
-        target = modules.get(entry.module)
-        if target is None:
-            raise ModuleResolutionError(
-                f"Module '{resolved_module.module.name}' imports unknown module '{entry.module}'"
+        # Handle both old Import and new UseStatement
+        if isinstance(entry, UseStatement):
+            import_resolved = _resolve_use_statement(
+                entry, 
+                resolved_module, 
+                modules, 
+                packages=packages,
+                module_resolver=module_resolver
             )
-        imported: Dict[str, ExportedSymbol] = {}
-        if entry.names:
-            for imported_name in entry.names:
-                symbol = target.exports.resolve_symbol(imported_name.name)
-                alias = imported_name.alias or imported_name.name
-                if alias in imported:
-                    raise ModuleResolutionError(
-                        f"Duplicate imported name '{alias}' in module '{resolved_module.module.name}'"
-                    )
-                imported[alias] = symbol
-            alias_value: Optional[str] = None
+            imports.append(import_resolved)
         else:
-            alias_value = entry.alias or entry.module
-        imports.append(
-            ResolvedImport(
-                statement=entry,
-                target_module=target.module.name or target.module.path,
-                alias=alias_value,
-                imported_symbols=imported,
+            # Legacy Import statement
+            import_resolved = _resolve_legacy_import(
+                entry,
+                resolved_module,
+                modules,
+                packages=packages,
+                module_resolver=module_resolver
             )
-        )
+            imports.append(import_resolved)
+    
     return imports
+
+
+def _resolve_use_statement(
+    use_stmt: UseStatement,
+    source_module: ResolvedModule,
+    modules: Dict[str, ResolvedModule],
+    *,
+    packages: Optional[Dict[str, PackageInfo]] = None,
+    module_resolver: Optional[ModuleResolver] = None,
+) -> ResolvedImport:
+    """Resolve a new-style use statement."""
+    
+    # Check if this is a stdlib import
+    if is_stdlib_import(use_stmt.module_name):
+        return _resolve_stdlib_use(use_stmt, source_module.module.name)
+    
+    # Try to resolve with module resolver if available
+    if module_resolver:
+        try:
+            target_ref = module_resolver.resolve_module_import(
+                use_stmt.module_path,
+                current_module=source_module.module.name
+            )
+            
+            # Find the target module in our resolved modules
+            target_module = None
+            for module in modules.values():
+                if (module.module.name == target_ref.name or 
+                    module.module.name == target_ref.qualified_name):
+                    target_module = module
+                    break
+            
+            if target_module is None:
+                # Module is in a package but not loaded
+                raise ModuleResolutionError(
+                    f"Module '{use_stmt.module_path}' found in package "
+                    f"'{target_ref.package_name}' but not loaded in current program"
+                )
+            
+            # Resolve imported symbols
+            imported_symbols = _resolve_imported_symbols(use_stmt, target_module)
+            
+            return ResolvedImport(
+                statement=use_stmt,
+                target_module=target_module.module.name or target_module.module.path,
+                alias=use_stmt.alias,
+                imported_symbols=imported_symbols,
+                package_name=target_ref.package_name,
+                module_reference=target_ref
+            )
+            
+        except Exception as e:
+            # Fall back to local module resolution
+            pass
+    
+    # Try local module resolution
+    target_module = modules.get(use_stmt.module_name)
+    if target_module is None:
+        raise ModuleResolutionError(
+            f"Module '{source_module.module.name}' uses unknown module '{use_stmt.module_path}'"
+        )
+    
+    imported_symbols = _resolve_imported_symbols(use_stmt, target_module)
+    
+    return ResolvedImport(
+        statement=use_stmt,
+        target_module=target_module.module.name or target_module.module.path,
+        alias=use_stmt.alias,
+        imported_symbols=imported_symbols
+    )
+
+
+def _resolve_legacy_import(
+    import_stmt: Import,
+    source_module: ResolvedModule,
+    modules: Dict[str, ResolvedModule],
+    *,
+    packages: Optional[Dict[str, PackageInfo]] = None,
+    module_resolver: Optional[ModuleResolver] = None,
+) -> ResolvedImport:
+    """Resolve a legacy import statement."""
+    
+    # Check if this is a stdlib import
+    if is_stdlib_import(import_stmt.module):
+        return _resolve_stdlib_import(import_stmt, source_module.module.name)
+    
+    # Regular module import
+    target = modules.get(import_stmt.module)
+    if target is None:
+        raise ModuleResolutionError(
+            f"Module '{source_module.module.name}' imports unknown module '{import_stmt.module}'"
+        )
+    
+    imported: Dict[str, ExportedSymbol] = {}
+    if import_stmt.names:
+        for imported_name in import_stmt.names:
+            symbol = target.exports.resolve_symbol(imported_name.name)
+            alias = imported_name.alias or imported_name.name
+            if alias in imported:
+                raise ModuleResolutionError(
+                    f"Duplicate imported name '{alias}' in module '{source_module.module.name}'"
+                )
+            imported[alias] = symbol
+        alias_value: Optional[str] = None
+    else:
+        alias_value = import_stmt.alias or import_stmt.module
+    
+    return ResolvedImport(
+        statement=import_stmt,
+        target_module=target.module.name or target.module.path,
+        alias=alias_value,
+        imported_symbols=imported,
+    )
+
+
+def _resolve_imported_symbols(
+    use_stmt: UseStatement,
+    target_module: ResolvedModule
+) -> Dict[str, ExportedSymbol]:
+    """Resolve symbols from a use statement."""
+    imported: Dict[str, ExportedSymbol] = {}
+    
+    if use_stmt.is_wildcard:
+        # Import all public symbols
+        for symbol_list in target_module.exports.symbol_index.values():
+            for symbol in symbol_list:
+                imported[symbol.name] = symbol
+    elif use_stmt.imported_items:
+        # Import specific symbols
+        for imported_name in use_stmt.imported_items:
+            symbol = target_module.exports.resolve_symbol(imported_name.name)
+            alias = imported_name.alias or imported_name.name
+            if alias in imported:
+                raise ModuleResolutionError(
+                    f"Duplicate imported name '{alias}' in use statement"
+                )
+            imported[alias] = symbol
+    # else: importing the module itself (no specific symbols)
+    
+    return imported
+
+
+def _resolve_stdlib_use(use_stmt: UseStatement, module_name: str) -> ResolvedImport:
+    """Resolve a use statement for stdlib modules."""
+    # Convert UseStatement to Import for stdlib compatibility
+    legacy_names = None
+    if use_stmt.imported_items:
+        legacy_names = [
+            ImportedName(name=item.name, alias=item.alias)
+            for item in use_stmt.imported_items
+        ]
+    
+    legacy_import = Import(
+        module=use_stmt.module_name,
+        names=legacy_names,
+        alias=use_stmt.alias
+    )
+    
+    return _resolve_stdlib_import(legacy_import, module_name)
+
+
+def _resolve_stdlib_import(entry: Import, module_name: str) -> ResolvedImport:
+    """Resolve a standard library import."""
+    from namel3ss.stdlib.typing_enhanced import StdLibResolutionError
+    
+    stdlib_registry = get_stdlib_type_registry()
+    
+    try:
+        # Parse the import statement
+        imported_names = None
+        if entry.names:
+            imported_names = [name.name for name in entry.names]
+        
+        stdlib_import = parse_stdlib_import(entry.module, imported_names, entry.alias)
+        
+        # Validate the import
+        errors = validate_stdlib_import(stdlib_import)
+        if errors:
+            raise ModuleResolutionError(f"Invalid stdlib import in module '{module_name}': {'; '.join(errors)}")
+        
+        # Resolve the symbols
+        stdlib_symbols = stdlib_checker.resolve_import(stdlib_import)
+        
+        return ResolvedImport(
+            statement=entry,
+            target_module=entry.module,  # stdlib module name
+            alias=entry.alias,
+            imported_symbols={},  # stdlib symbols are handled separately
+            stdlib_import=stdlib_import,
+            stdlib_symbols=stdlib_symbols
+        )
+    
+    except StdLibResolutionError as e:
+        raise ModuleResolutionError(f"Failed to resolve stdlib import '{entry.module}' in module '{module_name}': {e}")
 
 
 def _merge_apps(modules: Dict[str, ResolvedModule], root: ResolvedModule) -> App:

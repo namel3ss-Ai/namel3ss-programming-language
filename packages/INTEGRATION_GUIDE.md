@@ -74,7 +74,7 @@ npm run dev
 ### Opening the Editor
 
 1. Navigate to `http://localhost:3000`
-2. The sidebar shows all `.n3` files in your workspace
+2. The sidebar shows all `.ai` files in your workspace
 3. Click on a file to visualize it
 4. Use the toolbar controls to navigate and edit
 
@@ -114,7 +114,7 @@ npm run dev
 ### Data Flow
 
 1. **Parse Request**
-   - User selects `.n3` file in UI
+   - User selects `.ai` file in UI
    - Frontend sends `GET /api/parse?file=<path>`
    - Backend spawns Python process
    - Python parses file using `namel3ss.lang.grammar.parse_module`
@@ -205,7 +205,7 @@ async function parseN3File(filePath: string) {
   return response.data.graph;
 }
 
-const graph = await parseN3File('my-app.n3');
+const graph = await parseN3File('my-app.ai');
 console.log(graph.nodes.length, 'nodes');
 ```
 
@@ -215,7 +215,7 @@ console.log(graph.nodes.length, 'nodes');
 async function parseN3Source(source: string) {
   const response = await axios.post('http://localhost:3001/api/parse', {
     source,
-    fileName: 'dynamic.n3'
+    fileName: 'dynamic.ai'
   });
   
   return response.data.graph;
@@ -290,7 +290,7 @@ function processCustomEntity(entity: any, nodes: GraphNode[]): string {
 3. **Add styling** (`src/index.css`):
 
 ```css
-.n3-node-custom {
+.ai-node-custom {
   border-color: #6366f1;
   background: linear-gradient(135deg, #e0e7ff 0%, #ffffff 100%);
 }
@@ -425,7 +425,7 @@ theme: {
 Modify node styles in `src/index.css`:
 
 ```css
-.n3-node-prompt {
+.ai-node-prompt {
   border-color: var(--your-custom-color);
   border-width: 3px;
   border-radius: 12px;
@@ -487,7 +487,7 @@ pip install -e .
 **Solution:**
 - Check browser console for errors
 - Verify file exists: `curl "http://localhost:3001/api/files"`
-- Check file parsing: `curl "http://localhost:3001/api/parse?file=demo_app.n3"`
+- Check file parsing: `curl "http://localhost:3001/api/parse?file=demo_app.ai"`
 
 #### 4. Hot Reload Not Working
 
@@ -553,18 +553,18 @@ useEffect(() => {
 ```
 my-n3-project/
 ├── apps/
-│   ├── web-app.n3
-│   └── mobile-app.n3
+│   ├── web-app.ai
+│   └── mobile-app.ai
 ├── shared/
-│   ├── models.n3
-│   └── tools.n3
+│   ├── models.ai
+│   └── tools.ai
 └── tests/
-    └── test-app.n3
+    └── test-app.ai
 ```
 
 ### 2. File Naming
 
-- Use descriptive names: `customer-support-agent.n3`
+- Use descriptive names: `customer-support-agent.ai`
 - Group related components: `rag-*`, `agent-*`
 - Avoid spaces: Use hyphens or underscores
 
@@ -587,7 +587,7 @@ dbDir/
 ```
 
 Commit:
-- `.n3` source files
+- `.ai` source files
 - Configuration files
 - Documentation
 

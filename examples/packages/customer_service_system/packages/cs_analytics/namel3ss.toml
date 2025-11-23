@@ -1,0 +1,32 @@
+[package]
+name = "cs.analytics"
+version = "1.8.0"
+description = "Customer service analytics and business intelligence"
+authors = ["Analytics Team <analytics@company.com>"]
+license = "Proprietary"
+
+[dependencies]
+"cs.support" = ">=2.0.0"         # Access to support data
+"company.core" = ">=2.1.0"       # Core utilities
+"analytics.engine" = "^3.1.0"    # Analytics processing
+"visualization.lib" = "~=2.5.0"  # Chart generation
+
+[dev-dependencies]
+"testing.framework" = ">=1.0.0"
+"data.mocks" = "^0.8.0"
+
+modules = [
+    "customer_insights",
+    "performance_metrics",
+    "trend_analysis",
+    "reporting_engine"
+]
+
+[module-exports]
+"insights" = "customer_insights"
+"metrics" = "performance_metrics"
+"trends" = "trend_analysis"
+# reporting_engine is internal only
+
+[namel3ss]
+version = ">=1.0.0"

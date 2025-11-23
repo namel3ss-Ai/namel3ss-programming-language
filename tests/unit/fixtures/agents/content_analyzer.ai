@@ -1,0 +1,6 @@
+# Content analyzer agent fixture
+agent "content_analyzer" {
+    llm: "test_openai"
+    system: "You are an expert content analyzer"
+    memory: "conversation_window"
+}

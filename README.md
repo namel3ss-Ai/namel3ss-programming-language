@@ -93,8 +93,27 @@ This compiles to a complete FastAPI backend with:
 - **Pages** with routes and component composition
 - **Datasets** from SQL, REST, CSV with filters, joins, and caching
 - **Components**: tables, charts, forms, actions with full styling
+- **Logging**: First-class log statements with runtime observability
 
 ### AI-Native Constructs
+
+#### Logging & Observability
+```text
+page "User Dashboard" at "/dashboard":
+  log info "Loading dashboard for user {user_id}"
+  
+  let user_data = dataset users where id == user_id
+  
+  if user_data.count == 0:
+    log warn "User {user_id} not found in database"
+    show text "User not found"
+  else:
+    log debug "User data loaded: {user_data.name}"
+    show text "Welcome, {user_data.name}!"
+
+# Configure with CLI: --log-level debug|info|warn|error
+# Or environment: NAMEL3SS_LOG_LEVEL=debug
+```
 
 #### Structured Prompts
 ```text
@@ -284,7 +303,7 @@ Namel3ss gracefully handles missing dependencies with helpful error messages:
 
 ```python
 # If OpenAI not installed
-n3 run app.n3
+n3 run app.ai
 # Error: OpenAI integration requires the 'openai' extra.
 # Install with: pip install 'namel3ss[openai]'
 # Or for all AI providers: pip install 'namel3ss[ai]'
@@ -367,10 +386,10 @@ pip install -e ".[dev]"
 
 ```bash
 # Generate from example
-namel3ss generate examples/ai_demo.n3 out
+namel3ss generate examples/ai_demo.ai out
 
-# Or create your own my_app.n3 file
-namel3ss generate my_app.n3 out
+# Or create your own my_app.ai file
+namel3ss generate my_app.ai out
 ```
 
 ### 2. Run the backend
@@ -396,13 +415,13 @@ python -m http.server 8080
 
 ```bash
 # Generate full application
-namel3ss generate app.n3 output/
+namel3ss generate app.ai output/
 
 # Build with backend
-namel3ss build app.n3 --build-backend --backend-out backend/
+namel3ss build app.ai --build-backend --backend-out backend/
 
 # Run development server
-namel3ss run app.n3 --dev
+namel3ss run app.ai --dev
 
 # Execute a chain
 namel3ss run chain SupportFlow --payload '{"ticket": "Help!"}'
@@ -431,13 +450,13 @@ namel3ss graph ResearchPipeline --output graph.json
 
 ```bash
 # Use environment file
-namel3ss run app.n3 --env .env.prod
+namel3ss run app.ai --env .env.prod
 
 # Check available integrations
 namel3ss doctor
 
 # Validate .n3 syntax
-namel3ss validate my_app.n3
+namel3ss validate my_app.ai
 ```
 
 ## Production Deployment
@@ -587,7 +606,7 @@ out/backend/
 
 ### AI Examples
 
-- `examples/ai_demo.n3` - Complete AI application
+- `examples/ai_demo.ai` - Complete AI application
 - `examples/text_classification.n3` - Classification with prompts
 - `examples/rag_qa.n3` - RAG question answering
 - `examples/experiment_comparison.n3` - A/B testing models
@@ -595,15 +614,56 @@ out/backend/
 
 ### Traditional Examples
 
-- `examples/app.n3` - Full-stack CRUD application
+- `examples/app.ai` - Full-stack CRUD application
 - `examples/control_flow_demo.n3` - Conditionals and loops
 
 Run any example:
 
 ```bash
-namel3ss generate examples/ai_demo.n3 demo_output
+namel3ss generate examples/ai_demo.ai demo_output
 cd demo_output/backend && uvicorn main:app --reload
 ```
+
+## Repository Structure
+
+```
+namel3ss-programming-language/
+├── examples/                  # Working example applications
+│   ├── minimal/              # Basic N3 usage  
+│   ├── content-analyzer/     # Agent-based content analysis
+│   └── research-assistant/   # Multi-turn research workflows
+├── tests/                    # Comprehensive test suite
+│   ├── unit/fixtures/       # Unit test fixtures by component
+│   └── integration/         # Integration and build validation
+├── scripts/                 # Development utilities
+│   ├── demos/              # Feature demonstrations
+│   ├── tests/              # Standalone test scripts
+│   └── utilities/          # Development tools
+├── docs/                    # Organized documentation
+│   ├── guides/             # User and developer guides
+│   ├── specifications/     # Technical specifications
+│   └── archive/            # Historical documents
+├── namel3ss/               # Core language implementation
+├── api/                    # REST API server
+└── [configuration files]   # Build and deployment configs
+```
+
+### Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run an example:**
+   ```bash
+   namel3ss build examples/minimal/app.ai
+   ```
+
+3. **Start development server:**
+   ```bash
+   namel3ss run examples/minimal/app.ai
+   ```
 
 ## Why Namel3ss for AI Development?
 
@@ -633,6 +693,20 @@ Contributions welcome! This is a production-ready AI programming language with:
 - Production deployment patterns
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Migration Notice
+
+**⚠️ Breaking Change**: As of the latest version, Namel3ss source files now use `.ai` extensions instead of `.n3`. If you have existing `.n3` files, please rename them to `.ai`:
+
+```bash
+# For individual files
+mv my_app.n3 my_app.ai
+
+# For all files in a directory
+for file in *.n3; do mv "$file" "${file%.n3}.ai"; done
+```
+
+All documentation, examples, and CLI commands now use `.ai` extensions. The `.n3` extension is no longer supported.
 
 ## License
 

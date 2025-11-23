@@ -467,7 +467,7 @@ for result in compiled_query.execute_all():
 
 See these files for complete examples:
 
-- `examples/rag_demo.n3` - Retrieval-augmented generation with logic
+- `examples/rag_demo.ai` - Retrieval-augmented generation with logic
 - `test_full_integration.py` - Complete integration pipeline
 - `test_end_to_end_queries.py` - Query compilation and execution
 - `tests/test_logic_integration.py` - Complex query patterns

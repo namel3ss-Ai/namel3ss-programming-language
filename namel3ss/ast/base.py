@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Literal, Union
+from enum import Enum
+from typing import Any, Dict, List, Optional, Literal, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .source_location import SourceLocation
 
 
 @dataclass
@@ -62,6 +66,33 @@ class ContextValue(Expression):
     default: Optional[Any] = None
 
 
+class LogLevel(Enum):
+    """Logging levels for log statements."""
+    
+    DEBUG = "debug"
+    INFO = "info"
+    WARN = "warn"
+    ERROR = "error"
+    
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class LogStatement(Expression):
+    """Represents a logging statement in the DSL.
+    
+    Supports various forms:
+    - log "message" (defaults to info level)
+    - log info "message"
+    - log warn "interpolated {{variable}}"
+    """
+    
+    level: LogLevel
+    message: Expression  # Can be Literal or interpolated expression
+    source_location: Optional["SourceLocation"] = None
+
+
 __all__ = [
     "Theme",
     "Expression",
@@ -72,4 +103,6 @@ __all__ = [
     "UnaryOp",
     "CallExpression",
     "ContextValue",
+    "LogLevel",
+    "LogStatement",
 ]

@@ -22,16 +22,56 @@ from .commands import (
     cmd_doctor,
     cmd_eval,
     cmd_eval_suite,
+    cmd_format,
     cmd_lint,
     cmd_lsp,
     cmd_run,
     cmd_test,
     cmd_train,
     cmd_typecheck,
+    add_stdlib_command,
+    add_packages_command,
+    add_modules_command,
 )
 from namel3ss.sdk_sync.cli import add_sdk_sync_command
 from .context import CLIContext
 from .validation import normalize_run_command_args
+
+
+def _configure_runtime_logging(args) -> None:
+    """Configure logging level for runtime log statements."""
+    import logging
+    import os
+    
+    # Determine log level from CLI arg, environment, or default
+    log_level = (
+        getattr(args, 'log_level', None) or 
+        os.getenv('NAMEL3SS_LOG_LEVEL', 'info')
+    ).lower()
+    
+    # Map string to logging level
+    level_map = {
+        'debug': logging.DEBUG,
+        'info': logging.INFO,
+        'warn': logging.WARNING,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+    }
+    
+    numeric_level = level_map.get(log_level, logging.INFO)
+    
+    # Configure the namel3ss.runtime logger used by log statements
+    runtime_logger = logging.getLogger('namel3ss.runtime')
+    runtime_logger.setLevel(numeric_level)
+    
+    # Add console handler if not already present
+    if not runtime_logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        runtime_logger.addHandler(handler)
+        # Prevent propagation to root logger to avoid duplicate messages
+        runtime_logger.propagate = False
 
 
 def main(argv: Optional[list] = None) -> None:
@@ -47,23 +87,30 @@ def main(argv: Optional[list] = None) -> None:
     
     Examples:
         Build a project:
-        >>> main(['build', 'app.n3'])  # doctest: +SKIP
+        >>> main(['build', 'app.ai'])  # doctest: +SKIP
         
-        Run dev server:
-        >>> main(['run', 'app.n3'])  # doctest: +SKIP
+        Run development server:
+        >>> main(['run', 'app.ai'])  # doctest: +SKIP
         
-        Evaluate experiment:
-        >>> main(['eval', 'my_experiment', '--file', 'app.n3'])  # doctest: +SKIP
+        Run experiment:
+        >>> main(['eval', 'my_experiment', '--file', 'app.ai'])  # doctest: +SKIP
     """
     if argv is None:
         argv = sys.argv[1:]
     
-    # Legacy invocation support: convert bare .n3 file to 'build' command
+    # Valid command names for legacy detection
+    valid_commands = {
+        'build', 'run', 'eval', 'eval-suite', 'train', 'deploy', 'doctor', 
+        'test', 'lint', 'typecheck', 'format', 'lsp', 'sdk-sync', 'stdlib', 
+        'packages', 'pkg', 'modules', 'mod', 'build-index', 'help'
+    }
+    
+    # Legacy invocation support: convert bare .ai/.ai file to 'build' command
     if (
         len(argv) > 0
         and not argv[0].startswith('-')
-        and argv[0] not in ['build', 'run', 'help']
-        and (argv[0].endswith('.n3') or Path(argv[0]).exists())
+        and argv[0] not in valid_commands
+        and (argv[0].endswith('.ai') or argv[0].endswith('.ai') or Path(argv[0]).exists())
     ):
         print(
             "Note: Using legacy invocation. Consider using 'namel3ss build' instead.",
@@ -122,6 +169,12 @@ def main(argv: Optional[list] = None) -> None:
         default=str(workspace_root),
         help='Workspace root directory (defaults to current working directory)'
     )
+    parser.add_argument(
+        '--log-level',
+        choices=['debug', 'info', 'warn', 'error'],
+        default=None,
+        help='Set logging level for runtime log statements (or set NAMEL3SS_LOG_LEVEL)'
+    )
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     plugin_manager.register_commands(subparsers)
@@ -131,7 +184,7 @@ def main(argv: Optional[list] = None) -> None:
         'build',
         help='Generate static site and/or backend scaffold'
     )
-    build_parser.add_argument('file', help='Path to the .n3 source file')
+    build_parser.add_argument('file', help='Path to the .ai source file (.ai also supported)')
     build_parser.add_argument(
         '--out', '-o', default='build', help='Output directory for static files'
     )
@@ -190,12 +243,12 @@ def main(argv: Optional[list] = None) -> None:
     run_parser.add_argument(
         'target',
         nargs='?',
-        help='Chain name to execute or path to the .n3 source file'
+        help='Chain name to execute or path to the .ai source file (.ai also supported)'
     )
     run_parser.add_argument(
         '-f', '--file',
         dest='file',
-        help='Explicit .n3 source file to use when running a chain'
+        help='Explicit .ai source file to use when running a chain (.ai also supported)'
     )
     run_parser.add_argument(
         '--dev',
@@ -278,7 +331,7 @@ def main(argv: Optional[list] = None) -> None:
     eval_parser.add_argument(
         '-f', '--file',
         dest='file',
-        help='Path to the .n3 source file'
+        help='Path to the .ai source file (.ai also supported)'
     )
     eval_parser.add_argument(
         '--format',
@@ -297,7 +350,7 @@ def main(argv: Optional[list] = None) -> None:
     eval_suite_parser.add_argument(
         '-f', '--file',
         dest='file',
-        help='Path to the .n3 source file'
+        help='Path to the .ai source file (.ai also supported)'
     )
     eval_suite_parser.add_argument(
         '--limit',
@@ -326,7 +379,7 @@ def main(argv: Optional[list] = None) -> None:
         'train',
         help='Train or fine-tune models via declared training jobs'
     )
-    train_parser.add_argument('file', help='Path to the .n3 source file')
+    train_parser.add_argument('file', help='Path to the .ai source file (.ai also supported)')
     train_parser.add_argument(
         '--job',
         help='Name of the training job to execute'
@@ -385,7 +438,7 @@ def main(argv: Optional[list] = None) -> None:
         'deploy',
         help='Deploy a model prediction endpoint'
     )
-    deploy_parser.add_argument('file', help='Path to the .n3 source file')
+    deploy_parser.add_argument('file', help='Path to the .ai source file (.ai also supported)')
     deploy_parser.add_argument(
         '--model',
         required=True,
@@ -414,11 +467,22 @@ def main(argv: Optional[list] = None) -> None:
     # Lint subcommand
     lint_parser = subparsers.add_parser(
         'lint',
-        help='Run the configured lint command'
+        help='Run semantic analysis and linting on Namel3ss files'
+    )
+    lint_parser.add_argument(
+        'files',
+        nargs='*',
+        default=['.'],
+        help='Files or directories to lint (default: current directory)'
     )
     lint_parser.add_argument(
         '--command',
-        help='Override the configured lint command'
+        help='Override with external lint command (e.g., ruff, flake8)'
+    )
+    lint_parser.add_argument(
+        '--external',
+        action='store_true',
+        help='Force use of external linter instead of native semantic analysis'
     )
     lint_parser.set_defaults(func=cmd_lint)
     
@@ -433,6 +497,35 @@ def main(argv: Optional[list] = None) -> None:
     )
     typecheck_parser.set_defaults(func=cmd_typecheck)
     
+    # Format subcommand
+    format_parser = subparsers.add_parser(
+        'format',
+        help='Format Namel3ss source files using AST-based formatter'
+    )
+    format_parser.add_argument(
+        'files',
+        nargs='*',
+        default=['.'],
+        help='Files or directories to format (default: current directory)'
+    )
+    format_parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Check if files need formatting without making changes'
+    )
+    format_parser.add_argument(
+        '--diff',
+        action='store_true',
+        help='Show diff of formatting changes'
+    )
+    format_parser.add_argument(
+        '--write',
+        action='store_true',
+        default=True,
+        help='Write formatting changes to files (default: true)'
+    )
+    format_parser.set_defaults(func=cmd_format)
+    
     # LSP subcommand
     lsp_parser = subparsers.add_parser(
         'lsp',
@@ -442,6 +535,9 @@ def main(argv: Optional[list] = None) -> None:
     
     # SDK-Sync subcommand
     add_sdk_sync_command(subparsers)
+    add_stdlib_command(subparsers)
+    add_packages_command(subparsers)
+    add_modules_command(subparsers)
     
     # RAG index building command
     build_index_parser = subparsers.add_parser(
@@ -450,7 +546,7 @@ def main(argv: Optional[list] = None) -> None:
     )
     build_index_parser.add_argument(
         'source',
-        help='Path to the .n3 source file'
+        help='Path to the .ai source file (.ai also supported)'
     )
     build_index_parser.add_argument(
         'index',
@@ -526,6 +622,9 @@ def main(argv: Optional[list] = None) -> None:
         plugin_manager=plugin_manager,
     )
     args.verbose = getattr(args, "verbose", False)
+    
+    # Configure logging level
+    _configure_runtime_logging(args)
     
     # Execute the command
     args.func(args)

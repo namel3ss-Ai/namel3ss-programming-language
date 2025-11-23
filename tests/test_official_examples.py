@@ -21,6 +21,10 @@ from namel3ss.codegen.frontend import generate_site
 # Official examples that MUST build successfully
 OFFICIAL_EXAMPLES = [
     "demo_app.n3",
+    "examples/minimal/app.n3",
+    "examples/content-analyzer/app.n3",
+    "examples/research-assistant/app.n3",
+    # Legacy examples (to be migrated)
     "examples/simple_functional.n3",
     "examples/provider_demo.n3",
     "examples/rag_demo.n3",

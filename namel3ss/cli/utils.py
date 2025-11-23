@@ -64,23 +64,41 @@ def slugify_model_name(value: str) -> str:
     return normalized.lower() or "model"
 
 
-def find_first_n3_file() -> Optional[Path]:
+def find_first_ai_file() -> Optional[Path]:
     """
-    Find first .n3 file in current working directory.
+    Find first .ai file in current working directory.
     
     Useful for commands that can infer source file when only
-    one .n3 file is present.
+    one .ai file is present.
     
     Returns:
-        Path to first .n3 file (sorted alphabetically) or None
+        Path to first .ai file (sorted alphabetically) or None
     
     Examples:
-        >>> # In directory with app.n3
-        >>> find_first_n3_file()  # doctest: +SKIP
-        PosixPath('app.n3')
+        >>> # In directory with app.ai
+        >>> find_first_ai_file()  # doctest: +SKIP
+        PosixPath('app.ai')
     """
-    candidates = sorted(Path.cwd().glob('*.n3'))
+    candidates = sorted(Path.cwd().glob('*.ai'))
     return candidates[0] if candidates else None
+
+
+def find_first_source_file() -> Optional[Path]:
+    """
+    Find first Namel3ss source file in current working directory.
+    
+    Looks for .ai files only. Useful for commands that can
+    infer source file when only one source file is present.
+    
+    Returns:
+        Path to first source file or None
+    
+    Examples:
+        >>> # In directory with app.ai
+        >>> find_first_source_file()  # doctest: +SKIP
+        PosixPath('app.ai')
+    """
+    return find_first_ai_file()
 
 
 def get_program_root(source_path: Path) -> Path:
@@ -97,7 +115,7 @@ def get_program_root(source_path: Path) -> Path:
         Root directory for the program
     
     Examples:
-        >>> get_program_root(Path("/workspace/app.n3"))
+        >>> get_program_root(Path("/workspace/app.ai"))
         PosixPath('/workspace')
         >>> get_program_root(Path("/workspace/"))
         PosixPath('/workspace')

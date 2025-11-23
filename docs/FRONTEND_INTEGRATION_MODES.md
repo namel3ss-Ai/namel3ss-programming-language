@@ -1227,7 +1227,7 @@ async function showModalHandler(args: {
 
 **N3 Workflow:**
 ```python
-# approval_workflow.n3
+# approval_workflow.ai
 workflow ApprovalWorkflow {
   input: {
     "amount": 5000,
@@ -1313,7 +1313,7 @@ async function requestApprovalHandler(args: {
 
 **N3 Workflow:**
 ```python
-# document_processing.n3
+# document_processing.ai
 workflow DocumentProcessing {
   steps: [
     # Step 1: Request file upload from user
@@ -1395,7 +1395,7 @@ async function uploadFileHandler(args: {
 
 **N3 Workflow:**
 ```python
-# batch_import.n3
+# batch_import.ai
 workflow BatchImport {
   input: {"file_ids": [1, 2, 3, 4, 5]}
   

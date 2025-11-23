@@ -1,4 +1,4 @@
-﻿"""Backward compatibility wrapper for LLM runtime code generation.
+"""Backward compatibility wrapper for LLM runtime code generation.
 
 This module maintains backward compatibility by re-exporting the
 refactored LLM_SECTION from the llm package.
@@ -20,8 +20,6 @@ The LLM section has been refactored into a modular package structure:
 Original file: 2,181 lines, 40 functions, monolithic template string
 New structure: 11 modules, ~2,454 lines total with module headers
 Reduction in wrapper: 2,181 lines to 24 lines (99% reduction)
-"""
-
-from .llm import LLM_SECTION
+"""from .llm import LLM_SECTION
 
 __all__ = ['LLM_SECTION']

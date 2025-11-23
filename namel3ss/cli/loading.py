@@ -1,7 +1,7 @@
 """
 Program and module loading for CLI operations.
 
-This module handles loading N3 programs, resolving dependencies,
+This module handles loading Namel3ss programs, resolving dependencies,
 loading runtime modules, and managing the runtime module cache.
 """
 
@@ -36,14 +36,14 @@ _RUNTIME_CACHE: Dict[str, Any] = {}
 
 def load_n3_app(source_path: Path) -> App:
     """
-    Load and resolve N3 application from source file.
+    Load and resolve Namel3ss application from source file.
     
     Handles full pipeline: loading, parsing, dependency resolution,
     and type checking. Provides user-friendly error messages for
     common failure modes.
     
     Args:
-        source_path: Path to .n3 source file
+        source_path: Path to .ai source file
     
     Returns:
         Resolved App AST
@@ -53,7 +53,7 @@ def load_n3_app(source_path: Path) -> App:
         CLIError: For parse, resolution, or type errors
     
     Examples:
-        >>> app = load_n3_app(Path("app.n3"))  # doctest: +SKIP
+        >>> app = load_n3_app(Path("app.ai"))  # doctest: +SKIP
         >>> print(f"Loaded {app.name}")
     """
     # Validate file exists
@@ -269,12 +269,12 @@ def prepare_backend(
     Parse N3 file and generate backend scaffold.
     
     Complete pipeline for backend generation:
-    1. Load and resolve N3 app
+    1. Load and resolve Namel3ss app
     2. Generate FastAPI backend code
     3. Return resolved app for further processing
     
     Args:
-        source_path: Path to .n3 source file
+        source_path: Path to .ai source file
         backend_dir: Output directory for backend
         embed_insights: Whether to embed insight routes in API
         enable_realtime: Whether to enable real-time features
@@ -288,7 +288,7 @@ def prepare_backend(
     
     Examples:
         >>> app = prepare_backend(
-        ...     Path("app.n3"),
+        ...     Path("app.ai"),
         ...     "./backend",
         ...     embed_insights=True
         ... )  # doctest: +SKIP

@@ -1,0 +1,6 @@
+# Simple agent fixture for unit testing
+agent "test_agent" {
+    llm: "test_openai"
+    system: "You are a test agent"
+    memory: "conversation_window"
+}

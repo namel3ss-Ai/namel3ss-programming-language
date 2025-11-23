@@ -1,6 +1,6 @@
 """N3 in-process runtime for embedded execution.
 
-Loads and executes .n3 files directly without a remote server,
+Loads and executes .ai files directly without a remote server,
 enabling embedded N3 workflows in Python applications.
 """
 
@@ -168,35 +168,35 @@ class RuntimeRagAPI:
 class N3InProcessRuntime:
     """N3 in-process runtime for embedded execution.
     
-    Loads and executes .n3 files directly without a remote server.
+    Loads and executes .ai files directly without a remote server.
     Enables embedded N3 workflows in Python applications.
     
     Features:
-        - Direct .n3 file execution
+        - Direct .ai file execution
         - No server required
         - Full access to N3 runtime features
         - Configurable caching and execution limits
     
     Example:
         Basic usage:
-        >>> runtime = N3InProcessRuntime("./app.n3")
+        >>> runtime = N3InProcessRuntime("./app.ai")
         >>> result = runtime.chains.run("summarize", text="...")
         
         With custom config:
         >>> config = N3RuntimeConfig(
-        ...     source_file="./app.n3",
+        ...     source_file="./app.ai",
         ...     enable_cache=True,
         ...     max_turns=20
         ... )
         >>> runtime = N3InProcessRuntime(config=config)
         
         Direct access to generated module:
-        >>> runtime = N3InProcessRuntime("./app.n3")
+        >>> runtime = N3InProcessRuntime("./app.ai")
         >>> chains = runtime.get_chains()
         >>> agents = runtime.get_agents()
     
     Note:
-        The runtime compiles the .n3 file on initialization and caches
+        The runtime compiles the .ai file on initialization and caches
         the result. Subsequent instantiations reuse the cached module.
     """
     
@@ -208,7 +208,7 @@ class N3InProcessRuntime:
         """Initialize in-process runtime.
         
         Args:
-            source_file: Path to .n3 source file
+            source_file: Path to .ai source file
             config: Runtime configuration
         
         Raises:
@@ -235,13 +235,13 @@ class N3InProcessRuntime:
         self.rag = RuntimeRagAPI(self)
     
     def _load_runtime(self):
-        """Compile .n3 file and load runtime module."""
+        """Compile .ai file and load runtime module."""
         try:
             # Import namel3ss compiler components
             from namel3ss.parser import Parser
             from namel3ss.codegen.backend import generate_backend
             
-            # Parse .n3 source
+            # Parse .ai source
             with open(self.config.source_file, 'r', encoding='utf-8') as f:
                 source = f.read()
             

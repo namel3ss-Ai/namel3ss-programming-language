@@ -107,7 +107,7 @@ class DocumentHandle:
 
 
 class WorkspaceIndex:
-    """Loads and caches information for every .n3 file in the workspace."""
+    """Loads and caches information for every .ai file in the workspace."""
 
     def __init__(self, root_uri: Optional[str] = None) -> None:
         self.logger = logging.getLogger("namel3ss.lsp.workspace")
@@ -174,7 +174,7 @@ class WorkspaceIndex:
     def refresh_index(self) -> None:
         if not self.root_path.exists():
             return
-        for path in self.root_path.rglob("*.n3"):
+        for path in self.root_path.rglob("*.ai"):
             uri = from_fs_path(str(path))
             if uri in self._open_documents:
                 continue
@@ -381,15 +381,35 @@ class WorkspaceIndex:
         document = self.document(params.text_document.uri)
         if document is None:
             return []
-        formatted_lines = [line.rstrip().replace("\t", "    ") for line in document.lines]
-        formatted_text = "\n".join(formatted_lines)
-        if document.text.endswith("\n"):
-            formatted_text += "\n"
-        total_range = Range(
-            start=Position(line=0, character=0),
-            end=Position(line=len(document.lines), character=0),
-        )
-        return [TextEdit(range=total_range, new_text=formatted_text)]
+        
+        # Try to use the new AST-based formatter
+        try:
+            from namel3ss.formatting import ASTFormatter, DefaultFormattingRules
+            
+            formatter = ASTFormatter(DefaultFormattingRules.standard())
+            result = formatter.format_document(document.text, document.uri)
+            
+            if result.success() and result.is_changed:
+                total_range = Range(
+                    start=Position(line=0, character=0),
+                    end=Position(line=len(document.lines), character=0),
+                )
+                return [TextEdit(range=total_range, new_text=result.formatted_text)]
+            else:
+                # If formatting failed or no changes, return empty
+                return []
+        
+        except ImportError:
+            # Fall back to basic formatting if AST formatter is not available
+            formatted_lines = [line.rstrip().replace("\t", "    ") for line in document.lines]
+            formatted_text = "\n".join(formatted_lines)
+            if document.text.endswith("\n"):
+                formatted_text += "\n"
+            total_range = Range(
+                start=Position(line=0, character=0),
+                end=Position(line=len(document.lines), character=0),
+            )
+            return [TextEdit(range=total_range, new_text=formatted_text)]
 
     # ------------------------------------------------------------------
     # Helpers

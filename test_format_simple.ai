@@ -1,0 +1,9 @@
+# Simple test file
+app    "Simple"   {
+description:   "Test app"
+}
+
+llm   "test"   {
+provider:   "openai"
+model:   "gpt-4"
+}

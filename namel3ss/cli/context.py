@@ -89,7 +89,7 @@ def match_app_config(config: WorkspaceConfig, source_path: Path) -> Optional[App
     
     Examples:
         >>> workspace = WorkspaceConfig(...)
-        >>> source = Path("app.n3")
+        >>> source = Path("app.ai")
         >>> app_cfg = match_app_config(workspace, source)
         >>> if app_cfg:
         ...     print(f"Found app: {app_cfg.name}")
@@ -153,7 +153,7 @@ def create_ephemeral_app_config(
     
     Args:
         workspace: Workspace configuration providing defaults
-        source_path: Source .n3 file path
+        source_path: Source .ai file path
         args: Parsed CLI arguments with optional overrides
     
     Returns:
@@ -164,7 +164,7 @@ def create_ephemeral_app_config(
     
     Examples:
         >>> workspace = WorkspaceConfig(...)
-        >>> source = Path("adhoc.n3")
+        >>> source = Path("adhoc.ai")
         >>> args = argparse.Namespace(port=8080, backend_out="./out")
         >>> app_cfg = create_ephemeral_app_config(workspace, source, args)
         >>> app_cfg.port

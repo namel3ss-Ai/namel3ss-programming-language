@@ -1,0 +1,28 @@
+app "TestApp" {
+    llm "gpt_4" {
+        provider: "openai"
+        model: "gpt-4"
+    }
+
+    prompt "greeting" {
+        model: "gpt_4"
+        template: "Hello {{name}}"
+    }
+
+    chain "support_flow" {
+        prompt "greeting"
+    }
+
+    dataset "users" {
+        connector: "postgres"
+        query: "SELECT * FROM users"
+    }
+
+    page "/home" {
+        show text: "Welcome"
+
+        action "greet" {
+            run chain: support_flow
+        }
+    }
+}

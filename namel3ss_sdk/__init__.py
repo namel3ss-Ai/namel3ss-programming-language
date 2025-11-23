@@ -13,7 +13,7 @@ Usage Patterns:
         
     In-process execution (embedded N3 runtime):
         >>> from namel3ss_sdk import N3InProcessRuntime
-        >>> runtime = N3InProcessRuntime("./app.n3")
+        >>> runtime = N3InProcessRuntime("./app.ai")
         >>> result = runtime.chains.run("summarize", text="...")
     
     Async support:

@@ -25,6 +25,7 @@ def _encode_statement(
         ContinueStatement,
         ForLoop,
         IfBlock,
+        LogStatement,
         PredictStatement,
         ShowChart,
         ShowForm,
@@ -171,6 +172,14 @@ def _encode_statement(
     
     if isinstance(statement, ContinueStatement):
         return PageComponent(type="continue", payload={})
+    
+    if isinstance(statement, LogStatement):
+        payload = {
+            "level": str(statement.level).lower(),  # Convert LogLevel enum to lowercase string
+            "message": statement.message,
+            "source_location": statement.source_location,
+        }
+        return PageComponent(type="log", payload=payload)
     
     if isinstance(statement, PredictStatement):
         payload = {

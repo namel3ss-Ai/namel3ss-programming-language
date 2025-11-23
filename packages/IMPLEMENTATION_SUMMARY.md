@@ -21,7 +21,7 @@ A production-ready visual graph editor for the Namel3ss (N3) programming languag
 - `README.md` - Comprehensive documentation
 
 **Features Implemented:**
-- ✅ REST API endpoints for parsing .n3 files
+- ✅ REST API endpoints for parsing .ai files
 - ✅ WebSocket server for Yjs collaboration (y-websocket)
 - ✅ File watching with chokidar
 - ✅ AST serialization to JSON
@@ -35,7 +35,7 @@ A production-ready visual graph editor for the Namel3ss (N3) programming languag
 **API Endpoints:**
 - `GET /api/parse?file=<path>` - Parse and visualize file
 - `POST /api/parse` - Parse source code
-- `GET /api/files` - List all .n3 files
+- `GET /api/files` - List all .ai files
 - `POST /api/save` - Save changes (stub)
 - `GET /health` - Health check
 - `WS /<docName>` - Yjs collaboration WebSocket
@@ -126,7 +126,7 @@ A production-ready visual graph editor for the Namel3ss (N3) programming languag
 **Files Created:**
 - `packages/setup.js` - Automated setup script
 - `packages/dev.js` - Development launcher
-- `packages/graph_editor_demo.n3` - Sample file
+- `packages/graph_editor_demo.ai` - Sample file
 - Unit tests for store and transformer
 - ESLint and Prettier configurations
 - Jest configurations
@@ -142,13 +142,13 @@ A production-ready visual graph editor for the Namel3ss (N3) programming languag
 ### 5. Example Files
 
 **Created:**
-- `graph_editor_demo.n3` - Comprehensive demo with all features
+- `graph_editor_demo.ai` - Comprehensive demo with all features
 
 ## 🎯 Features Implemented
 
 ### Core Requirements ✅
 
-- [x] **AST to Graph Translation**: Complete parser that reads .n3 files and transforms chains/agents into JSON graph
+- [x] **AST to Graph Translation**: Complete parser that reads .ai files and transforms chains/agents into JSON graph
 - [x] **Custom Node Components**: 11 specialized React components for each node type
 - [x] **Edge Components**: Normal, step, reference, and conditional edge support
 - [x] **Performance Optimizations**: 
@@ -242,7 +242,7 @@ packages/
 ├── IMPLEMENTATION_SUMMARY.md     # This file
 ├── setup.js                      # Setup script
 ├── dev.js                        # Dev launcher
-├── graph_editor_demo.n3          # Sample file
+├── graph_editor_demo.ai          # Sample file
 │
 ├── n3-graph-server/              # Backend
 │   ├── src/
@@ -377,7 +377,7 @@ Documentation provided:
 2. **Integration Guide**: Deep dive into integration
 3. **API Docs**: Complete API reference
 4. **Code Comments**: Inline documentation
-5. **Examples**: Sample .n3 file
+5. **Examples**: Sample .ai file
 6. **Troubleshooting**: Common issues and solutions
 
 ## 🔮 Future Enhancements

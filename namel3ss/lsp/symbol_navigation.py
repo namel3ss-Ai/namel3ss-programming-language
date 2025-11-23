@@ -685,16 +685,17 @@ def enhance_lsp_with_navigation(language_server):
         if workspace.root_path:
             # Collect all N3 files
             files = {}
-            for n3_file in workspace.root_path.rglob("*.n3"):
+            for n3_file in workspace.root_path.rglob("*.ai"):
                 try:
                     uri = f"file://{n3_file}"
                     content = n3_file.read_text(encoding="utf-8")
                     files[uri] = content
                 except Exception as e:
-                    language_server.logger.warning(f"Failed to read {n3_file}: {e}")
+                    # Failed to read file during symbol navigation init
+                    pass
             
             # Initialize navigation engine
             navigation_engine.initialize_workspace(str(workspace.root_path), files)
-            language_server.logger.info(f"Symbol navigation initialized with {len(files)} files")
+            # Symbol navigation initialized
     
-    language_server.logger.info("Symbol navigation provider registered")
+    # Symbol navigation provider registered

@@ -3,7 +3,7 @@
 N3 Parser Bridge for Node.js
 
 This script bridges the Python N3 parser with Node.js by:
-1. Accepting a .n3 file path or stdin input
+1. Accepting a .ai file path or stdin input
 2. Parsing the file using namel3ss.lang.grammar.parse_module
 3. Converting the AST to JSON
 4. Outputting JSON to stdout for Node.js consumption
@@ -60,14 +60,14 @@ def main():
     if len(sys.argv) < 2:
         print(json.dumps({
             'success': False,
-            'error': 'Usage: parser-bridge.py <file.n3> or parser-bridge.py --stdin <filename>'
+            'error': 'Usage: parser-bridge.py <file.ai> or parser-bridge.py --stdin <filename>'
         }), file=sys.stderr)
         sys.exit(1)
     
     try:
         # Check if reading from stdin
         if sys.argv[1] == '--stdin':
-            file_name = sys.argv[2] if len(sys.argv) > 2 else 'stdin.n3'
+            file_name = sys.argv[2] if len(sys.argv) > 2 else 'stdin.ai'
             source = sys.stdin.read()
         else:
             file_path = sys.argv[1]

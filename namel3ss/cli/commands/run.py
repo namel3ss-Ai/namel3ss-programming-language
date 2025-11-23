@@ -32,7 +32,7 @@ from ..context import (
 from ..errors import CLIDependencyError, CLIRuntimeError, handle_cli_exception
 from ..loading import load_json_argument, load_n3_app, load_runtime_module, prepare_backend
 from ..output import print_error, print_prediction_response, print_success
-from ..utils import find_chain, find_first_n3_file, generate_backend_summary
+from ..utils import find_chain, find_first_source_file, generate_backend_summary
 from ..validation import apply_env_overrides, normalize_run_command_args, validate_bool, validate_int
 
 
@@ -96,12 +96,12 @@ def run_dev_server(
     Run a development server for a Namel3ss app.
     
     This function:
-    1. Parses the .n3 file
+    1. Parses the .ai file
     2. Generates backend and frontend scaffolds
     3. Starts a uvicorn dev server with hot reload
     
     Args:
-        source_path: Path to the .n3 source file
+        source_path: Path to the .ai source file
         backend_dir: Directory for backend scaffold (None uses temp directory)
         host: Host to bind the server to
         port: Port to bind the server to
@@ -118,7 +118,7 @@ def run_dev_server(
     
     Examples:
         >>> run_dev_server(  # doctest: +SKIP
-        ...     Path("app.n3"),
+        ...     Path("app.ai"),
         ...     host="127.0.0.1",
         ...     port=8000
         ... )
@@ -257,14 +257,14 @@ def cmd_run(args: argparse.Namespace) -> None:
     3. Multi-app dev server: Start multiple development servers simultaneously
     
     The command automatically detects which mode based on arguments:
-    - If target is a chain name (not .n3 file), runs chain mode
+    - If target is a chain name (not .ai file), runs chain mode
     - If --dev or multiple apps specified, runs multi-app dev server
     - Otherwise runs single-app dev server
     
     Args:
         args: Parsed command-line arguments containing:
-            - file: Path to .n3 source file (optional)
-            - target: Chain name or .n3 file to run (optional)
+            - file: Path to .ai source file (optional)
+            - target: Chain name or .ai file to run (optional)
             - apps: List of app names from config (optional)
             - workspace: Run all workspace apps (optional)
             - dev: Force dev server mode (optional)
@@ -290,7 +290,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         Result: ...
         
         Start dev server:
-        >>> args = argparse.Namespace(file='app.n3', ...)
+        >>> args = argparse.Namespace(file='app.ai', ...)
         >>> cmd_run(args)  # doctest: +SKIP
         ✓ Parsed: MyApp
         Namel3ss dev server running at http://127.0.0.1:8000
@@ -304,7 +304,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         # Determine if this is chain execution mode
         chain_mode = False
         if not force_dev and target:
-            if target.endswith(".n3"):
+            if target.endswith(".ai"):
                 chain_mode = False
             else:
                 potential_path = Path(target)
@@ -320,11 +320,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             chain_name = target or ""
             source_arg = namespace.get("file")
             if source_arg is None:
-                default_file = find_first_n3_file()
+                default_file = find_first_source_file()
                 if default_file is None:
                     raise CLIRuntimeError(
-                        "No .n3 file found to resolve chain execution",
-                        hint="Specify a .n3 file with --file or create one in the current directory",
+                        "No .ai file found to resolve chain execution",
+                        hint="Specify a .ai file with --file or create one in the current directory",
                     )
                 source_arg = str(default_file)
             
@@ -377,7 +377,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         # Dev server mode - resolve apps
         selected_names = getattr(args, "apps", None)
         source_path_arg: Optional[str] = None
-        if target and (target.endswith(".n3") or Path(target).exists()):
+        if target and (target.endswith(".ai") or Path(target).exists()):
             source_path_arg = target
         if source_path_arg is None and namespace.get("file"):
             source_path_arg = namespace["file"]
@@ -396,11 +396,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             apps = resolve_apps_from_args(workspace, None, workspace_root)
         else:
             if source_path_arg is None:
-                default_file = find_first_n3_file()
+                default_file = find_first_source_file()
                 if default_file is None:
                     raise CLIRuntimeError(
-                        "No .n3 file found in the current directory",
-                        hint="Create a .n3 file or specify one with --file",
+                        "No .ai file found in the current directory",
+                        hint="Create a .ai file or specify one with --file",
                     )
                 source_path_arg = str(default_file)
             source_path = Path(source_path_arg)
@@ -413,7 +413,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not apps:
             raise CLIRuntimeError(
                 "No applications resolved to run",
-                hint="Specify a .n3 file or configure apps in namel3ss.toml",
+                hint="Specify a .ai file or configure apps in namel3ss.toml",
             )
         
         # Apply CLI overrides

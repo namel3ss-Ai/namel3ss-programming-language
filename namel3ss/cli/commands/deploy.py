@@ -26,7 +26,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     
     Args:
         args: Parsed command-line arguments containing:
-            - file: Path to .n3 source file
+            - file: Path to .ai source file
             - model: Name of model to deploy
             
     Raises:
@@ -34,7 +34,7 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     
     Examples:
         >>> args = argparse.Namespace(  # doctest: +SKIP
-        ...     file='app.n3',
+        ...     file='app.ai',
         ...     model='my_classifier'
         ... )
         >>> cmd_deploy(args)
@@ -116,4 +116,4 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         print(json.dumps(result))
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))

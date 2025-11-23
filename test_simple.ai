@@ -1,0 +1,29 @@
+app "SimpleApp" {
+    description: "Simple test application"
+}
+
+llm "test_model" {
+    provider: "openai"
+    model: "gpt-4o-mini"
+}
+
+prompt "hello" {
+    model: "test_model"
+    template: "Hello {{name}}!"
+}
+
+prompt "UnusedPrompt" {
+    model: "test_model"
+    template: "This prompt is never used"
+}
+
+chain "EmptyChain" {
+}
+
+dataset "users" {
+    connector: "postgres"
+}
+
+page "/home" {
+    show text: "Welcome"
+}

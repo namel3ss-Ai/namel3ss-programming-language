@@ -133,7 +133,7 @@ eval_suite support_eval {
 
 ```bash
 # Run eval suite
-namel3ss eval-suite support_eval -f app.n3
+namel3ss eval-suite support_eval -f app.ai
 
 # Limit number of examples
 namel3ss eval-suite support_eval --limit 50

@@ -74,7 +74,7 @@ The Namel3ss RAG implementation is **100% complete and production-ready** for th
 
 #### 3. CLI Tooling ✅
 - **build-index Command** (`namel3ss/cli_rag.py`):
-  - Build indices from .n3 programs
+  - Build indices from .ai programs
   - Verbose mode for progress tracking
   - Dataset override support
   - Reports statistics (docs, chunks, tokens, time)
@@ -83,8 +83,8 @@ The Namel3ss RAG implementation is **100% complete and production-ready** for th
 
 Usage:
 ```bash
-namel3ss build-index app.n3 docs_index --verbose
-namel3ss build-index app.n3 docs_index --dataset alt_docs
+namel3ss build-index app.ai docs_index --verbose
+namel3ss build-index app.ai docs_index --dataset alt_docs
 ```
 
 #### 4. Documentation ✅
@@ -103,7 +103,7 @@ namel3ss build-index app.n3 docs_index --dataset alt_docs
   - Document structure and access patterns
   - Example applications
 
-- **Reference Example** (`examples/rag_demo.n3`):
+- **Reference Example** (`examples/rag_demo.ai`):
   - Complete RAG application
   - Shows all components working together
   - Production-ready template
@@ -175,7 +175,7 @@ To deploy RAG in production:
    export OPENAI_API_KEY="sk-..."  # for OpenAI embeddings
    ```
 
-4. **Define RAG components** in your `.n3` file:
+4. **Define RAG components** in your `.ai` file:
    ```n3
    index my_index:
        source_dataset: my_docs
@@ -192,7 +192,7 @@ To deploy RAG in production:
 
 5. **Build the index**:
    ```bash
-   namel3ss build-index app.n3 my_index --verbose
+   namel3ss build-index app.ai my_index --verbose
    ```
 
 6. **Use in chains** (documented syntax):
@@ -232,7 +232,7 @@ The RAG implementation supports:
 8. `namel3ss/cli_rag.py` - CLI commands
 9. `docs/RAG_GUIDE.md` - User documentation
 10. `docs/RAG_STATUS.md` - This file
-11. `examples/rag_demo.n3` - Reference example
+11. `examples/rag_demo.ai` - Reference example
 12. `tests/test_rag_runtime.py` - Runtime tests
 13. `tests/integration/test_rag_integration.py` - Integration tests
 

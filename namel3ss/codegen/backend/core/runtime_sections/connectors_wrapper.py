@@ -381,8 +381,7 @@ async def _default_rest_driver(connector: Dict[str, Any], context: Dict[str, Any
     _coerce_bool_option,
 )
 
-
-    missing_env: Set[str] = set()
+missing_env: Set[str] = set()
     resolved_options = _resolve_connector_value(raw_options, context, missing_env) if raw_options else {}
     options = resolved_options if isinstance(resolved_options, dict) else {}
 

@@ -1,0 +1,135 @@
+module apps.customer_dashboard
+
+# Import from various packages
+use company.core::authentication as auth
+use cs.support::ticket_management as tickets
+use cs.analytics::customer_insights as insights
+use external.chat_api::live_chat as chat
+
+app "CustomerServiceDashboard" {
+    name: "AI Customer Service Dashboard"
+    description: "Comprehensive customer service platform with AI assistance"
+    version: "2.0.0"
+    
+    components: [
+        "authentication",
+        "ticket_system",
+        "live_chat",
+        "analytics",
+        "ai_assistant"
+    ]
+}
+
+llm "customer_assistant" {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.3
+    max_tokens: 1000
+    
+    system_prompt: """
+    You are an AI assistant for customer service representatives.
+    Help agents provide excellent customer support by:
+    - Suggesting appropriate responses
+    - Providing relevant knowledge base articles
+    - Escalating complex issues when needed
+    - Maintaining professional tone
+    """
+}
+
+prompt "welcome_customer" {
+    template: """
+    Welcome message for customer: {{customer_name}}
+    Account type: {{account_type}}
+    Previous interactions: {{interaction_count}}
+    
+    Generate a personalized welcome message that:
+    - Greets the customer warmly
+    - Acknowledges their account status
+    - References previous positive interactions if any
+    - Asks how we can help today
+    """
+}
+
+prompt "analyze_customer_sentiment" {
+    template: """
+    Analyze the sentiment of this customer message:
+    
+    Message: {{customer_message}}
+    Context: {{conversation_context}}
+    
+    Provide:
+    - Sentiment score (-1 to 1)
+    - Emotion categories (frustrated, happy, confused, etc.)
+    - Urgency level (low, medium, high)
+    - Suggested response approach
+    """
+}
+
+prompt "suggest_resolution" {
+    template: """
+    Customer Issue: {{issue_description}}
+    Category: {{issue_category}}
+    Customer History: {{customer_history}}
+    Previous Attempts: {{previous_attempts}}
+    
+    Suggest the best resolution approach:
+    - Immediate actions to take
+    - Knowledge base articles to reference
+    - If escalation is needed
+    - Follow-up requirements
+    """
+}
+
+workflow "handle_customer_inquiry" {
+    description: "Complete workflow for handling customer inquiries"
+    
+    steps: [
+        {
+            name: "authenticate_customer",
+            description: "Verify customer identity and load profile"
+        },
+        {
+            name: "analyze_inquiry", 
+            description: "Understand customer need and sentiment"
+        },
+        {
+            name: "search_knowledge_base",
+            description: "Find relevant solutions and articles"
+        },
+        {
+            name: "generate_response",
+            description: "Create appropriate response using AI"
+        },
+        {
+            name: "log_interaction",
+            description: "Record interaction for future reference"
+        },
+        {
+            name: "schedule_followup",
+            description: "Schedule follow-up if needed"
+        }
+    ]
+}
+
+workflow "escalation_process" {
+    description: "Escalate complex or sensitive issues"
+    
+    steps: [
+        {
+            name: "assess_escalation_need",
+            description: "Determine if escalation is required"
+        },
+        {
+            name: "prepare_escalation_summary",
+            description: "Compile issue summary for supervisor"
+        },
+        {
+            name: "assign_to_specialist",
+            description: "Route to appropriate specialist team"
+        },
+        {
+            name: "notify_customer",
+            description: "Inform customer about escalation"
+        }
+    ]
+}

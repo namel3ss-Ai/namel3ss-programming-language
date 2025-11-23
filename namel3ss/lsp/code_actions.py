@@ -623,4 +623,4 @@ def enhance_lsp_with_code_actions(language_server):
             params.context.diagnostics if params.context else []
         )
     
-    language_server.logger.info("Code actions provider registered")
+    # Code actions provider registered - logger may not be available during init

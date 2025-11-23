@@ -1,4 +1,4 @@
-﻿"""Grammar-driven parser entry points for Namel3ss `.n3` programs.
+"""Grammar-driven parser entry points for Namel3ss `.ai` programs.
 
 This module introduces a lightweight EBNF description of the supported
 surface syntax and a reference implementation that produces the existing

@@ -16,7 +16,7 @@ from ..context import get_cli_context
 from ..errors import CLIRuntimeError, handle_cli_exception
 from ..loading import load_n3_app, load_runtime_module
 from ..output import print_experiment_result
-from ..utils import find_experiment, find_first_n3_file
+from ..utils import find_experiment, find_first_source_file
 from ..validation import validate_int
 
 
@@ -42,7 +42,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments containing:
             - experiment: Name of experiment to evaluate
-            - file: Path to .n3 source file (optional, auto-discovers)
+            - file: Path to .ai source file (optional, auto-discovers)
             - format: Output format (json or text, default: json)
     
     Raises:
@@ -51,7 +51,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
     Examples:
         >>> args = argparse.Namespace(  # doctest: +SKIP
         ...     experiment='prompt_comparison',
-        ...     file='app.n3',
+        ...     file='app.ai',
         ...     format='text'
         ... )
         >>> cmd_eval(args)
@@ -63,13 +63,13 @@ def cmd_eval(args: argparse.Namespace) -> None:
         experiment_name = args.experiment
         source_arg = args.file
         
-        # Auto-discover .n3 file if not specified
+        # Auto-discover .ai file if not specified
         if source_arg is None:
-            default_file = find_first_n3_file()
+            default_file = find_first_source_file()
             if default_file is None:
                 raise CLIRuntimeError(
-                    "No .n3 file found to evaluate experiments",
-                    hint="Specify a .n3 file with --file or create one in the current directory",
+                    "No .ai file found to evaluate experiments",
+                    hint="Specify a .ai file with --file or create one in the current directory",
                 )
             source_arg = str(default_file)
         
@@ -127,7 +127,7 @@ def cmd_eval_suite(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments containing:
             - suite: Name of evaluation suite to run
-            - file: Path to .n3 source file (optional, auto-discovers)
+            - file: Path to .ai source file (optional, auto-discovers)
             - limit: Maximum number of examples to evaluate (optional)
             - batch_size: Batch size for evaluation (default: 1)
             - output: Output file path for results (optional, default: stdout)
@@ -139,7 +139,7 @@ def cmd_eval_suite(args: argparse.Namespace) -> None:
     Examples:
         >>> args = argparse.Namespace(  # doctest: +SKIP
         ...     suite='accuracy_test',
-        ...     file='app.n3',
+        ...     file='app.ai',
         ...     limit=100,
         ...     verbose=True
         ... )
@@ -159,13 +159,13 @@ def cmd_eval_suite(args: argparse.Namespace) -> None:
         suite_name = args.suite
         source_arg = args.file
         
-        # Auto-discover .n3 file if not specified
+        # Auto-discover .ai file if not specified
         if source_arg is None:
-            default_file = find_first_n3_file()
+            default_file = find_first_source_file()
             if default_file is None:
                 raise CLIRuntimeError(
-                    "No .n3 file found to run eval suite",
-                    hint="Specify a .n3 file with --file or create one in the current directory",
+                    "No .ai file found to run eval suite",
+                    hint="Specify a .ai file with --file or create one in the current directory",
                 )
             source_arg = str(default_file)
         

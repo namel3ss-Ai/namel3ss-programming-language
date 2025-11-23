@@ -35,7 +35,7 @@ class BuildInvocation:
     
     Attributes:
         app: The parsed application AST
-        source: Path to the source .n3 file
+        source: Path to the source .ai file
         backend_dir: Directory where backend was generated
         frontend_dir: Directory where frontend was generated
         target: Frontend target type (static, react, etc.)
@@ -72,7 +72,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     
     Args:
         args: Parsed command-line arguments containing:
-            - file: Path to .n3 source file
+            - file: Path to .ai source file
             - out: Frontend output directory (optional)
             - backend_out: Backend output directory (optional)
             - target: Frontend target type (optional)
@@ -88,7 +88,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     
     Examples:
         Build with defaults:
-        >>> args = argparse.Namespace(file='app.n3', ...)
+        >>> args = argparse.Namespace(file='app.ai', ...)
         >>> cmd_build(args)  # doctest: +SKIP
         ✓ Static site generated in build/
         ✓ Backend scaffold generated in backend/

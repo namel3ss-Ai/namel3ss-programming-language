@@ -1,0 +1,199 @@
+module customer_profiles
+
+use company.core::authentication
+use company.core::data_validation
+use database.connector::customer_db
+
+# Customer profile analysis
+prompt "analyze_customer_profile" {
+    template: """
+    Analyze customer profile for support optimization:
+    
+    Customer ID: {{customer_id}}
+    Account Details:
+    - Tier: {{account_tier}}
+    - Tenure: {{account_age}}
+    - Value: {{lifetime_value}}
+    - Products: {{active_products}}
+    
+    Interaction History:
+    - Total Tickets: {{ticket_count}}
+    - Avg Resolution Time: {{avg_resolution_time}}
+    - Satisfaction Score: {{satisfaction_score}}
+    - Preferred Contact: {{preferred_channel}}
+    
+    Recent Activity:
+    {{recent_interactions}}
+    
+    Provide:
+    - Customer persona summary
+    - Communication preferences
+    - Risk factors (churn, escalation)
+    - Recommended service approach
+    - Upsell/retention opportunities
+    """
+}
+
+# Personalized greeting generation
+prompt "generate_personalized_greeting" {
+    template: """
+    Create a personalized greeting for customer {{customer_name}}:
+    
+    Profile Context:
+    - Account Status: {{account_status}}
+    - Last Interaction: {{last_interaction_date}}
+    - Previous Issue: {{last_issue_category}}
+    - Resolution Status: {{last_issue_resolved}}
+    - Satisfaction: {{last_satisfaction_score}}
+    - VIP Status: {{is_vip_customer}}
+    
+    Generate a warm, professional greeting that:
+    - Acknowledges their status appropriately
+    - References positive past interactions if relevant
+    - Shows we value their business
+    - Sets positive tone for current interaction
+    """
+}
+
+# Customer sentiment tracking
+prompt "track_customer_sentiment" {
+    template: """
+    Track and analyze customer sentiment over time:
+    
+    Customer: {{customer_id}}
+    Current Interaction: {{current_message}}
+    Interaction History: {{interaction_history}}
+    
+    Historical Sentiment Data:
+    {{sentiment_timeline}}
+    
+    Analyze:
+    - Current sentiment (positive/negative/neutral)
+    - Sentiment trend over time
+    - Triggers for negative sentiment
+    - Improvement opportunities
+    - Risk assessment (likelihood to churn)
+    
+    Recommend actions to improve sentiment.
+    """
+}
+
+# Customer journey mapping
+prompt "map_customer_journey" {
+    template: """
+    Map the customer journey for support optimization:
+    
+    Customer: {{customer_id}}
+    Journey Timeline:
+    {{journey_events}}
+    
+    Touchpoints:
+    - Onboarding: {{onboarding_experience}}
+    - Product Usage: {{usage_patterns}}
+    - Support Contacts: {{support_history}}
+    - Billing Events: {{billing_history}}
+    
+    Identify:
+    - Pain points in the journey
+    - Moments of delight
+    - Opportunities for proactive support
+    - Potential churn indicators
+    - Success milestones
+    
+    Provide actionable recommendations for journey improvement.
+    """
+}
+
+# Customer data enrichment
+prompt "enrich_customer_data" {
+    template: """
+    Enrich customer profile with available data sources:
+    
+    Base Profile: {{base_profile}}
+    External Data: {{external_data_sources}}
+    Behavioral Data: {{behavioral_patterns}}
+    Social Data: {{social_media_sentiment}}
+    
+    Create comprehensive customer view including:
+    - Demographics and firmographics
+    - Behavioral patterns and preferences
+    - Risk and opportunity scores
+    - Recommended engagement strategies
+    - Personalization opportunities
+    """
+}
+
+# Customer database operations
+tool "customer_db" {
+    type: "database"
+    description: "Customer profile database operations"
+    connection: "customer_db"
+    
+    operations: [
+        "get_profile",
+        "update_profile",
+        "search_customers", 
+        "get_interaction_history",
+        "update_preferences"
+    ]
+}
+
+# Customer analytics engine
+tool "customer_analytics" {
+    type: "analytics"
+    description: "Advanced customer analytics and insights"
+    
+    config: {
+        "metrics": [
+            "lifetime_value",
+            "churn_risk",
+            "satisfaction_trend",
+            "engagement_score"
+        ],
+        "segments": [
+            "high_value",
+            "at_risk", 
+            "advocates",
+            "new_customers"
+        ]
+    }
+}
+
+# Profile workflow
+workflow "customer_profile_workflow" {
+    description: "Comprehensive customer profile management"
+    
+    steps: [
+        {
+            name: "load_profile",
+            description: "Load customer profile and history",
+            actions: ["authenticate_customer", "fetch_profile", "load_history"]
+        },
+        {
+            name: "analyze",
+            description: "Analyze customer data for insights",
+            actions: ["sentiment_analysis", "journey_mapping", "risk_assessment"]
+        },
+        {
+            name: "personalize",
+            description: "Generate personalized experience",
+            actions: ["create_greeting", "suggest_actions", "set_preferences"]
+        },
+        {
+            name: "update",
+            description: "Update profile with new information",
+            actions: ["log_interaction", "update_sentiment", "save_preferences"]
+        }
+    ]
+}
+
+export {
+    "analyze_customer_profile",
+    "generate_personalized_greeting",
+    "track_customer_sentiment",
+    "map_customer_journey", 
+    "enrich_customer_data",
+    "customer_db",
+    "customer_analytics",
+    "customer_profile_workflow"
+}

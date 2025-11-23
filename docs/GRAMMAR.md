@@ -39,7 +39,8 @@ KEYWORD         = "app" | "page" | "llm" | "agent" | "prompt" | "chain"
                 | "import" | "module" | "language_version"
                 | "if" | "else" | "for" | "while" | "match" | "case"
                 | "true" | "false" | "null" | "env" | "let" | "in"
-                | "show" | "filter" | "map" | "transform" ;
+                | "show" | "log" | "debug" | "info" | "warn" | "error"
+                | "filter" | "map" | "transform" ;
 ```
 
 ### 1.3 Literals
@@ -152,12 +153,15 @@ KeyValuePair    = IDENTIFIER , ":" , Value , "\n" ;
 PageDecl        = "page" , QuotedName , "at" , STRING_LITERAL , Block ;
 
 PageBlock       = "{" , "\n" , { PageStatement } , "}" ;
-PageStatement   = ShowStatement | ControlFlow | Expression ;
+PageStatement   = ShowStatement | LogStatement | ControlFlow | Expression ;
 
 ShowStatement   = "show" , ComponentType , [ ComponentConfig ] , "\n" ;
 ComponentType   = "text" | "table" | "chart" | "form" | "button" 
                 | "input" | "select" | "image" | "video" ;
 ComponentConfig = ":" , ( InlineConfig | Block ) ;
+
+LogStatement    = "log" , [ LogLevel ] , STRING_LITERAL , "\n" ;
+LogLevel        = "debug" | "info" | "warn" | "error" ;
 ```
 
 ### 3.3 LLM Declaration

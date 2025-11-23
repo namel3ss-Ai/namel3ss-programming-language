@@ -470,7 +470,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         final_module_name = (
             self.module_name_override
             or self.module_name
-            or self.path.split('/')[-1].replace('.n3', '')
+            or self.path.split('/')[-1].replace('.ai', '')
             or "main"
         )
         
@@ -498,7 +498,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         """Ensure an App exists, creating an implicit one if needed."""
         if self.app is None:
             # Create implicit app with module name or default
-            app_name = self.module_name or self.path.split('/')[-1].replace('.n3', '') or "app"
+            app_name = self.module_name or self.path.split('/')[-1].replace('.ai', '') or "app"
             self.app = App(name=app_name)
             self.explicit_app = False
         return self.app

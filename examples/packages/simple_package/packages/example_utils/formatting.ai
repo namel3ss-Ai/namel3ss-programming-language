@@ -1,0 +1,72 @@
+module formatting
+
+# JSON formatting prompt
+prompt "format_json" {
+    template: """
+    Format this JSON data for better readability:
+    
+    {{json_data}}
+    
+    Return properly indented, formatted JSON.
+    """
+}
+
+# Table formatting prompt  
+prompt "format_table" {
+    template: """
+    Create a well-formatted table from this data:
+    
+    Data: {{data}}
+    Headers: {{headers}}
+    
+    Use ASCII table format with proper alignment.
+    """
+}
+
+# Currency formatting
+prompt "format_currency" {
+    template: """
+    Format this amount as currency: {{amount}}
+    
+    Currency: {{currency|default:"USD"}}
+    Locale: {{locale|default:"en-US"}}
+    
+    Return properly formatted currency string.
+    """
+}
+
+# Date formatting prompt
+prompt "format_date" {
+    template: """
+    Format this date: {{date}}
+    
+    Input format: {{input_format|default:"ISO 8601"}}
+    Output format: {{output_format|default:"YYYY-MM-DD"}}
+    
+    Return formatted date string.
+    """
+}
+
+# Text formatting tool
+tool "text_formatter" {
+    type: "utility"
+    description: "Advanced text formatting operations"
+    config: {
+        "operations": [
+            "trim",
+            "uppercase", 
+            "lowercase",
+            "title_case",
+            "remove_extra_spaces"
+        ]
+    }
+}
+
+# Export formatting functions
+export {
+    "format_json",
+    "format_table",
+    "format_currency",
+    "format_date",
+    "text_formatter"
+}

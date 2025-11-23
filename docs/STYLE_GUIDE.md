@@ -24,7 +24,7 @@ Every document should contain:
 - Optional callouts for best practices, warnings, or notes using the following format:
 
 > **Best Practice**  
-> Use environment variables for all provider keys; do not embed secrets in `.n3` files or source code.
+> Use environment variables for all provider keys; do not embed secrets in `.ai` files or source code.
 
 > **Warning**  
 > Generated runtime code is not guaranteed to remain stable across major versions.

@@ -1,0 +1,20 @@
+[package]
+name = "example.utils"
+version = "1.0.0"
+description = "Example utility package demonstrating basic package concepts"
+authors = ["namel3ss Team"]
+license = "MIT"
+
+modules = [
+    "validation",
+    "formatting"
+]
+
+[dependencies]
+
+[dev-dependencies]
+
+[module-exports]
+
+[namel3ss]
+version = ">=1.0.0"

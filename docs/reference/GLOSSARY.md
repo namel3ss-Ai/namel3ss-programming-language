@@ -5,7 +5,7 @@ Authoritative definitions for core Namel3ss (N3) terminology. Use these terms co
 - **Agent**: An executable behavior in N3 with state, tools, and memory. Not a chatbot. Agents run inside the generated runtime.
 - **Application**: A complete deployable unit written in N3. Includes backend, frontend, schemas, configuration, and generated tests.
 - **Chain**: A sequence of AI or procedural steps executed under explicit runtime rules. Chains are first-class in N3.
-- **Compilation**: The transformation from `.n3` source to runtime assets: backend API, frontend, memory schemas, provider bindings, and generated tests.
+- **Compilation**: The transformation from `.ai` source to runtime assets: backend API, frontend, memory schemas, provider bindings, and generated tests.
 - **Memory**: Persistent runtime state used in agent reasoning, retrieval, and context management.
 - **N3**: The core AI programming language compiled to runtime systems. Defines agents, memory, chains, datasets, providers, and pages.
 - **Namel3ss**: The ecosystem (language, CLI, tooling, compilers, runtime) that implements N3.

@@ -1,0 +1,5 @@
+# Analysis prompt fixture
+prompt "analysis_request" {
+    template: "Analyze the following {{content_type}}: {{content}}"
+    variables: ["content_type", "content"]
+}

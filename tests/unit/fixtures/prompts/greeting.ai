@@ -1,0 +1,5 @@
+# Test prompt template fixture
+prompt "simple_greeting" {
+    template: "Hello {{name}}, how are you?"
+    variables: ["name"]
+}

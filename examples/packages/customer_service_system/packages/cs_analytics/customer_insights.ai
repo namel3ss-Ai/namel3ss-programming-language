@@ -1,0 +1,242 @@
+module customer_insights
+
+use cs.support::customer_profiles as profiles
+use cs.support::ticket_management as tickets
+use company.core::data_processing
+use analytics.engine::ml_models
+
+# Customer behavior analysis
+prompt "analyze_customer_behavior" {
+    template: """
+    Analyze customer behavior patterns:
+    
+    Customer Segment: {{customer_segment}}
+    Time Period: {{analysis_period}}
+    
+    Data Points:
+    - Contact Frequency: {{contact_frequency}}
+    - Issue Types: {{common_issues}}
+    - Resolution Satisfaction: {{satisfaction_scores}}
+    - Channel Preferences: {{preferred_channels}}
+    - Response Times: {{response_time_expectations}}
+    
+    Behavioral Indicators:
+    {{behavioral_data}}
+    
+    Provide insights on:
+    - Customer journey stage
+    - Satisfaction drivers
+    - Potential pain points
+    - Engagement opportunities
+    - Risk factors (churn, escalation)
+    - Personalization recommendations
+    
+    Include actionable recommendations for improving customer experience.
+    """
+}
+
+# Churn prediction analysis
+prompt "predict_customer_churn" {
+    template: """
+    Predict customer churn risk based on behavioral signals:
+    
+    Customer Profile:
+    - Account Value: {{account_value}}
+    - Tenure: {{customer_tenure}}
+    - Product Usage: {{usage_metrics}}
+    
+    Recent Behavior:
+    - Support Contacts: {{recent_tickets}}
+    - Satisfaction Trend: {{satisfaction_trend}}
+    - Engagement Level: {{engagement_metrics}}
+    - Payment History: {{payment_indicators}}
+    
+    Risk Indicators:
+    {{risk_signals}}
+    
+    Analyze and provide:
+    - Churn probability score (0-100)
+    - Key risk factors
+    - Timeline for potential churn
+    - Recommended intervention strategies
+    - Success probability of retention efforts
+    
+    Prioritize actionable interventions by impact and effort.
+    """
+}
+
+# Customer lifetime value prediction
+prompt "calculate_customer_ltv" {
+    template: """
+    Calculate and project customer lifetime value:
+    
+    Customer Data:
+    - Current Value: {{current_revenue}}
+    - Historical Spend: {{historical_revenue}}
+    - Contract Details: {{contract_info}}
+    - Usage Patterns: {{usage_data}}
+    
+    Support Metrics:
+    - Support Costs: {{support_costs}}
+    - Satisfaction Scores: {{satisfaction_history}}
+    - Retention Rate: {{retention_probability}}
+    
+    Market Context:
+    - Segment Benchmarks: {{segment_averages}}
+    - Competitive Position: {{competitive_analysis}}
+    
+    Calculate:
+    - Current LTV estimate
+    - Projected LTV (1, 3, 5 years)
+    - Support cost impact on LTV
+    - LTV improvement opportunities
+    - ROI of retention investments
+    
+    Provide specific recommendations to maximize LTV.
+    """
+}
+
+# Customer satisfaction analysis
+prompt "analyze_customer_satisfaction" {
+    template: """
+    Deep analysis of customer satisfaction factors:
+    
+    Satisfaction Data:
+    - Current Score: {{current_csat}}
+    - Historical Trend: {{csat_history}}
+    - Benchmark Comparison: {{industry_benchmarks}}
+    
+    Interaction Analysis:
+    - Recent Interactions: {{recent_interactions}}
+    - Issue Resolution Quality: {{resolution_quality}}
+    - Agent Performance: {{agent_ratings}}
+    - Channel Experience: {{channel_feedback}}
+    
+    Context Factors:
+    - Product Experience: {{product_satisfaction}}
+    - Billing Experience: {{billing_satisfaction}}
+    - Onboarding Experience: {{onboarding_feedback}}
+    
+    Identify:
+    - Satisfaction drivers (positive factors)
+    - Dissatisfaction sources (pain points)
+    - Improvement opportunities
+    - Best practices to replicate
+    - Correlation with business outcomes
+    
+    Recommend targeted improvement initiatives with expected impact.
+    """
+}
+
+# Predictive service recommendations
+prompt "recommend_proactive_service" {
+    template: """
+    Recommend proactive service opportunities:
+    
+    Customer Analysis:
+    - Profile: {{customer_profile}}
+    - Usage Patterns: {{usage_analysis}}
+    - Historical Issues: {{issue_patterns}}
+    - Satisfaction Trends: {{satisfaction_trends}}
+    
+    Predictive Indicators:
+    - Risk Signals: {{risk_indicators}}
+    - Opportunity Signals: {{opportunity_indicators}}
+    - Behavioral Changes: {{behavior_changes}}
+    
+    Industry Context:
+    - Common Issues: {{common_industry_issues}}
+    - Best Practices: {{proactive_best_practices}}
+    - Seasonal Patterns: {{seasonal_considerations}}
+    
+    Recommend:
+    - Proactive outreach opportunities
+    - Preventive support actions
+    - Educational content to share
+    - Product recommendations
+    - Service upgrades to suggest
+    
+    Prioritize by customer impact and business value.
+    """
+}
+
+# Analytics data processing tool
+tool "customer_data_processor" {
+    type: "analytics"
+    description: "Process customer data for insights generation"
+    
+    config: {
+        "data_sources": [
+            "support_tickets",
+            "customer_profiles",
+            "interaction_logs",
+            "satisfaction_surveys",
+            "product_usage"
+        ],
+        "processing_rules": {
+            "anonymization": true,
+            "aggregation_periods": ["daily", "weekly", "monthly"],
+            "trend_detection": true
+        }
+    }
+}
+
+# Machine learning insights engine
+tool "ml_insights_engine" {
+    type: "machine_learning"
+    description: "Generate ML-powered customer insights"
+    
+    models: {
+        "churn_prediction": {
+            "algorithm": "gradient_boosting",
+            "features": ["support_frequency", "satisfaction_trend", "usage_decline"]
+        },
+        "ltv_prediction": {
+            "algorithm": "linear_regression",
+            "features": ["current_value", "engagement_score", "tenure"]
+        },
+        "satisfaction_prediction": {
+            "algorithm": "random_forest", 
+            "features": ["resolution_time", "agent_quality", "issue_complexity"]
+        }
+    }
+}
+
+# Customer insights workflow
+workflow "customer_insights_generation" {
+    description: "Generate comprehensive customer insights"
+    
+    steps: [
+        {
+            name: "data_collection",
+            description: "Gather customer data from all sources",
+            actions: ["fetch_profile", "load_interactions", "get_satisfaction_data"]
+        },
+        {
+            name: "analysis", 
+            description: "Analyze customer behavior and patterns",
+            actions: ["behavior_analysis", "churn_prediction", "ltv_calculation"]
+        },
+        {
+            name: "insights_generation",
+            description: "Generate actionable insights",
+            actions: ["identify_opportunities", "assess_risks", "create_recommendations"]
+        },
+        {
+            name: "reporting",
+            description: "Package insights for stakeholders",
+            actions: ["create_dashboard", "generate_alerts", "schedule_reviews"]
+        }
+    ]
+}
+
+export {
+    "analyze_customer_behavior",
+    "predict_customer_churn",
+    "calculate_customer_ltv",
+    "analyze_customer_satisfaction",
+    "recommend_proactive_service",
+    "customer_data_processor",
+    "ml_insights_engine",
+    "customer_insights_generation"
+}

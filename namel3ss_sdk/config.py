@@ -134,7 +134,7 @@ class N3RuntimeConfig(BaseSettings):
     
     Example:
         >>> config = N3RuntimeConfig(
-        ...     source_file='./app.n3',
+        ...     source_file='./app.ai',
         ...     allow_stubs=False
         ... )
     """
@@ -150,7 +150,7 @@ class N3RuntimeConfig(BaseSettings):
     # Source settings
     source_file: Optional[Path] = Field(
         default=None,
-        description="Path to .n3 source file"
+        description="Path to .ai source file"
     )
     
     # Runtime settings
@@ -215,7 +215,7 @@ class N3Settings(BaseSettings):
     Example:
         >>> settings = N3Settings(
         ...     client=N3ClientConfig(base_url='https://api.example.com'),
-        ...     runtime=N3RuntimeConfig(source_file='./app.n3')
+        ...     runtime=N3RuntimeConfig(source_file='./app.ai')
         ... )
     """
     

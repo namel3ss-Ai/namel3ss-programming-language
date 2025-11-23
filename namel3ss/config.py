@@ -95,7 +95,7 @@ class WorkspaceConfig:
             return
         auto_index = 0
         for app_path in candidates:
-            if not app_path.exists() or app_path.suffix != ".n3":
+            if not app_path.exists() or app_path.suffix != ".ai":
                 continue
             auto_index += 1
             name = app_path.stem
@@ -158,7 +158,7 @@ def _parse_apps(  # noqa: C901 - clarity preferred over deep factoring
     for name, raw in apps_section.items():
         if not isinstance(raw, dict):
             continue
-        file_path = Path(raw.get("file") or f"{name}.n3")
+        file_path = Path(raw.get("file") or f"{name}.ai")
         if not file_path.is_absolute():
             file_path = root / file_path
         backend_raw = raw.get("backend_out") or defaults.backend_out
@@ -327,7 +327,7 @@ def default_app_name(path: Path) -> str:
 
 
 def discover_n3_files(root: Path) -> List[Path]:
-    return sorted(root.glob("*.n3"))
+    return sorted(root.glob("*.ai"))
 
 
 def resolve_apps_from_args(

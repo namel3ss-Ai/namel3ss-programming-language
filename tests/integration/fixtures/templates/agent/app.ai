@@ -1,0 +1,23 @@
+# Agent-based app template for integration testing
+app "Test Agent App" {
+    description: "Agent-based application template for testing"
+}
+
+llm "analyzer_llm" {
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    temperature: 0.3
+    max_tokens: 500
+}
+
+agent "analyzer" {
+    llm: "analyzer_llm"
+    system: "You are a content analyzer. Provide structured analysis."
+    memory: "conversation_window"
+}
+
+prompt "analysis" {
+    model: "analyzer_llm"
+    template: "Analyze: {{content}}"
+    variables: ["content"]
+}

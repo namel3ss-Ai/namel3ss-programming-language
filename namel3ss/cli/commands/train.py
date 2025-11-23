@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from ..errors import handle_cli_exception
 from ..loading import load_json_argument, load_n3_app, load_runtime_module
-from ..utils import find_first_n3_file
+from ..utils import find_first_source_file
 
 
 def _format_error_detail(exc: BaseException) -> str:
@@ -35,7 +35,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     
     Args:
         args: Parsed command-line arguments containing:
-            - file: Path to .n3 source file
+            - file: Path to .ai source file
             - list: List available training jobs (flag)
             - backends: List available training backends (flag)
             - job: Training job name to execute or inspect (optional)
@@ -53,7 +53,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     
     Examples:
         List jobs:
-        >>> args = argparse.Namespace(file='app.n3', list=True)
+        >>> args = argparse.Namespace(file='app.ai', list=True)
         >>> cmd_train(args)  # doctest: +SKIP
         {
           "status": "ok",
@@ -62,7 +62,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         
         Execute job:
         >>> args = argparse.Namespace(  # doctest: +SKIP
-        ...     file='app.n3',
+        ...     file='app.ai',
         ...     job='fine_tune_gpt',
         ...     payload='{"examples": [...]}',
         ...     json=True
@@ -219,4 +219,4 @@ def cmd_train(args: argparse.Namespace) -> None:
         _emit(result)
     
     except Exception as exc:
-        handle_cli_exception(exc)
+        handle_cli_exception(exc, verbose=getattr(args, "verbose", False))

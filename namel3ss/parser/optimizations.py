@@ -245,7 +245,7 @@ page "Home" at "/" {
     for i in range(20):
         start = time.perf_counter()
         try:
-            parser = Parser(test_content, path=f"baseline_{i}.n3")
+            parser = Parser(test_content, path=f"baseline_{i}.ai")
             parser.parse()
             end = time.perf_counter()
             baseline_times.append(end - start)
@@ -268,7 +268,7 @@ page "Home" at "/" {
     # First parse (cache miss)
     start = time.perf_counter()
     try:
-        parser = Parser(test_content, path="cached_test.n3")
+        parser = Parser(test_content, path="cached_test.ai")
         parser.parse()
         end = time.perf_counter()
         first_time = end - start
@@ -283,7 +283,7 @@ page "Home" at "/" {
     for i in range(10):
         start = time.perf_counter()
         try:
-            parser = Parser(test_content, path="cached_test.n3") 
+            parser = Parser(test_content, path="cached_test.ai") 
             parser.parse()
             end = time.perf_counter()
             hit_time = end - start

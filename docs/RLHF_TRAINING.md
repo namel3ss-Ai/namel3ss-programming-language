@@ -34,7 +34,7 @@ I've designed and implemented the foundational architecture for a production-gra
 ### System Components
 
 ```
-N3 DSL (.n3 file)
+N3 DSL (.ai file)
     ↓
 Grammar Parser (namel3ss/lang/grammar.py)
     ↓

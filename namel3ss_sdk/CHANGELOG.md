@@ -28,7 +28,7 @@ All notable changes to the Namel3ss Python SDK will be documented in this file. 
 ### Added
 - **Initial SDK Release**: Production-grade Python SDK for integrating Namel3ss into existing applications.
 - **Remote Execution**: HTTP-based client for calling chains, agents, prompts, and RAG pipelines on remote Namel3ss servers.
-- **In-Process Execution**: Embedded runtime for running `.n3` workflows directly in Python processes.
+- **In-Process Execution**: Embedded runtime for running `.ai` workflows directly in Python processes.
 - **Fault Tolerance**: Circuit breaker pattern with configurable thresholds and automatic recovery.
 - **Retry Logic**: Exponential backoff with jitter for transient failure handling.
 - **Async Support**: Full async/await support with context managers and concurrent execution.

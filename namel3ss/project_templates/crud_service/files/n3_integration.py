@@ -7,7 +7,7 @@ allowing N3 declarations to control application behavior dynamically.
 Usage:
     from n3_integration import load_n3_config, get_dataset_config
     
-    config = load_n3_config("app.n3")
+    config = load_n3_config("app.ai")
     dataset = get_dataset_config(config, "{{ dataset_name }}")
 """
 
@@ -27,7 +27,7 @@ class N3Config:
         Initialize N3 config.
         
         Args:
-            config_path: Path to .n3 file
+            config_path: Path to .ai file
         """
         self.config_path = config_path
         self.datasets = {}
@@ -61,7 +61,7 @@ def load_n3_config(config_path: str | Path) -> N3Config:
     In production, this would use the actual N3 parser/compiler.
     
     Args:
-        config_path: Path to .n3 configuration file
+        config_path: Path to .ai configuration file
         
     Returns:
         Parsed N3 configuration
@@ -80,7 +80,7 @@ def load_n3_config(config_path: str | Path) -> N3Config:
     config = N3Config(config_path)
     
     # In production, this would:
-    # 1. Parse the .n3 file using the N3 compiler
+    # 1. Parse the .ai file using the N3 compiler
     # 2. Extract dataset, api, backend configurations
     # 3. Validate the configuration
     # 4. Populate the config object

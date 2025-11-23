@@ -74,6 +74,9 @@ async def _render_statement(
         raise BreakFlow()
     if stype == "continue":
         raise ContinueFlow()
+    if stype == "log":
+        await _render_log_statement(statement, context, scope)
+        return []  # Log statements don't produce visual components
 
     payload = copy.deepcopy(statement)
     payload_type = payload.pop("type", None)
@@ -691,6 +694,45 @@ def _coerce_number(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+async def _render_log_statement(
+    statement: Dict[str, Any],
+    context: Dict[str, Any],
+    scope: ScopeFrame,
+) -> None:
+    """Render a log statement by writing to the logger."""
+    import logging
+    from .template import _render_template_value
+    
+    # Extract log data from statement
+    level_str = statement.get("level", "info").lower()
+    message_template = statement.get("message", "")
+    source_location = statement.get("source_location")
+    
+    # Render the message template with context
+    message = _render_template_value(message_template, context)
+    
+    # Get the appropriate logging level
+    level_map = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warn": logging.WARNING,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+    }
+    log_level = level_map.get(level_str, logging.INFO)
+    
+    # Get logger and emit the log message
+    logger = logging.getLogger("namel3ss.runtime")
+    
+    # Include source location in extra context if available
+    extra = {}
+    if source_location:
+        extra["source_location"] = source_location
+    
+    # Log the message at the appropriate level
+    logger.log(log_level, message, extra=extra)
 
     '''
 ).strip()
