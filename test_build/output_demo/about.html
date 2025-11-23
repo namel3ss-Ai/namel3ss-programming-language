@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About – Simple Test</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-n3-page-slug="about" data-n3-page-reactive="false">
+<nav><ul>
+  <li><a href="index.html">Home</a></li>
+  <li><a href="about.html" class="active">About</a></li>
+</ul></nav>
+<h2>About</h2>
+<div class="n3-page-errors n3-widget-errors n3-widget-errors--hidden" data-n3-page-errors></div>
+<!-- Unknown statement type: dict -->
+<!-- Unknown statement type: str -->
+<!-- Unknown statement type: dict -->
+<!-- Unknown statement type: str -->
+<div id="toast" class="toast"></div>
+<script src="scripts.js"></script>
+<script>
+(function() {
+    var apiUrl = "/api/pages/about";
+    window.N3_VARS = window.N3_VARS || {};
+    fetch(apiUrl, { headers: { 'Accept': 'application/json' } })
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('Failed to load page data: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            var vars = (data && data.vars) ? data.vars : {};
+            window.N3_VARS = vars;
+            if (window.N3Widgets && typeof window.N3Widgets.hydratePage === 'function') {
+                window.N3Widgets.hydratePage("about", data || {});
+            }
+            document.querySelectorAll('[data-n3-text-template]').forEach(function(el) {
+                var tpl = el.getAttribute('data-n3-text-template') || '';
+                el.textContent = tpl.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function(match, name) {
+                    return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : '';
+                });
+            });
+            if (window.N3Realtime && window.N3Realtime.applySnapshot) {
+                window.N3Realtime.applySnapshot("about", data || {}, { source: 'bootstrap' });
+            }
+        })
+        .catch(function(err) {
+            console.error('Namel3ss frontend bootstrap failed:', err);
+        });
+})();
+</script>
+</body>
+</html>

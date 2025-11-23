@@ -59,9 +59,13 @@ def _encode_layout_meta(layout: "LayoutMeta") -> Dict[str, Any]:
 def _encode_layout_spec(layout: "LayoutSpec") -> Dict[str, Any]:
     """Encode component layout specification."""
     if layout is None:
-        return {"columns": None, "gap": None, "extras": {}}
+        return {}
     return {
-        "columns": layout.columns,
-        "gap": layout.gap,
-        "extras": dict(layout.extras or {}),
+        "width": layout.width,
+        "height": layout.height,
+        "variant": layout.variant,
+        "order": layout.order,
+        "area": layout.area,
+        "breakpoint": layout.breakpoint,
+        "props": dict(layout.props or {}),
     }

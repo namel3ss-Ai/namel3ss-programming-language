@@ -55,10 +55,14 @@ class DeclarationParsingMixin:
                     database = conn.get("name")
                     break
         
+        # Legacy dot terminator support
+        if self.consume_if(TokenType.DOT):
+            config = {}
         # Parse optional block (will contain config like description, version, etc.)
-        config = {}
-        if self.match(TokenType.LBRACE):
+        elif self.match(TokenType.LBRACE):
             config = self.parse_block()
+        else:
+            config = {}
         
         # Extract database from config if present
         if "database" in config:
@@ -124,39 +128,80 @@ class DeclarationParsingMixin:
         route_token = self.expect(TokenType.STRING)
         route = route_token.value
         
-        # Parse page block
-        self.expect(TokenType.LBRACE)
-        self.skip_newlines()
-        self.consume_if(TokenType.INDENT)  # Skip indent after opening brace
-        
+        # Support both colon and brace syntax for page blocks
         statements = []
-        while not self.match(TokenType.RBRACE):
-            # Skip dedent tokens
-            while self.consume_if(TokenType.DEDENT):
-                pass
-            
-            # Check again for closing brace after consuming dedents
-            if self.match(TokenType.RBRACE):
-                break
-            
-            # Skip indent tokens
-            while self.consume_if(TokenType.INDENT):
-                pass
-            
-            stmt = self.parse_page_statement()
-            if stmt:
-                statements.append(stmt)
+        if self.consume_if(TokenType.COLON):
+            # Legacy colon syntax with indented statements
             self.skip_newlines()
+            statements = self._parse_indented_page_statements()
+        else:
+            # Modern brace syntax
+            self.expect(TokenType.LBRACE)
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)  # Skip indent after opening brace
         
-        self.consume_if(TokenType.DEDENT)  # Skip dedent before closing brace
-        self.expect(TokenType.RBRACE)
-        self.skip_newlines()
+            while not self.match(TokenType.RBRACE):
+                # Skip dedent tokens
+                while self.consume_if(TokenType.DEDENT):
+                    pass
+                
+                # Check again for closing brace after consuming dedents
+                if self.match(TokenType.RBRACE):
+                    break
+                
+                # Skip indent tokens
+                while self.consume_if(TokenType.INDENT):
+                    pass
+                
+                stmt = self.parse_page_statement()
+                if stmt:
+                    statements.append(stmt)
+                self.skip_newlines()
+            
+            self.consume_if(TokenType.DEDENT)  # Skip dedent before closing brace
+            self.expect(TokenType.RBRACE)
+            self.skip_newlines()
         
         return Page(
             name=name,
             route=route,
             body=statements,  # Use 'body' not 'statements' (statements is just a property alias)
         )
+    
+    def _parse_indented_page_statements(self) -> List[Any]:
+        """Parse indented page statements for legacy colon syntax."""
+        statements = []
+        base_indent = None
+        
+        while True:
+            token = self.current()
+            if not token or token.type == TokenType.EOF:
+                break
+                
+            # Calculate current line indentation
+            if token.type == TokenType.NEWLINE:
+                self.advance()
+                continue
+                
+            # For legacy compatibility, we need to check indentation manually
+            # This is a simplified approach - in production we'd want proper indent tracking
+            if base_indent is None:
+                if token.type == TokenType.INDENT:
+                    base_indent = 1
+                    self.advance()
+                else:
+                    # No indentation found, end of page block
+                    break
+            elif not self.match(TokenType.INDENT, TokenType.IDENTIFIER, TokenType.SHOW):
+                # End of indented block
+                break
+                
+            stmt = self.parse_page_statement()
+            if stmt:
+                statements.append(stmt)
+            self.skip_newlines()
+            
+        return statements
     
     def parse_llm_declaration(self):
         """
@@ -878,7 +923,7 @@ class DeclarationParsingMixin:
         elif self.consume_if(TokenType.COLON):
             # Legacy colon syntax - parse indented block
             self.skip_newlines()
-            config = self.parse_indented_config()
+            config = self._parse_indented_config_block()
         
         return Dataset(
             name=name,
@@ -918,6 +963,53 @@ class DeclarationParsingMixin:
         self.expect(TokenType.RBRACE)
         self.skip_newlines()
         
+        return config
+    
+    def _parse_indented_config_block(self) -> Dict[str, Any]:
+        """Parse indented configuration block for legacy colon syntax."""
+        config = {}
+        
+        while True:
+            token = self.current()
+            if not token or token.type == TokenType.EOF:
+                break
+                
+            # Skip newlines
+            if token.type == TokenType.NEWLINE:
+                self.advance()
+                continue
+                
+            # Check for indentation or end of block
+            if not self.match(TokenType.INDENT, TokenType.IDENTIFIER, TokenType.FILTER):
+                break
+                
+            # Consume indent if present
+            if self.match(TokenType.INDENT):
+                self.advance()
+                
+            # Parse key-value pairs
+            if self.match(TokenType.FILTER):
+                key = "filter"
+                self.advance()
+            elif self.match(TokenType.IDENTIFIER):
+                key = self.advance().value
+            else:
+                break
+                
+            # Expect 'by:' for filter or ':' for other keys
+            if key == "filter":
+                if self.match(TokenType.BY):
+                    self.advance()
+                self.expect(TokenType.COLON)
+            else:
+                self.expect(TokenType.COLON)
+                
+            # Parse the value
+            value = self.parse_value()
+            config[key] = value
+            
+            self.skip_newlines()
+            
         return config
     
     def parse_memory_declaration(self):

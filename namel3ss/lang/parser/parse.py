@@ -7,6 +7,7 @@ parser mechanisms and provides deterministic, production-quality parsing.
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
+import re
 
 from namel3ss.ast.program import Module
 from namel3ss.ast.modules import Import
@@ -260,10 +261,25 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         Parse module declaration.
         
         Grammar:
-            ModuleDecl = "module" , STRING_LITERAL ;
+            ModuleDecl = "module" , ( STRING_LITERAL | DottedIdentifier ) ;
         """
         module_token = self.expect(TokenType.MODULE)
-        name_token = self.expect(TokenType.STRING)
+        
+        if self.match(TokenType.STRING):
+            name_value = self.advance().value
+        elif self._can_start_identifier_segment():
+            name_value = self._parse_dotted_identifier(allow_keywords=True)
+        else:
+            token = self.current()
+            expected = ["string literal", "identifier"]
+            raise create_syntax_error(
+                "Expected module name",
+                path=self.path,
+                line=token.line if token else None,
+                column=token.column if token else None,
+                expected=expected,
+                found=token.type.name.lower().replace('_', ' ') if token else "end of file",
+            )
         
         if self.module_name is not None:
             raise create_syntax_error(
@@ -272,8 +288,41 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
                 line=module_token.line,
             )
         
-        self.module_name = name_token.value
+        self.module_name = name_value
         self.skip_newlines()
+
+    _IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+    def _can_start_identifier_segment(self) -> bool:
+        token = self.current()
+        if token is None:
+            return False
+        if token.type == TokenType.IDENTIFIER:
+            return True
+        return bool(token.value and self._IDENTIFIER_PATTERN.match(token.value))
+
+    def _consume_identifier_segment(self, *, allow_keywords: bool = False) -> str:
+        token = self.current()
+        if token is None:
+            raise self.error("Expected identifier")
+        if token.type == TokenType.IDENTIFIER or (allow_keywords and self._IDENTIFIER_PATTERN.match(token.value)):
+            self.advance()
+            return token.value
+        raise create_syntax_error(
+            "Expected identifier",
+            path=self.path,
+            line=token.line,
+            column=token.column,
+            expected=["identifier"],
+            found=token.type.name.lower().replace('_', ' '),
+        )
+
+    def _parse_dotted_identifier(self, *, allow_keywords: bool = False) -> str:
+        """Parse identifier segments separated by dots into a dotted path."""
+        parts = [self._consume_identifier_segment(allow_keywords=allow_keywords)]
+        while self.consume_if(TokenType.DOT):
+            parts.append(self._consume_identifier_segment(allow_keywords=allow_keywords))
+        return ".".join(parts)
     
     def parse_import_declaration(self) -> None:
         """

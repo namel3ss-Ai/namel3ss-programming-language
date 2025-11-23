@@ -1,439 +1,79 @@
-# Memory System Demo - Stateful Chat Application
-# This example demonstrates the complete memory system with:
-# - Conversation history tracking
-# - User preferences storage
-# - Session state management
-# - Integration with prompts and chains
+# Memory Chat Demo - demonstrates conversation memory, prompts, and chains
 
-# ============================================================================
-# STEP 1: Define LLM
-# ============================================================================
+app "Memory Chat Demo" {
+  description: "Stateful conversation sample highlighting memory primitives"
+}
 
 llm "gpt4" {
   provider: "openai"
-  model: "gpt-4"
-  api_key: env.OPENAI_API_KEY
+  model: "gpt-4o-mini"
   temperature: 0.7
-  max_tokens: 1000
+  max_tokens: 800
 }
 
-# ============================================================================
-# STEP 2: Define Memory Stores
-# ============================================================================
-
-# Conversation history - per-user persistence
 memory "conversation_history" {
   scope: "user"
   kind: "list"
   max_items: 100
-  metadata: {
-    description: "Stores chat messages with role and content"
-    retention_days: 30
-    eviction_policy: "oldest_first"
-  }
 }
 
-# User preferences - per-user key-value store
-memory "user_preferences" {
-  scope: "user"
-  kind: "key_value"
-  metadata: {
-    description: "User settings like name, language, theme"
-  }
-}
-
-# Session state - temporary per-session storage
-memory "session_state" {
-  scope: "session"
-  kind: "key_value"
-  metadata: {
-    description: "Temporary session data cleared on logout"
-  }
-}
-
-# Recent topics - short-term context
 memory "recent_topics" {
   scope: "session"
   kind: "list"
   max_items: 10
-  metadata: {
-    description: "Recently discussed topics for context"
-  }
 }
 
-# Global feature flags - shared across all users
-memory "feature_flags" {
-  scope: "global"
-  kind: "key_value"
-  metadata: {
-    description: "System-wide feature toggles"
-  }
-}
-
-# ============================================================================
-# STEP 3: Define Prompts with Memory References
-# ============================================================================
-
-# Main chat prompt that references conversation history
 prompt "chat_response" {
   model: "gpt4"
-  
   args: {
-    user_message: "string",
-    user_name: "User"
+    user_message: string,
+    fallback_name: string
   }
-  
   template: """
-  You are a helpful and friendly AI assistant. Be natural and conversational.
-  
-  ## Previous Conversation
-  {memory.conversation_history:10}
-  
-  ## Recent Topics
-  {memory.recent_topics}
-  
-  ## Current Exchange
-  {user_name}: {user_message}
-  
-  Assistant:
-  """
-  
+You are a friendly AI assistant.
+Previous messages:
+{memory.conversation_history:6}
+
+User ({fallback_name}): {user_message}
+Assistant:
+"""
   output_schema: {
     response: string,
-    sentiment: enum["positive", "neutral", "negative"],
-    confidence: float,
-    topics: list[string],
-    requires_followup: bool
+    sentiment: string,
+    topics: string
   }
 }
 
-# Onboarding prompt for new users (no history yet)
-prompt "onboarding_greeting" {
-  model: "gpt4"
-  
-  args: {
-    user_name: string = "there"
-  }
-  
-  template: """
-  You are greeting a new user for the first time. Be warm and welcoming.
-  
-  Introduce yourself as their AI assistant and ask how you can help today.
-  Keep it brief and friendly.
-  
-  User's name: {user_name}
-  """
-  
-  output_schema: {
-    greeting: string
-  }
-}
+chain "chat_flow" {
+  description: "Loads preferences, generates response, and updates memories"
 
-# Summarization prompt for compressing long history
-prompt "summarize_conversation" {
-  model: "gpt4"
-  
-  args: {
-    conversation_segment: string
+  step "respond" {
+    kind: "prompt"
+    target: "chat_response"
+    options: {
+      user_message: input.message
+      fallback_name: "friend"
+    }
   }
-  
-  template: """
-  Summarize the following conversation segment concisely:
-  
-  {conversation_segment}
-  
-  Provide a brief summary focusing on key topics and decisions.
-  """
-  
-  output_schema: {
-    summary: string,
-    key_topics: list[string]
+
+  step "topics" {
+    kind: "memory_write"
+    target: "recent_topics"
+    options: {
+      value: steps.respond.output.topics
+    }
+  }
+
+  step "append_conversation" {
+    kind: "memory_write"
+    target: "conversation_history"
+    options: {
+      value: steps.respond.output.response
+    }
   }
 }
 
-# ============================================================================
-# STEP 4: Define Chains with Memory Operations
-# ============================================================================
-
-# Main chat chain with full memory integration
-define chain "chat" {
-  steps:
-    # Load user preferences
-    - step "load_preferences" {
-        kind: "memory_read"
-        target: "user_preferences"
-        options: {
-          assign_to: "context.user_prefs"
-        }
-      }
-    
-    # Check if user is new (no conversation history)
-    - step "check_history_exists" {
-        kind: "memory_read"
-        target: "conversation_history"
-        options: {
-          assign_to: "context.existing_history"
-        }
-      }
-    
-    # Conditional: onboarding for new users
-    - step "onboarding_check" {
-        kind: "if"
-        condition: context.existing_history == []
-        then:
-          - step "greet_new_user" {
-              kind: "prompt"
-              target: "onboarding_greeting"
-              options: {
-                user_name: context.user_prefs.name
-              }
-            }
-          
-          # Save greeting to history
-          - step "save_greeting" {
-              kind: "memory_write"
-              target: "conversation_history"
-              options: {
-                value: [
-                  {
-                    role: "assistant"
-                    content: steps.greet_new_user.output.greeting
-                    timestamp: context.now
-                  }
-                ]
-              }
-            }
-      }
-    
-    # Generate response using conversation context
-    - step "generate_response" {
-        kind: "prompt"
-        target: "chat_response"
-        options: {
-          user_message: input.message
-          user_name: context.user_prefs.name
-        }
-      }
-    
-    # Extract topics for context
-    - step "update_topics" {
-        kind: "memory_write"
-        target: "recent_topics"
-        options: {
-          value: steps.generate_response.output.topics
-        }
-      }
-    
-    # Save user message to history
-    - step "save_user_message" {
-        kind: "memory_write"
-        target: "conversation_history"
-        options: {
-          value: [
-            {
-              role: "user"
-              content: input.message
-              timestamp: context.now
-            }
-          ]
-          mode: "append"
-        }
-      }
-    
-    # Save assistant response to history
-    - step "save_assistant_message" {
-        kind: "memory_write"
-        target: "conversation_history"
-        options: {
-          value: [
-            {
-              role: "assistant"
-              content: steps.generate_response.output.response
-              sentiment: steps.generate_response.output.sentiment
-              timestamp: context.now
-            }
-          ]
-          mode: "append"
-        }
-      }
-    
-    # Update session state
-    - step "update_session" {
-        kind: "memory_write"
-        target: "session_state"
-        options: {
-          value: {
-            last_message_at: context.now
-            message_count: context.session_state.message_count + 1
-            sentiment: steps.generate_response.output.sentiment
-          }
-        }
-      }
+page "Chat" at "/chat" {
+  show text "Memory Chat Demo"
+  show text "Invoke chain chat_flow via CLI or runtime API"
 }
-
-# Chain for initializing new user
-define chain "initialize_user" {
-  steps:
-    # Set default preferences
-    - step "set_preferences" {
-        kind: "memory_write"
-        target: "user_preferences"
-        options: {
-          value: {
-            name: input.name
-            language: input.language
-            theme: "light"
-            notifications: true
-            created_at: context.now
-          }
-        }
-      }
-    
-    # Initialize empty conversation history
-    - step "init_history" {
-        kind: "memory_write"
-        target: "conversation_history"
-        options: {
-          value: []
-        }
-      }
-    
-    # Initialize session state
-    - step "init_session" {
-        kind: "memory_write"
-        target: "session_state"
-        options: {
-          value: {
-            started_at: context.now
-            message_count: 0
-            active: true
-          }
-        }
-      }
-}
-
-# Chain for summarizing and compressing old conversation
-define chain "compress_history" {
-  steps:
-    # Read full history
-    - step "read_history" {
-        kind: "memory_read"
-        target: "conversation_history"
-        options: {
-          assign_to: "context.full_history"
-        }
-      }
-    
-    # Check if compression needed (>80 messages)
-    - step "check_size" {
-        kind: "if"
-        condition: len(context.full_history) > 80
-        then:
-          # Get oldest 50 messages
-          - step "extract_old" {
-              kind: "expression"
-              options: {
-                result: context.full_history[:50]
-                assign_to: "context.old_segment"
-              }
-            }
-          
-          # Summarize old segment
-          - step "summarize" {
-              kind: "prompt"
-              target: "summarize_conversation"
-              options: {
-                conversation_segment: context.old_segment
-              }
-            }
-          
-          # Keep summary + recent 30 messages
-          - step "compress" {
-              kind: "memory_write"
-              target: "conversation_history"
-              options: {
-                value: [
-                  {
-                    role: "system"
-                    content: steps.summarize.output.summary
-                    type: "summary"
-                    timestamp: context.now
-                  }
-                ]
-                mode: "replace"
-              }
-            }
-          
-          # Append recent messages
-          - step "append_recent" {
-              kind: "memory_write"
-              target: "conversation_history"
-              options: {
-                value: context.full_history[-30:]
-                mode: "append"
-              }
-            }
-      }
-}
-
-# Chain for clearing user data (GDPR compliance)
-define chain "clear_user_data" {
-  steps:
-    # Clear conversation history
-    - step "clear_history" {
-        kind: "memory_clear"
-        target: "conversation_history"
-      }
-    
-    # Clear preferences (but keep record of deletion)
-    - step "mark_deleted" {
-        kind: "memory_write"
-        target: "user_preferences"
-        options: {
-          value: {
-            deleted: true
-            deleted_at: context.now
-          }
-        }
-      }
-    
-    # Clear session state
-    - step "clear_session" {
-        kind: "memory_clear"
-        target: "session_state"
-      }
-}
-
-# ============================================================================
-# STEP 5: Usage Examples (for documentation)
-# ============================================================================
-
-# Example 1: New user initialization
-# Call: initialize_user(name="Alice", language="en")
-
-# Example 2: Send a chat message
-# Call: chat(message="What's the weather like today?")
-
-# Example 3: Compress history after many messages
-# Call: compress_history()
-
-# Example 4: User data deletion
-# Call: clear_user_data()
-
-# ============================================================================
-# STEP 6: Monitoring and Analytics
-# ============================================================================
-
-# Memory metrics are automatically tracked:
-# - Read/write operations
-# - Memory size and item counts
-# - Access patterns by scope
-# - Eviction events
-# - Error rates
-
-# Access via observability system:
-# - memory.read.count (by name, scope)
-# - memory.write.count (by name, scope)
-# - memory.size.bytes (by name)
-# - memory.evictions.count (by name)
-# - memory.errors.count (by name, type)

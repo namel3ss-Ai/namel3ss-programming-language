@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: namel3ss
-Version: 0.4.1
+Version: 0.5.0
 Summary: Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends.
 Author: Namel3ss Developers
 License-Expression: MIT
@@ -9,7 +9,7 @@ Project-URL: Repository, https://github.com/SsebowaDisan/namel3ss-programming-la
 Project-URL: Documentation, https://github.com/SsebowaDisan/namel3ss-programming-language#readme
 Project-URL: Issues, https://github.com/SsebowaDisan/namel3ss-programming-language/issues
 Keywords: codegen,fastapi,llm,dashboard,language
-Classifier: Development Status :: 4 - Beta
+Classifier: Development Status :: 5 - Production/Stable
 Classifier: Intended Audience :: Developers
 Classifier: Framework :: FastAPI
 Classifier: Topic :: Software Development :: Code Generators
@@ -25,30 +25,44 @@ Requires-Dist: fastapi<1.0,>=0.110
 Requires-Dist: httpx<0.29,>=0.28
 Requires-Dist: pydantic<3.0,>=2.7
 Requires-Dist: uvicorn<0.31,>=0.30
-Requires-Dist: sqlalchemy<3.0,>=2.0
 Requires-Dist: pygls<2.0,>=1.3
-Provides-Extra: cli
-Requires-Dist: python-dotenv>=1.0; extra == "cli"
+Requires-Dist: jinja2<4.0,>=3.1
 Provides-Extra: sql
+Requires-Dist: sqlalchemy<3.0,>=2.0; extra == "sql"
 Requires-Dist: asyncpg<0.30,>=0.29; extra == "sql"
 Requires-Dist: psycopg[binary]<4.0,>=3.2; extra == "sql"
-Provides-Extra: redis
-Requires-Dist: redis<6.0,>=5.0; extra == "redis"
+Requires-Dist: aiomysql<0.3,>=0.2; extra == "sql"
+Provides-Extra: postgres
+Requires-Dist: sqlalchemy<3.0,>=2.0; extra == "postgres"
+Requires-Dist: asyncpg<0.30,>=0.29; extra == "postgres"
+Requires-Dist: psycopg[binary]<4.0,>=3.2; extra == "postgres"
+Provides-Extra: mysql
+Requires-Dist: sqlalchemy<3.0,>=2.0; extra == "mysql"
+Requires-Dist: aiomysql<0.3,>=0.2; extra == "mysql"
 Provides-Extra: mongo
 Requires-Dist: motor<4.0,>=3.0; extra == "mongo"
 Requires-Dist: pymongo<5.0,>=4.0; extra == "mongo"
+Provides-Extra: redis
+Requires-Dist: redis<6.0,>=5.0; extra == "redis"
 Provides-Extra: realtime
 Requires-Dist: websockets<13.0,>=12.0; extra == "realtime"
 Requires-Dist: redis<6.0,>=5.0; extra == "realtime"
-Provides-Extra: ai-connectors
-Requires-Dist: openai<2.0,>=1.0; extra == "ai-connectors"
-Requires-Dist: anthropic<1.0,>=0.40; extra == "ai-connectors"
-Requires-Dist: tiktoken<1.0,>=0.7; extra == "ai-connectors"
-Provides-Extra: observability
-Requires-Dist: opentelemetry-api<2.0,>=1.25; extra == "observability"
-Requires-Dist: opentelemetry-sdk<2.0,>=1.25; extra == "observability"
-Requires-Dist: opentelemetry-instrumentation-fastapi<1.0,>=0.46b0; extra == "observability"
-Requires-Dist: opentelemetry-exporter-otlp<2.0,>=1.25; extra == "observability"
+Provides-Extra: websockets
+Requires-Dist: websockets<13.0,>=12.0; extra == "websockets"
+Provides-Extra: ai
+Requires-Dist: openai<2.0,>=1.0; extra == "ai"
+Requires-Dist: anthropic<1.0,>=0.40; extra == "ai"
+Requires-Dist: tiktoken<1.0,>=0.7; extra == "ai"
+Provides-Extra: openai
+Requires-Dist: openai<2.0,>=1.0; extra == "openai"
+Requires-Dist: tiktoken<1.0,>=0.7; extra == "openai"
+Provides-Extra: anthropic
+Requires-Dist: anthropic<1.0,>=0.40; extra == "anthropic"
+Provides-Extra: otel
+Requires-Dist: opentelemetry-api<2.0,>=1.25; extra == "otel"
+Requires-Dist: opentelemetry-sdk<2.0,>=1.25; extra == "otel"
+Requires-Dist: opentelemetry-instrumentation-fastapi<1.0,>=0.46b0; extra == "otel"
+Requires-Dist: opentelemetry-exporter-otlp<2.0,>=1.25; extra == "otel"
 Provides-Extra: dev
 Requires-Dist: black<25.0,>=24.0; extra == "dev"
 Requires-Dist: coverage<8.0,>=7.6; extra == "dev"
@@ -59,12 +73,13 @@ Requires-Dist: pytest-cov<5.0,>=4.1; extra == "dev"
 Requires-Dist: ruff<1.0,>=0.5; extra == "dev"
 Requires-Dist: tomli<3.0,>=2.0; extra == "dev"
 Provides-Extra: all
-Requires-Dist: python-dotenv>=1.0; extra == "all"
+Requires-Dist: sqlalchemy<3.0,>=2.0; extra == "all"
 Requires-Dist: asyncpg<0.30,>=0.29; extra == "all"
 Requires-Dist: psycopg[binary]<4.0,>=3.2; extra == "all"
-Requires-Dist: redis<6.0,>=5.0; extra == "all"
+Requires-Dist: aiomysql<0.3,>=0.2; extra == "all"
 Requires-Dist: motor<4.0,>=3.0; extra == "all"
 Requires-Dist: pymongo<5.0,>=4.0; extra == "all"
+Requires-Dist: redis<6.0,>=5.0; extra == "all"
 Requires-Dist: websockets<13.0,>=12.0; extra == "all"
 Requires-Dist: openai<2.0,>=1.0; extra == "all"
 Requires-Dist: anthropic<1.0,>=0.40; extra == "all"
@@ -256,10 +271,118 @@ define chain "RAG_Query":
 
 Namel3ss requires **Python 3.10 or newer**.
 
-### From PyPI (recommended)
+### Core Installation (Lightweight)
+
+The core installation includes only the essentials for parsing, code generation, and CLI:
 
 ```bash
 pip install namel3ss
+```
+
+This minimal installation (~10MB) provides:
+- ✅ `.n3` file parsing and AST generation
+- ✅ FastAPI backend code generation  
+- ✅ Frontend site generation (static HTML, React)
+- ✅ CLI commands: `build`, `run`, `test`, `lint`
+- ✅ Language Server Protocol (LSP) support
+- ✅ Template engine for code generation
+
+**Perfect for**: CI/CD pipelines, code compilation, static analysis, development tools.
+
+### Optional Features (Extras)
+
+Install only the features you need:
+
+#### AI & LLM Providers
+
+```bash
+# All AI providers
+pip install namel3ss[ai]
+
+# Or individual providers
+pip install namel3ss[openai]      # OpenAI (GPT-4, etc.)
+pip install namel3ss[anthropic]   # Anthropic (Claude)
+```
+
+**Enables**: Structured prompts, model adapters, token counting, AI chains
+
+#### Databases
+
+```bash
+# All SQL databases
+pip install namel3ss[sql]
+
+# Or specific databases
+pip install namel3ss[postgres]    # PostgreSQL (asyncpg + psycopg3)
+pip install namel3ss[mysql]       # MySQL (aiomysql)
+pip install namel3ss[mongo]       # MongoDB (motor + pymongo)
+```
+
+**Enables**: SQL datasets, database connectors, ORM models
+
+#### Caching & Queues
+
+```bash
+pip install namel3ss[redis]       # Redis caching and pub/sub
+```
+
+**Enables**: Redis adapters, queue systems (RQ), caching layers
+
+#### Real-time Features
+
+```bash
+pip install namel3ss[realtime]    # WebSockets + Redis
+pip install namel3ss[websockets]  # WebSockets only
+```
+
+**Enables**: WebSocket endpoints, real-time data streaming, pub/sub
+
+#### Observability
+
+```bash
+pip install namel3ss[otel]        # OpenTelemetry instrumentation
+```
+
+**Enables**: Distributed tracing, metrics, FastAPI auto-instrumentation
+
+#### Everything
+
+```bash
+pip install namel3ss[all]         # All optional features
+```
+
+### Installation Examples
+
+**Typical web app with database**:
+```bash
+pip install namel3ss[postgres]
+```
+
+**AI-powered application**:
+```bash
+pip install namel3ss[ai,postgres,redis]
+```
+
+**Full-featured production setup**:
+```bash
+pip install namel3ss[all]
+```
+
+### Feature Detection
+
+Namel3ss gracefully handles missing dependencies with helpful error messages:
+
+```python
+# If OpenAI not installed
+n3 run app.n3
+# Error: OpenAI integration requires the 'openai' extra.
+# Install with: pip install 'namel3ss[openai]'
+# Or for all AI providers: pip install 'namel3ss[ai]'
+```
+
+Check available features:
+```bash
+python -c "from namel3ss.features import print_feature_status; print_feature_status()"
 ```
 
 Verify installation:
@@ -268,24 +391,45 @@ Verify installation:
 namel3ss --help
 ```
 
+### Feature → Extra Mapping
+
+Quick reference for what each extra provides:
+
+| Feature | Extra | Packages Installed |
+|---------|-------|-------------------|
+| **Core** (always included) | _(none)_ | `fastapi`, `pydantic`, `uvicorn`, `httpx`, `pygls`, `jinja2` |
+| OpenAI (GPT models) | `[openai]` | `openai`, `tiktoken` |
+| Anthropic (Claude) | `[anthropic]` | `anthropic` |
+| All AI providers | `[ai]` | `openai`, `anthropic`, `tiktoken` |
+| PostgreSQL | `[postgres]` | `sqlalchemy`, `asyncpg`, `psycopg[binary]` |
+| MySQL | `[mysql]` | `sqlalchemy`, `aiomysql` |
+| All SQL databases | `[sql]` | `sqlalchemy`, `asyncpg`, `psycopg`, `aiomysql` |
+| MongoDB | `[mongo]` | `motor`, `pymongo` |
+| Redis caching/queues | `[redis]` | `redis>=5.0` |
+| WebSockets | `[websockets]` | `websockets>=12.0` |
+| Real-time (WS + Redis) | `[realtime]` | `websockets`, `redis` |
+| OpenTelemetry | `[otel]` | `opentelemetry-*` (SDK, instrumentation, exporters) |
+| Development tools | `[dev]` | `pytest`, `black`, `mypy`, `ruff`, etc. |
+| Everything | `[all]` | All of the above |
+
 ### From source
 
 ```bash
 git clone https://github.com/SsebowaDisan/namel3ss-programming-language.git
 cd namel3ss-programming-language
-pip install -e .
+pip install -e .[dev]  # Include dev tools
 ```
 
-### Optional extras
+### Legacy extras (deprecated)
+
+The following extras are deprecated and will be removed in future versions:
 
 ```bash
-# AI connectors for OpenAI, Anthropic, etc.
+# DEPRECATED: Use [ai] instead
 pip install namel3ss[ai-connectors]
 
-# SQL database support
+# sql, redis, mongo extras remain supported
 pip install namel3ss[sql]
-
-# Redis for caching and memory
 pip install namel3ss[redis]
 
 # MongoDB datasets

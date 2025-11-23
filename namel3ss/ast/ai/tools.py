@@ -75,6 +75,7 @@ class LLMDefinition:
     presence_penalty: Optional[float] = None
     system_prompt: Optional[str] = None
     safety: Dict[str, Any] = field(default_factory=dict)
+    config: Dict[str, Any] = field(default_factory=dict)
     tools: List[str] = field(default_factory=list)  # References to ToolDefinitions
     stop_sequences: List[str] = field(default_factory=list)
     stream: bool = True

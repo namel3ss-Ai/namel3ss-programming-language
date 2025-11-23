@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 from .actions import _encode_action_operation
 from .expressions import _encode_value, _expression_to_runtime, _expression_to_source
-from .pages import _encode_layout_spec
+from .pages import _encode_layout_meta, _encode_layout_spec
 
 if TYPE_CHECKING:
     from ....ast import PageStatement, Prompt
@@ -22,57 +22,82 @@ def _encode_statement(
     from ....ast import (
         Action,
         BreakStatement,
-        Chart,
         ContinueStatement,
-        Display,
         ForLoop,
-        Form,
         IfBlock,
         PredictStatement,
+        ShowChart,
+        ShowForm,
+        ShowTable,
+        ShowText,
         VariableAssignment,
         WhileLoop,
     )
     from .classes import PageComponent
-    
-    if isinstance(statement, Display):
+
+    if isinstance(statement, ShowText):
         payload = {
-            "source_kind": statement.source_kind,
-            "source_name": statement.source_name,
-            "select_fields": list(statement.select_fields or []),
+            "text": statement.text,
             "styles": dict(statement.styles or {}),
         }
-        return PageComponent(type="display", payload=payload)
-    
-    if isinstance(statement, Chart):
-        payload = {
-            "kind": statement.kind,
-            "source_kind": statement.source_kind,
-            "source_name": statement.source_name,
-            "x_axis": statement.x_axis,
-            "y_axis": statement.y_axis,
+        return PageComponent(type="text", payload=payload)
+
+    if isinstance(statement, ShowTable):
+        payload: Dict[str, Any] = {
+            "title": statement.title,
+            "source_kind": statement.source_type,
+            "source_name": statement.source,
+            "columns": list(statement.columns or []),
+            "filter": statement.filter_by,
+            "sort": statement.sort_by,
+            "styles": dict(statement.style or {}),
+            "insight": statement.insight,
+            "dynamic_columns": dict(statement.dynamic_columns or {}),
+        }
+        if statement.layout:
+            payload["layout"] = _encode_layout_meta(statement.layout)
+        return PageComponent(type="table", payload={k: v for k, v in payload.items() if v not in (None, [], {})})
+
+    if isinstance(statement, ShowChart):
+        payload: Dict[str, Any] = {
+            "heading": statement.heading,
+            "source_kind": statement.source_type,
+            "source_name": statement.source,
+            "chart_type": statement.chart_type,
+            "x": statement.x,
+            "y": statement.y,
             "color": statement.color,
-            "filters": _encode_value(statement.filters, env_keys),
+            "encodings": dict(statement.encodings or {}),
+            "style": dict(statement.style or {}),
+            "title": statement.title,
+            "legend": dict(statement.legend or {}) if statement.legend else None,
+            "insight": statement.insight,
+        }
+        if statement.layout:
+            payload["layout"] = _encode_layout_meta(statement.layout)
+        return PageComponent(type="chart", payload={k: v for k, v in payload.items() if v not in (None, [], {})})
+
+    if isinstance(statement, ShowForm):
+        fields_payload = [{"name": field.name, "type": field.field_type} for field in statement.fields]
+        operations = [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.on_submit_ops]
+        payload: Dict[str, Any] = {
+            "title": statement.title,
+            "fields": fields_payload,
+            "operations": operations,
             "styles": dict(statement.styles or {}),
+            "layout": _encode_layout_spec(statement.layout) if statement.layout else {},
+            "effects": sorted(statement.effects) if statement.effects else [],
         }
-        return PageComponent(type="chart", payload=payload)
-    
-    if isinstance(statement, Form):
-        payload = {
-            "name": statement.name,
-            "source_kind": statement.source_kind,
-            "source_name": statement.source_name,
-            "fields": list(statement.fields or []),
-            "layout": _encode_layout_spec(statement.layout),
-            "operations": [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.on_submit_ops],
-            "styles": dict(statement.styles),
-        }
-        return PageComponent(type="form", payload=payload)
+        return PageComponent(type="form", payload={k: v for k, v in payload.items() if v not in (None, [], {})})
     
     if isinstance(statement, Action):
+        operations = [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.operations]
         payload = {
             "name": statement.name,
             "trigger": statement.trigger,
-            "operations": [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.operations],
+            "operations": operations,
+            "effects": sorted(statement.effects) if statement.effects else [],
+            "declared_effect": statement.declared_effect,
         }
         return PageComponent(type="action", payload=payload)
     

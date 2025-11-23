@@ -24,6 +24,7 @@ EXPORT_ATTRS: Tuple[str, ...] = (
     "models",
     "connectors",
     "ai_models",
+    "llms",
     "prompts",
     "memories",
     "templates",
@@ -52,6 +53,7 @@ EXPORT_LABELS: Dict[str, str] = {
     "models": "model",
     "connectors": "connector",
     "ai_models": "AI model",
+    "llms": "llm",
     "prompts": "prompt",
     "memories": "memory",
     "templates": "template",
@@ -418,6 +420,7 @@ def _validate_eval_suites(resolved_modules: Dict[str, ResolvedModule]) -> None:
     chain_owners = _collect_global_symbols(resolved_modules, "chains")
     ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
     llm_owners = _collect_global_symbols(resolved_modules, "llms")
+    llm_owners = _collect_global_symbols(resolved_modules, "llms")
     
     def _has_dataset(name: str) -> bool:
         return name in dataset_owners or name in frame_owners
@@ -624,6 +627,7 @@ def _validate_prompts(resolved_modules: Dict[str, ResolvedModule]) -> None:
     from namel3ss.ast import Prompt, OutputSchema
     
     ai_model_owners = _collect_global_symbols(resolved_modules, "ai_models")
+    llm_owners = _collect_global_symbols(resolved_modules, "llms")
     
     for module_name, resolved in resolved_modules.items():
         prompts = resolved.exports.exports_by_kind.get("prompts", {})
@@ -633,7 +637,7 @@ def _validate_prompts(resolved_modules: Dict[str, ResolvedModule]) -> None:
                 continue
             
             # Validate model reference
-            if prompt.model and prompt.model not in ai_model_owners:
+            if prompt.model and prompt.model not in ai_model_owners and prompt.model not in llm_owners:
                 raise ModuleResolutionError(
                     f"Prompt '{prompt.name}' in module '{module_name}' references unknown model '{prompt.model}'"
                 )

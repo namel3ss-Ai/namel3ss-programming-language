@@ -392,11 +392,20 @@ def env_strings_from_config(entries: Iterable[str]) -> List[str]:
     return resolved
 
 
-def extract_connector_config(app_cfg: AppConfig, defaults: WorkspaceDefaults) -> Dict[str, Any]:
+def extract_connector_config(app_cfg: Optional[AppConfig], defaults: Optional[WorkspaceDefaults]) -> Dict[str, Any]:
     """Extract connector runtime configuration from AppConfig with defaults fallback."""
+
+    resolved_defaults = defaults or WorkspaceDefaults()
+
+    def _pick(attr: str, default_value: Any) -> Any:
+        if app_cfg is None:
+            return default_value
+        value = getattr(app_cfg, attr, None)
+        return value if value is not None else default_value
+
     return {
-        "retry_max_attempts": app_cfg.connector_retry_max_attempts if app_cfg.connector_retry_max_attempts is not None else defaults.connector_retry_max_attempts,
-        "retry_base_delay": app_cfg.connector_retry_base_delay if app_cfg.connector_retry_base_delay is not None else defaults.connector_retry_base_delay,
-        "retry_max_delay": app_cfg.connector_retry_max_delay if app_cfg.connector_retry_max_delay is not None else defaults.connector_retry_max_delay,
-        "concurrency_limit": app_cfg.connector_concurrency_limit if app_cfg.connector_concurrency_limit is not None else defaults.connector_concurrency_limit,
+        "retry_max_attempts": _pick("connector_retry_max_attempts", resolved_defaults.connector_retry_max_attempts),
+        "retry_base_delay": _pick("connector_retry_base_delay", resolved_defaults.connector_retry_base_delay),
+        "retry_max_delay": _pick("connector_retry_max_delay", resolved_defaults.connector_retry_max_delay),
+        "concurrency_limit": _pick("connector_concurrency_limit", resolved_defaults.connector_concurrency_limit),
     }

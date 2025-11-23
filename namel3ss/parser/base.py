@@ -923,6 +923,20 @@ class ParserBase:
             return {key: self._transform_config(value) for key, value in raw.items()}
         return {"value": self._transform_config(raw)}
 
+    def _transform_config(self, value: Any) -> Any:
+        """Recursively normalize configuration literals for legacy parser consumers."""
+        if isinstance(value, dict):
+            return {key: self._transform_config(val) for key, val in value.items()}
+        if isinstance(value, list):
+            return [self._transform_config(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._transform_config(item) for item in value)
+        if isinstance(value, set):
+            return {self._transform_config(item) for item in value}
+        if isinstance(value, str):
+            return self._coerce_scalar(value)
+        return value
+
     def _strip_quotes(self, value: str) -> str:
         if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
             return value[1:-1]

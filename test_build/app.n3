@@ -1,0 +1,13 @@
+app "Simple Test" {
+  description: "Simple working demo"
+}
+
+page "Home" at "/" {
+  show text "Hello from Namel3ss!"
+  show text "This is a working application"
+}
+
+page "About" at "/about" {
+  show text "About Page"
+  show text "Built with Namel3ss AI Language"
+}

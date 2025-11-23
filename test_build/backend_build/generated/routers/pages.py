@@ -1,18 +1,3 @@
-from __future__ import annotations
-
-import textwrap
-from typing import Any, Dict, Iterable, List, Optional
-
-from ...state import BackendState, PageComponent, PageSpec, _component_to_serializable
-from .endpoint_generators import (
-    _render_component_endpoint,
-    _render_page_endpoint,
-)
-from ..utils import _format_literal
-
-
-def _render_pages_router_module(state: BackendState) -> str:
-    header = '''
 """Generated FastAPI router for page and component endpoints."""
 
 from __future__ import annotations
@@ -33,24 +18,17 @@ from ..helpers import router_dependencies
 from ..schemas import ChartResponse, TableResponse
 
 router = APIRouter(dependencies=router_dependencies())
-'''
-    parts: List[str] = [textwrap.dedent(header).strip()]
 
-    page_blocks: List[str] = []
-    for page in state.pages:
-        lines: List[str] = []
-        lines.extend(_render_page_endpoint(page))
-        for index, component in enumerate(page.components):
-            endpoint_lines = _render_component_endpoint(page, component, index)
-            if endpoint_lines:
-                lines.append("")
-                lines.extend(endpoint_lines)
-        page_blocks.append("\n".join(lines))
+@router.get('/api/pages/home', response_model=Dict[str, Any], tags=['pages'])
+async def page_home_0_view(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    payload = await runtime.page_home_0(session)
+    return payload
 
-    if page_blocks:
-        parts.append("\n\n".join(block.strip() for block in page_blocks if block))
+@router.get('/api/pages/about', response_model=Dict[str, Any], tags=['pages'])
+async def page_about_1_view(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    payload = await runtime.page_about_1(session)
+    return payload
 
-    metrics_block = '''
 @router.get("/api/pages/model/metrics", response_model=TableResponse, tags=["models"])
 async def model_registry_metrics() -> TableResponse:
     rows: List[Dict[str, Any]] = []
@@ -95,10 +73,7 @@ async def model_feature_importances() -> ChartResponse:
         insight=None,
         insights={},
     )
-'''
-    parts.append(textwrap.dedent(metrics_block).strip())
 
-    streams_block = '''
 @router.get("/api/streams/pages/{slug}", response_class=StreamingResponse, tags=["streams"])
 async def stream_page_events(slug: str, heartbeat: Optional[int] = None) -> StreamingResponse:
     return await runtime.stream_page(slug, heartbeat=heartbeat)
@@ -112,10 +87,7 @@ async def stream_dataset_events(dataset: str, heartbeat: Optional[int] = None) -
 @router.get("/api/streams/topics/{topic:path}", response_class=StreamingResponse, tags=["streams"])
 async def stream_topic_events(topic: str, heartbeat: Optional[int] = None) -> StreamingResponse:
     return await runtime.stream_topic(topic, heartbeat=heartbeat)
-'''
-    parts.append(textwrap.dedent(streams_block).strip())
 
-    websocket_block = '''
 @router.websocket("/ws/pages/{slug}")
 async def page_updates(slug: str, websocket: WebSocket) -> None:
     if not runtime.REALTIME_ENABLED:
@@ -175,8 +147,5 @@ async def page_updates(slug: str, websocket: WebSocket) -> None:
             await websocket.send_json(runtime._with_timestamp(ack_payload))
     finally:
         await runtime.BROADCAST.disconnect(slug, websocket)
-'''
-    parts.append(textwrap.dedent(websocket_block).strip())
 
-    parts.append("__all__ = ['router']")
-    return "\n\n".join(part for part in parts if part).strip() + "\n"
+__all__ = ['router']
