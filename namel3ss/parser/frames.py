@@ -104,12 +104,27 @@ class FrameParserMixin(DatasetParserMixin):
 
         frame = Frame(name=name, source_type=source_type, source=source)
         
+        # Check if there's an indented block to parse
+        if self.pos >= len(self.lines):
+            return frame
+        
+        nxt = self._peek()
+        if nxt is None:
+            return frame
+        
         # Validate indented block
-        indent_info = self._expect_indent_greater_than(
-            base_indent,
-            context=f'frame "{name}"',
-            line_no=line_no
-        )
+        nxt_line_no = self.pos + 1
+        try:
+            indent_info = self._expect_indent_greater_than(
+                nxt,
+                base_indent,
+                nxt_line_no,
+                f'frame "{name}"'
+            )
+        except Exception:
+            # No valid indented block found, frame without configuration is allowed
+            return frame
+        
         if not indent_info:
             # Frame without configuration is allowed, return early
             return frame
@@ -130,6 +145,22 @@ class FrameParserMixin(DatasetParserMixin):
                 self._advance()
                 desc_raw = stripped_line[len('description:'):].strip()
                 frame.description = self._stringify_value(self._coerce_scalar(desc_raw)) if desc_raw else None
+            elif lowered.startswith('columns:'):
+                # Parse shorthand columns syntax: "columns: id, name, status"
+                self._advance()
+                columns_raw = stripped_line[len('columns:'):].strip()
+                if columns_raw:
+                    column_names = [name.strip() for name in columns_raw.split(',')]
+                    for col_name in column_names:
+                        if col_name:
+                            # Create simple column with string type (default)
+                            column = FrameColumn(
+                                name=col_name,
+                                dtype='string',
+                                nullable=True,
+                                description=None
+                            )
+                            frame.columns.append(column)
             elif lowered.startswith('tags:'):
                 frame.tags = self._parse_tag_list(stripped_line[len('tags:'):].strip())
                 self._advance()

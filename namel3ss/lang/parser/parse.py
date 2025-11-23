@@ -425,13 +425,32 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             
             return decl
         
-        # Unknown declaration
+        # Unknown declaration - provide helpful error message
+        suggestion = "Expected a declaration keyword like 'app', 'page', 'llm', etc."
+        
+        # Provide more specific guidance based on what was found
+        found_token = token.value.lower() if token.value else ""
+        
+        # Try to detect common legacy syntax patterns
+        if found_token.endswith('.') and '"' in found_token:
+            suggestion = "Found legacy dot syntax. Modern syntax uses braces: 'app \"Name\" { ... }' instead of 'app \"Name\".'."
+        elif '"' in found_token and found_token.endswith(':'):
+            suggestion = "Found legacy colon syntax. Modern syntax uses braces: 'page \"Name\" { ... }' instead of 'page \"Name\":'"
+        elif any(keyword in found_token for keyword in ['show', 'filter', 'columns', 'description']):
+            suggestion = "This looks like content that should be inside a declaration block. Modern syntax requires braces: '{ ... }'"
+        elif found_token in ['text', 'table', 'chart', 'form']:
+            suggestion = "This looks like a page component. Components must be inside a page declaration: 'page \"Name\" { show text \"...\" }'"
+        elif any(keyword in found_token for keyword in ['frame', 'dataset', 'insight']):
+            suggestion = f"'{found_token}' should be followed by a name in quotes and braces. Example: '{found_token} \"MyName\" {{ ... }}'"
+        elif len(found_token) > 0 and found_token[0] != '"' and not found_token.isalpha():
+            suggestion = "Invalid token at start of declaration. Declarations should start with keywords like 'app', 'page', etc."
+        
         raise create_syntax_error(
             f"Unexpected top-level declaration",
             path=self.path,
             line=token.line,
             found=token.value,
-            suggestion="Expected a declaration keyword like 'app', 'page', 'llm', etc.",
+            suggestion=suggestion,
         )
     
     def build_module(self) -> Module:
