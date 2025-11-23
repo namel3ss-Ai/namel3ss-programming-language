@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from ...rag.backends.base import VectorIndexBackend, ScoredDocument
+# Use absolute import to avoid relative import issues when running tests
+from namel3ss.rag.backends.base import VectorIndexBackend, ScoredDocument
+
+# Allow tests to patch QdrantClient directly on the module
+QdrantClient = None
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +18,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HybridSearchResult:
     """Result from hybrid search combining dense and sparse retrieval."""
-    documents: List[ScoredDocument]
-    dense_results: List[ScoredDocument]
-    sparse_results: List[ScoredDocument]
-    fusion_method: str
-    metadata: Dict[str, Any]
+    documents: List[ScoredDocument] = field(default_factory=list)
+    dense_results: List[ScoredDocument] = field(default_factory=list)
+    sparse_results: List[ScoredDocument] = field(default_factory=list)
+    fusion_method: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    scores: List[float] = field(default_factory=list)
 
 
 class QdrantMultimodalBackend(VectorIndexBackend):
@@ -53,8 +58,11 @@ class QdrantMultimodalBackend(VectorIndexBackend):
     
     async def initialize(self):
         """Initialize Qdrant client and create collection."""
+        global QdrantClient
         try:
-            from qdrant_client import QdrantClient
+            if QdrantClient is None:
+                from qdrant_client import QdrantClient as _QdrantClient
+                QdrantClient = _QdrantClient
             from qdrant_client.models import (
                 Distance,
                 VectorParams,
@@ -170,13 +178,14 @@ class QdrantMultimodalBackend(VectorIndexBackend):
     
     async def upsert_multimodal(
         self,
-        ids: List[str],
-        text_embeddings: Optional[List[List[float]]] = None,
-        image_embeddings: Optional[List[List[float]]] = None,
-        audio_embeddings: Optional[List[List[float]]] = None,
+        ids: Optional[List[str]] = None,
+        documents: Optional[List[Dict[str, Any]]] = None,
+        text_embeddings: Optional[List[Any]] = None,
+        image_embeddings: Optional[List[Any]] = None,
+        audio_embeddings: Optional[List[Any]] = None,
         sparse_embeddings: Optional[List[Dict[int, float]]] = None,
-        contents: List[str] = None,
-        metadatas: List[Dict[str, Any]] = None,
+        contents: Optional[List[str]] = None,
+        metadatas: Optional[List[Dict[str, Any]]] = None,
     ):
         """
         Upsert documents with multimodal embeddings.
@@ -190,7 +199,37 @@ class QdrantMultimodalBackend(VectorIndexBackend):
             contents: Text contents
             metadatas: Metadata dicts
         """
-        from qdrant_client.models import PointStruct, SparseVector
+        try:
+            from qdrant_client.models import PointStruct, SparseVector  # type: ignore
+        except ImportError:
+            # Lightweight fallbacks for testing environments without qdrant-client
+            class PointStruct(dict):
+                def __init__(self, **kwargs):
+                    super().__init__(**kwargs)
+            class SparseVector(dict):
+                def __init__(self, indices, values):
+                    super().__init__(indices=indices, values=values)
+        
+        # Normalize inputs
+        if documents:
+            ids = [doc.get("id") for doc in documents]
+            contents = [doc.get("content") for doc in documents]
+            metadatas = [doc.get("metadata", {}) for doc in documents]
+        ids = ids or []
+        
+        # Convert numpy arrays to lists for serialization if present
+        def _to_list(arr):
+            try:
+                import numpy as np  # type: ignore
+                if isinstance(arr, np.ndarray):
+                    return arr.tolist()
+            except ImportError:
+                pass
+            return arr
+        
+        text_embeddings = _to_list(text_embeddings)
+        image_embeddings = _to_list(image_embeddings)
+        audio_embeddings = _to_list(audio_embeddings)
         
         points = []
         for i, doc_id in enumerate(ids):
@@ -210,10 +249,17 @@ class QdrantMultimodalBackend(VectorIndexBackend):
             sparse_vectors = None
             if sparse_embeddings and i < len(sparse_embeddings):
                 sparse_dict = sparse_embeddings[i]
+                # Support both {"indices":[...], "values":[...]} and {idx: value}
+                if isinstance(sparse_dict, dict) and "indices" in sparse_dict and "values" in sparse_dict:
+                    indices = sparse_dict["indices"]
+                    values = sparse_dict["values"]
+                else:
+                    indices = list(sparse_dict.keys())
+                    values = list(sparse_dict.values())
                 sparse_vectors = {
                     "text_sparse": SparseVector(
-                        indices=list(sparse_dict.keys()),
-                        values=list(sparse_dict.values()),
+                        indices=indices,
+                        values=values,
                     )
                 }
             
@@ -231,7 +277,10 @@ class QdrantMultimodalBackend(VectorIndexBackend):
             )
             
             if sparse_vectors:
-                point.sparse_vector = sparse_vectors
+                if isinstance(point, dict):
+                    point["sparse_vector"] = sparse_vectors
+                else:
+                    setattr(point, "sparse_vector", sparse_vectors)
             
             points.append(point)
         
@@ -244,17 +293,19 @@ class QdrantMultimodalBackend(VectorIndexBackend):
     
     async def query(
         self,
-        query_vector: List[float],
+        query_vector: Optional[List[float]] = None,
+        query_embedding: Optional[List[float]] = None,
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
         distance_metric: str = "cosine",
         vector_name: str = "text",
+        modality: Optional[str] = None,
     ) -> List[ScoredDocument]:
         """
         Query collection using dense vector search.
         
         Args:
-            query_vector: Query embedding
+            query_vector/query_embedding: Query embedding
             top_k: Number of results
             filters: Metadata filters
             distance_metric: Distance metric (ignored, using collection config)
@@ -264,6 +315,13 @@ class QdrantMultimodalBackend(VectorIndexBackend):
             List of scored documents
         """
         from qdrant_client.models import Filter, FieldCondition, MatchValue
+        
+        # Normalize query vector
+        vector = query_vector if query_vector is not None else query_embedding
+        if vector is None:
+            raise ValueError("query_vector or query_embedding is required")
+        if modality:
+            vector_name = modality
         
         # Build filter
         query_filter = None
@@ -289,20 +347,20 @@ class QdrantMultimodalBackend(VectorIndexBackend):
         # Convert to ScoredDocuments
         documents = []
         for hit in results:
-            doc = ScoredDocument(
-                id=str(hit.id),
-                content=hit.payload.get("content", ""),
-                score=hit.score,
-                metadata={k: v for k, v in hit.payload.items() if k != "content"},
-            )
-            documents.append(doc)
+            documents.append({
+                "id": str(getattr(hit, "id", "")),
+                "content": hit.payload.get("content", "") if getattr(hit, "payload", None) else "",
+                "score": getattr(hit, "score", 0),
+                "metadata": {k: v for k, v in (getattr(hit, "payload", {}) or {}).items() if k != "content"},
+            })
         
         return documents
     
     async def hybrid_search(
         self,
-        dense_vector: List[float],
-        sparse_vector: Dict[int, float],
+        dense_vector: Optional[List[float]] = None,
+        query_embedding: Optional[List[float]] = None,
+        sparse_vector: Dict[int, float] = None,
         top_k: int = 5,
         dense_weight: float = 0.7,
         sparse_weight: float = 0.3,
@@ -324,7 +382,26 @@ class QdrantMultimodalBackend(VectorIndexBackend):
         Returns:
             HybridSearchResult with fused results
         """
-        from qdrant_client.models import Filter, FieldCondition, MatchValue, SparseVector
+        try:
+            from qdrant_client.models import Filter, FieldCondition, MatchValue, SparseVector  # type: ignore
+        except ImportError:
+            class Filter(dict):
+                def __init__(self, must=None):
+                    super().__init__(must=must or [])
+            class FieldCondition(dict):
+                def __init__(self, key=None, match=None):
+                    super().__init__(key=key, match=match)
+            class MatchValue(dict):
+                def __init__(self, value=None):
+                    super().__init__(value=value)
+            class SparseVector(dict):
+                def __init__(self, indices=None, values=None):
+                    super().__init__(indices=indices or [], values=values or [])
+        
+        # Normalize dense vector
+        dense_vector = dense_vector if dense_vector is not None else query_embedding
+        if dense_vector is None:
+            raise ValueError("dense_vector or query_embedding is required")
         
         # Build filter
         query_filter = None
@@ -352,13 +429,19 @@ class QdrantMultimodalBackend(VectorIndexBackend):
         # Sparse search
         sparse_results = []
         if self.enable_sparse and sparse_vector:
+            if isinstance(sparse_vector, dict) and "indices" in sparse_vector and "values" in sparse_vector:
+                indices = sparse_vector["indices"]
+                values = sparse_vector["values"]
+            else:
+                indices = list(sparse_vector.keys())
+                values = list(sparse_vector.values())
             sparse_results = await self.client.search(
                 collection_name=self.collection_name,
                 query_vector=(
                     "text_sparse",
                     SparseVector(
-                        indices=list(sparse_vector.keys()),
-                        values=list(sparse_vector.values()),
+                        indices=indices,
+                        values=values,
                     ),
                 ),
                 query_filter=query_filter,
@@ -441,6 +524,7 @@ class QdrantMultimodalBackend(VectorIndexBackend):
                 "sparse_weight": sparse_weight,
                 "k_rrf": k_rrf,
             },
+            scores=[item[1]["score"] for item in sorted_items],
         )
     
     async def delete(self, ids: List[str]):

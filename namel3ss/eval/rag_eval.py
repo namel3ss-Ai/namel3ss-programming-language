@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Set
+from typing import List, Optional, Dict, Any, Set, Union
 import numpy as np
+
+from .llm_judge import LLMJudge
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +16,22 @@ logger = logging.getLogger(__name__)
 class RAGEvaluationResult:
     """Result from RAG evaluation."""
     query: str
-    retrieved_docs: List[str]
-    relevant_docs: List[str]
     precision_at_k: Dict[int, float]
     recall_at_k: Dict[int, float]
     ndcg_at_k: Dict[int, float]
     hit_rate: float
     mrr: float
+    retrieved_docs: List[str] = field(default_factory=list)
+    relevant_docs: List[str] = field(default_factory=list)
+    faithfulness: Optional[float] = None
+    relevance_score: Optional[float] = None
+    correctness: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 def compute_precision_at_k(
     retrieved: List[str],
-    relevant: Set[str],
+    relevant: Union[Set[str], List[str]],
     k: int,
 ) -> float:
     """
@@ -43,15 +48,16 @@ def compute_precision_at_k(
     if k <= 0:
         return 0.0
     
+    relevant_set = set(relevant)
     retrieved_at_k = retrieved[:k]
-    relevant_count = sum(1 for doc_id in retrieved_at_k if doc_id in relevant)
+    relevant_count = sum(1 for doc_id in retrieved_at_k if doc_id in relevant_set)
     
     return relevant_count / k
 
 
 def compute_recall_at_k(
     retrieved: List[str],
-    relevant: Set[str],
+    relevant: Union[Set[str], List[str]],
     k: int,
 ) -> float:
     """
@@ -65,21 +71,23 @@ def compute_recall_at_k(
     Returns:
         Recall@K score
     """
-    if len(relevant) == 0:
+    relevant_set = set(relevant)
+    
+    if len(relevant_set) == 0:
         return 0.0
     
     if k <= 0:
         return 0.0
     
     retrieved_at_k = retrieved[:k]
-    relevant_count = sum(1 for doc_id in retrieved_at_k if doc_id in relevant)
+    relevant_count = sum(1 for doc_id in retrieved_at_k if doc_id in relevant_set)
     
-    return relevant_count / len(relevant)
+    return relevant_count / len(relevant_set)
 
 
 def compute_hit_rate(
     retrieved: List[str],
-    relevant: Set[str],
+    relevant: Union[Set[str], List[str]],
 ) -> float:
     """
     Compute hit rate (whether any relevant doc was retrieved).
@@ -91,15 +99,16 @@ def compute_hit_rate(
     Returns:
         1.0 if any relevant doc retrieved, 0.0 otherwise
     """
+    relevant_set = set(relevant)
     for doc_id in retrieved:
-        if doc_id in relevant:
+        if doc_id in relevant_set:
             return 1.0
     return 0.0
 
 
 def compute_mrr(
     retrieved: List[str],
-    relevant: Set[str],
+    relevant: Union[Set[str], List[str]],
 ) -> float:
     """
     Compute Mean Reciprocal Rank (MRR).
@@ -111,15 +120,16 @@ def compute_mrr(
     Returns:
         Reciprocal rank of first relevant document
     """
+    relevant_set = set(relevant)
     for rank, doc_id in enumerate(retrieved, start=1):
-        if doc_id in relevant:
+        if doc_id in relevant_set:
             return 1.0 / rank
     return 0.0
 
 
 def compute_ndcg_at_k(
     retrieved: List[str],
-    relevant: Set[str],
+    relevant_or_scores: Union[Set[str], Dict[str, float], List[str]],
     relevance_scores: Optional[Dict[str, float]] = None,
     k: int = 10,
 ) -> float:
@@ -140,9 +150,13 @@ def compute_ndcg_at_k(
     
     retrieved_at_k = retrieved[:k]
     
-    # Default relevance: binary (1 if relevant, 0 if not)
-    if relevance_scores is None:
-        relevance_scores = {doc_id: 1.0 for doc_id in relevant}
+    # Allow second arg to be relevance_scores dict (test style) or set/list of relevant docs
+    if isinstance(relevant_or_scores, dict):
+        relevance_scores = relevant_or_scores
+        relevant = set(relevant_or_scores.keys())
+    else:
+        relevant = set(relevant_or_scores)
+        relevance_scores = relevance_scores or {doc_id: 1.0 for doc_id in relevant}
     
     # Compute DCG
     dcg = 0.0
@@ -256,6 +270,9 @@ class RAGEvaluator:
         mrr = compute_mrr(retrieved_doc_ids, relevant_set)
         
         metadata = {}
+        faithfulness = None
+        relevance_score = None
+        correctness = None
         
         # Optionally evaluate generated answer
         if self.use_llm_judge and generated_answer and self.llm_judge:
@@ -265,20 +282,23 @@ class RAGEvaluator:
                 contexts=retrieved_contents or [],
                 ground_truth=ground_truth_answer,
             )
-            metadata["faithfulness"] = judge_result.faithfulness_score
-            metadata["relevance"] = judge_result.relevance_score
-            metadata["correctness"] = judge_result.correctness_score
-            metadata["judge_reasoning"] = judge_result.reasoning
+            faithfulness = getattr(judge_result, "faithfulness", None)
+            relevance_score = getattr(judge_result, "relevance", None)
+            correctness = getattr(judge_result, "correctness", None)
+            metadata["judge_reasoning"] = getattr(judge_result, "reasoning", "")
         
         return RAGEvaluationResult(
             query=query,
-            retrieved_docs=retrieved_doc_ids,
-            relevant_docs=relevant_doc_ids,
             precision_at_k=precision_at_k,
             recall_at_k=recall_at_k,
             ndcg_at_k=ndcg_at_k,
             hit_rate=hit_rate,
             mrr=mrr,
+            retrieved_docs=retrieved_doc_ids,
+            relevant_docs=relevant_doc_ids,
+            faithfulness=faithfulness,
+            relevance_score=relevance_score,
+            correctness=correctness,
             metadata=metadata,
         )
     
@@ -313,8 +333,14 @@ class RAGEvaluator:
             
             # Retrieve documents
             retrieved = await retriever_fn(query)
-            retrieved_doc_ids = [doc["id"] for doc in retrieved]
-            retrieved_contents = [doc.get("content", "") for doc in retrieved]
+            retrieved_doc_ids = []
+            retrieved_contents = []
+            if retrieved and isinstance(retrieved[0], dict):
+                retrieved_doc_ids = [doc.get("id", doc) for doc in retrieved]
+                retrieved_contents = [doc.get("content", "") for doc in retrieved]
+            else:
+                retrieved_doc_ids = list(retrieved)
+                retrieved_contents = [str(doc) for doc in retrieved]
             
             # Optionally generate answer
             generated_answer = None
@@ -342,85 +368,86 @@ class RAGEvaluator:
     def _aggregate_results(
         self,
         results: List[RAGEvaluationResult],
-    ) -> Dict[str, Any]:
+    ) -> RAGEvaluationResult:
         """Aggregate results across queries."""
         if not results:
-            return {}
+            return RAGEvaluationResult(
+                query="aggregated",
+                precision_at_k={},
+                recall_at_k={},
+                ndcg_at_k={},
+                hit_rate=0.0,
+                mrr=0.0,
+            )
         
         # Aggregate retrieval metrics
-        aggregated = {
-            "num_queries": len(results),
-            "precision_at_k": {},
-            "recall_at_k": {},
-            "ndcg_at_k": {},
-            "hit_rate": np.mean([r.hit_rate for r in results]),
-            "mrr": np.mean([r.mrr for r in results]),
-        }
+        precision_at_k: Dict[int, float] = {}
+        recall_at_k: Dict[int, float] = {}
+        ndcg_at_k: Dict[int, float] = {}
         
         for k in self.k_values:
-            aggregated["precision_at_k"][k] = np.mean(
-                [r.precision_at_k[k] for r in results]
-            )
-            aggregated["recall_at_k"][k] = np.mean(
-                [r.recall_at_k[k] for r in results]
-            )
-            aggregated["ndcg_at_k"][k] = np.mean(
-                [r.ndcg_at_k[k] for r in results]
-            )
+            precision_at_k[k] = float(np.mean([r.precision_at_k.get(k, 0.0) for r in results]))
+            recall_at_k[k] = float(np.mean([r.recall_at_k.get(k, 0.0) for r in results]))
+            ndcg_at_k[k] = float(np.mean([r.ndcg_at_k.get(k, 0.0) for r in results]))
         
-        # Aggregate generation metrics if available
+        hit_rate = float(np.mean([r.hit_rate for r in results]))
+        mrr = float(np.mean([r.mrr for r in results]))
+        
+        faithfulness = None
+        relevance_score = None
+        correctness = None
         if self.use_llm_judge:
-            faithfulness_scores = [
-                r.metadata.get("faithfulness", 0.0)
-                for r in results
-                if "faithfulness" in r.metadata
-            ]
-            relevance_scores = [
-                r.metadata.get("relevance", 0.0)
-                for r in results
-                if "relevance" in r.metadata
-            ]
-            correctness_scores = [
-                r.metadata.get("correctness", 0.0)
-                for r in results
-                if "correctness" in r.metadata
-            ]
-            
-            if faithfulness_scores:
-                aggregated["faithfulness"] = np.mean(faithfulness_scores)
-            if relevance_scores:
-                aggregated["relevance"] = np.mean(relevance_scores)
-            if correctness_scores:
-                aggregated["correctness"] = np.mean(correctness_scores)
+            faithfulness_vals = [r.faithfulness for r in results if r.faithfulness is not None]
+            relevance_vals = [r.relevance_score for r in results if r.relevance_score is not None]
+            correctness_vals = [r.correctness for r in results if r.correctness is not None]
+            if faithfulness_vals:
+                faithfulness = float(np.mean(faithfulness_vals))
+            if relevance_vals:
+                relevance_score = float(np.mean(relevance_vals))
+            if correctness_vals:
+                correctness = float(np.mean(correctness_vals))
         
-        return aggregated
+        return RAGEvaluationResult(
+            query="aggregated",
+            precision_at_k=precision_at_k,
+            recall_at_k=recall_at_k,
+            ndcg_at_k=ndcg_at_k,
+            hit_rate=hit_rate,
+            mrr=mrr,
+            faithfulness=faithfulness,
+            relevance_score=relevance_score,
+            correctness=correctness,
+            metadata={"num_queries": len(results)},
+        )
     
-    def format_results(self, aggregated: Dict[str, Any]) -> str:
+    def format_results(self, aggregated: RAGEvaluationResult) -> str:
         """Format aggregated results as markdown."""
         lines = ["# RAG Evaluation Results\n"]
-        lines.append(f"**Number of queries**: {aggregated['num_queries']}\n")
+        lines.append(f"**Number of queries**: {aggregated.metadata.get('num_queries', 1)}\n")
         
         lines.append("## Retrieval Metrics\n")
-        lines.append(f"- **Hit Rate**: {aggregated['hit_rate']:.4f}")
-        lines.append(f"- **MRR**: {aggregated['mrr']:.4f}\n")
+        lines.append(f"- **Hit Rate**: {aggregated.hit_rate:.4f}")
+        lines.append(f"- **MRR**: {aggregated.mrr:.4f}\n")
         
         lines.append("### Precision@K\n")
-        for k, score in aggregated["precision_at_k"].items():
-            lines.append(f"- **P@{k}**: {score:.4f}")
+        for k, score in aggregated.precision_at_k.items():
+            lines.append(f"- **Precision@{k}**: {score:.4f}")
         
         lines.append("\n### Recall@K\n")
-        for k, score in aggregated["recall_at_k"].items():
-            lines.append(f"- **R@{k}**: {score:.4f}")
+        for k, score in aggregated.recall_at_k.items():
+            lines.append(f"- **Recall@{k}**: {score:.4f}")
         
         lines.append("\n### NDCG@K\n")
-        for k, score in aggregated["ndcg_at_k"].items():
+        for k, score in aggregated.ndcg_at_k.items():
             lines.append(f"- **NDCG@{k}**: {score:.4f}")
         
-        if "faithfulness" in aggregated:
+        if aggregated.faithfulness is not None or aggregated.relevance_score is not None:
             lines.append("\n## Generation Metrics\n")
-            lines.append(f"- **Faithfulness**: {aggregated['faithfulness']:.4f}")
-            lines.append(f"- **Relevance**: {aggregated['relevance']:.4f}")
-            if "correctness" in aggregated:
-                lines.append(f"- **Correctness**: {aggregated['correctness']:.4f}")
+            if aggregated.faithfulness is not None:
+                lines.append(f"- **Faithfulness**: {aggregated.faithfulness:.4f}")
+            if aggregated.relevance_score is not None:
+                lines.append(f"- **Relevance**: {aggregated.relevance_score:.4f}")
+            if aggregated.correctness is not None:
+                lines.append(f"- **Correctness**: {aggregated.correctness:.4f}")
         
         return "\n".join(lines)

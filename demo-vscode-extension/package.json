@@ -1,0 +1,166 @@
+{
+  "name": "n3-language-support",
+  "displayName": "N3 Language Support",
+  "description": "Advanced language support for N3 with intelligent refactoring",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:n3"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "n3",
+        "aliases": [
+          "N3",
+          "n3"
+        ],
+        "extensions": [
+          ".n3"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "n3",
+        "scopeName": "source.n3",
+        "path": "./syntaxes/n3.tmGrammar.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "n3.refactor.modernizeLegacy",
+        "title": "Modernize Legacy Syntax",
+        "category": "N3"
+      },
+      {
+        "command": "n3.refactor.organizeStructure",
+        "title": "Organize File Structure",
+        "category": "N3"
+      },
+      {
+        "command": "n3.refactor.extractComponent",
+        "title": "Extract Component",
+        "category": "N3"
+      },
+      {
+        "command": "n3.refactor.renameSymbol",
+        "title": "Rename Symbol Safely",
+        "category": "N3"
+      },
+      {
+        "command": "n3.format.sortProperties",
+        "title": "Sort Properties",
+        "category": "N3"
+      },
+      {
+        "command": "n3.migrate.showPreview",
+        "title": "Preview Legacy Migration",
+        "category": "N3"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "n3.refactor.modernizeLegacy",
+        "key": "ctrl+alt+m",
+        "when": "editorTextFocus && editorLangId == n3"
+      },
+      {
+        "command": "n3.format.sortProperties",
+        "key": "ctrl+alt+s",
+        "when": "editorTextFocus && editorLangId == n3"
+      },
+      {
+        "command": "n3.refactor.extractComponent",
+        "key": "ctrl+alt+e",
+        "when": "editorTextFocus && editorLangId == n3 && editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorTextFocus && editorLangId == n3",
+          "command": "n3.refactor.modernizeLegacy",
+          "group": "1_modification"
+        },
+        {
+          "when": "editorTextFocus && editorLangId == n3 && editorHasSelection",
+          "command": "n3.refactor.extractComponent",
+          "group": "1_modification"
+        },
+        {
+          "when": "editorTextFocus && editorLangId == n3",
+          "command": "n3.refactor.organizeStructure",
+          "group": "1_modification"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "n3.refactor.modernizeLegacy",
+          "when": "editorLangId == n3"
+        },
+        {
+          "command": "n3.refactor.organizeStructure",
+          "when": "editorLangId == n3"
+        },
+        {
+          "command": "n3.refactor.extractComponent",
+          "when": "editorLangId == n3 && editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "N3 Language Support",
+      "properties": {
+        "n3.parser.enableCache": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable parser caching for better performance"
+        },
+        "n3.refactor.previewChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show preview before applying large refactoring changes"
+        },
+        "n3.legacy.autoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect legacy syntax patterns"
+        },
+        "n3.format.indentSize": {
+          "type": "number",
+          "default": 4,
+          "description": "Number of spaces for indentation"
+        },
+        "n3.diagnostics.legacyWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show warnings for legacy syntax patterns"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  }
+}

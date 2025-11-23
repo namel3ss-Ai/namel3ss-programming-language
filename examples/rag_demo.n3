@@ -1,0 +1,59 @@
+# Test complete RAG pipeline with validation
+
+app "Documentation Assistant" {
+  description: "RAG-powered documentation assistant"
+}
+
+# Define LLM for responses
+llm "gpt4" {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+    max_tokens: 2000
+}
+
+# Define vector index
+index "docs_index" {
+    source_dataset: "documentation"
+    embedding_model: "text-embedding-3-small"
+    chunk_size: 512
+    overlap: 64
+    backend: "pgvector"
+    table_name: "doc_embeddings"
+}
+
+# Define RAG pipeline
+rag_pipeline "doc_retrieval" {
+    query_encoder: "text-embedding-3-small"
+    index: "docs_index"
+    distance_metric: "cosine"
+}
+
+# Define prompt template that uses retrieved docs
+prompt "doc_qa" {
+    model: "gpt4"
+    input: {
+        question: { type: "text", required: true },
+        context: { type: "text", required: true }
+    }
+        
+    template: """
+        You are a helpful documentation assistant.
+        
+        Context from documentation:
+        {context}
+        
+        Question: {question}
+        
+        Provide a clear, accurate answer based on the context above.
+    """
+    
+    output: {
+        answer: { type: "text" }
+    }
+}
+
+# Define chain that combines RAG retrieval with LLM response
+chain "rag_qa_chain" {
+    steps: ["input", "rag:doc_retrieval", "prompt:doc_qa", "llm:gpt4"]
+}

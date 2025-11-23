@@ -425,6 +425,17 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             
             return decl
         
+        # Handle legacy "connectors" block (identifier)
+        if token.type == TokenType.IDENTIFIER and token.value == "connectors":
+            # Consume the identifier and parse a generic block, attach to app.metadata
+            self.advance()
+            config = self.parse_block()
+            app = self._ensure_app()
+            metadata = getattr(app, "metadata", {}) or {}
+            metadata["connectors"] = config
+            app.metadata = metadata
+            return None
+        
         # Unknown declaration - provide helpful error message
         suggestion = "Expected a declaration keyword like 'app', 'page', 'llm', etc."
         

@@ -13,8 +13,8 @@ from .program import LegacyProgramParser
 class Parser:
     """Public parser entry point for Namel3ss programs."""
 
-    def __init__(self, source: str, *, module_name: Optional[str] = None, path: str = ""):
-        self._source = source
+    def __init__(self, source: str = "", *, module_name: Optional[str] = None, path: str = ""):
+        self._source = source or ""
         self._module_name = module_name
         self.source_path = path
 
@@ -54,7 +54,50 @@ class Parser:
         return root
 
 
-__all__ = ["Parser", "N3SyntaxError"]
+__all__ = ["Parser", "N3SyntaxError", "enable_parser_cache", "disable_parser_cache", "clear_parser_cache"]
+
+
+# Performance optimizations (optional)
+def enable_parser_cache(max_entries: int = 100):
+    """
+    Enable parser caching for improved performance.
+    
+    Args:
+        max_entries: Maximum number of cached modules (default: 100)
+        
+    Returns:
+        Cache statistics function for monitoring performance
+    """
+    try:
+        from .optimizations import enable_parser_optimizations, get_parser_cache
+        enable_parser_optimizations()
+        cache = get_parser_cache()
+        cache._max_entries = max_entries
+        return cache.stats
+    except ImportError:
+        # Optimizations not available
+        def dummy_stats():
+            return {"status": "optimizations not available"}
+        return dummy_stats
+
+
+def disable_parser_cache():
+    """Disable parser caching and restore original behavior."""
+    try:
+        from .optimizations import disable_parser_optimizations
+        disable_parser_optimizations()
+    except ImportError:
+        pass  # Already disabled or not available
+
+
+def clear_parser_cache():
+    """Clear all cached parser results."""
+    try:
+        from .optimizations import get_parser_cache
+        cache = get_parser_cache()
+        cache.clear()
+    except ImportError:
+        pass  # Cache not available
 
 
 class _FallbackTracker:

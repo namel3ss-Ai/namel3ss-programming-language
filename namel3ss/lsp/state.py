@@ -15,7 +15,7 @@ from namel3ss.ast.datasets import DatasetSchemaField
 from namel3ss.ast.frames import FrameColumn
 from namel3ss.ast.pages import ForLoop, IfBlock, PageStatement, WhileLoop
 from namel3ss.errors import N3Error, N3SyntaxError, N3TypeError
-from namel3ss.parser import Parser
+from namel3ss.parser import Parser, enable_parser_cache, disable_parser_cache
 from namel3ss.types import check_module
 
 from .protocol import ColumnInfo, CompletionContext, IndexedSymbol, SymbolLocation, SymbolType

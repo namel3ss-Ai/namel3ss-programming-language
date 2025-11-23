@@ -54,10 +54,6 @@ CHAIN_ALIASES = {
 }
 
 RAG_ALIASES = {
-    "index": "index_name",
-    "llm": "llm_name",
-    "embeddings": "embedding_model",
-    "top_k": "retrieve_top_k",
 }
 
 DATASET_ALIASES = {

@@ -1,0 +1,259 @@
+{
+  "name": "namel3ss-ai-assistant",
+  "displayName": "Namel3ss AI Assistant",
+  "description": "AI-powered development assistant for Namel3ss programming language",
+  "version": "1.0.0",
+  "publisher": "namel3ss",
+  "icon": "images/logo.png",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "namel3ss",
+    "ai",
+    "assistant",
+    "code generation",
+    "programming language"
+  ],
+  "activationEvents": [
+    "onLanguage:namel3ss",
+    "onCommand:namel3ss.openChat",
+    "onCommand:namel3ss.generateCode",
+    "onCommand:namel3ss.refactor",
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "namel3ss",
+        "aliases": ["Namel3ss", "N3"],
+        "extensions": [".n3"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "namel3ss",
+        "scopeName": "source.namel3ss",
+        "path": "./syntaxes/namel3ss.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "namel3ss.openChat",
+        "title": "Open AI Chat",
+        "category": "Namel3ss",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "namel3ss.generateCode",
+        "title": "Generate Component",
+        "category": "Namel3ss",
+        "icon": "$(magic-wand)"
+      },
+      {
+        "command": "namel3ss.explainCode",
+        "title": "Explain Code",
+        "category": "Namel3ss",
+        "icon": "$(question)"
+      },
+      {
+        "command": "namel3ss.refactorCode",
+        "title": "Smart Refactor",
+        "category": "Namel3ss",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "namel3ss.generateTests",
+        "title": "Generate Tests",
+        "category": "Namel3ss",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "namel3ss.generateDocs",
+        "title": "Generate Documentation",
+        "category": "Namel3ss",
+        "icon": "$(book)"
+      },
+      {
+        "command": "namel3ss.optimizePerformance",
+        "title": "Optimize Performance",
+        "category": "Namel3ss",
+        "icon": "$(rocket)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == namel3ss",
+          "command": "namel3ss.explainCode",
+          "group": "namel3ss@1"
+        },
+        {
+          "when": "resourceLangId == namel3ss",
+          "command": "namel3ss.refactorCode",
+          "group": "namel3ss@2"
+        },
+        {
+          "when": "resourceLangId == namel3ss",
+          "command": "namel3ss.generateTests",
+          "group": "namel3ss@3"
+        }
+      ],
+      "editor/title": [
+        {
+          "when": "resourceLangId == namel3ss",
+          "command": "namel3ss.openChat",
+          "group": "navigation@1"
+        },
+        {
+          "when": "resourceLangId == namel3ss",
+          "command": "namel3ss.generateCode",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "namel3ss.openChat",
+          "when": "true"
+        },
+        {
+          "command": "namel3ss.generateCode",
+          "when": "true"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "namel3ssAi",
+          "title": "Namel3ss AI",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "views": {
+      "namel3ssAi": [
+        {
+          "id": "namel3ssChat",
+          "name": "AI Chat",
+          "type": "webview",
+          "icon": "$(comment-discussion)"
+        },
+        {
+          "id": "namel3ssCodeGen", 
+          "name": "Code Generation",
+          "type": "tree",
+          "icon": "$(magic-wand)"
+        },
+        {
+          "id": "namel3ssRefactor",
+          "name": "Smart Refactoring", 
+          "type": "tree",
+          "icon": "$(gear)"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "namel3ssAiAssistant",
+          "name": "AI Assistant",
+          "when": "workspaceHasNamel3ssFiles",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Namel3ss AI Assistant",
+      "properties": {
+        "namel3ss.ai.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "anthropic", "ollama", "vertex"],
+          "description": "AI provider to use for code assistance"
+        },
+        "namel3ss.ai.model": {
+          "type": "string",
+          "default": "gpt-4",
+          "description": "AI model to use"
+        },
+        "namel3ss.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the AI provider"
+        },
+        "namel3ss.ai.temperature": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Temperature for AI responses (0 = deterministic, 1 = creative)"
+        },
+        "namel3ss.ai.maxTokens": {
+          "type": "number",
+          "default": 2048,
+          "description": "Maximum tokens for AI responses"
+        },
+        "namel3ss.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI-powered code completion"
+        },
+        "namel3ss.refactoring.autoSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show automatic refactoring suggestions"
+        },
+        "namel3ss.testing.autoGenerate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically generate tests for new functions"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "namel3ss.openChat",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "namel3ss.generateCode",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
+      {
+        "command": "namel3ss.explainCode",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorHasSelection"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "openai": "^4.0.0",
+    "anthropic": "^0.24.0"
+  }
+}

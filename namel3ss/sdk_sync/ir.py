@@ -385,7 +385,8 @@ class IRSpec:
     endpoints: Dict[str, IREndpoint] = field(default_factory=dict)
     migrations: List[SchemaMigration] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    generated_at: datetime = field(default_factory=datetime.utcnow)
+    # Use a fixed timestamp for deterministic builds
+    generated_at: datetime = field(default_factory=lambda: datetime.fromtimestamp(0))
 
     def to_dict(self) -> Dict[str, Any]:
         """Export to dictionary."""

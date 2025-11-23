@@ -1,0 +1,31 @@
+# Safety policy showcase
+
+app "Safety Demo" {
+  description: "Demonstrates guardrails and safety policies"
+}
+
+policy "basic_policy" {
+  blocked_terms: ["malware", "exploit"]
+  allow_list: ["benign"]
+  max_tokens: 256
+}
+
+llm "safe_llm" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  safety: "basic_policy"
+}
+
+prompt "safe_prompt" {
+  model: "safe_llm"
+  system: "Follow safety rules strictly."
+  user: "Explain {{topic}} safely."
+}
+
+chain "safety_chain" {
+  step "generate" {
+    kind: "prompt"
+    target: "safe_prompt"
+    options: { topic: "$topic" }
+  }
+}

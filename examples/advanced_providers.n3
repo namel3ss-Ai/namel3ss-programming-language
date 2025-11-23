@@ -1,0 +1,62 @@
+# Advanced provider patterns: multiple vendors, tools, and streaming
+
+app "Advanced Providers" {
+  description: "Demonstrates multi-provider orchestration"
+}
+
+# Multiple LLM definitions
+llm "openai_chat" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.3
+}
+
+llm "claude_reasoner" {
+  provider: "anthropic"
+  model: "claude-3-5-sonnet"
+  temperature: 0.5
+}
+
+llm "vertex_gemini" {
+  provider: "google"
+  model: "gemini-1.5-pro"
+  use_vertex: true
+}
+
+# Prompt with provider override
+prompt "choose_model" {
+  model: "openai_chat"
+  system: "Pick the best model for the task."
+  user: "Task: {{task}}\nConstraints: {{constraints}}"
+}
+
+# Chain dispatching across providers
+chain "multi_provider_chain" {
+  input_key: "task"
+  
+  step "decide" {
+    kind: "prompt"
+    target: "choose_model"
+    options: { task: "$task", constraints: "$constraints" }
+  }
+  
+  step "run_openai" {
+    kind: "llm"
+    target: "openai_chat"
+    options: { prompt_text: "$task" }
+  }
+  
+  step "run_claude" {
+    kind: "llm"
+    target: "claude_reasoner"
+    options: { prompt_text: "$task" }
+  }
+}
+
+# Agent using tools and streaming
+agent "ops_agent" {
+  llm: "vertex_gemini"
+  tools: ["search", "retrieve_docs"]
+  system_prompt: "You are an ops assistant."
+  max_tokens: 512
+}

@@ -124,9 +124,10 @@ class DeclarationParsingMixin:
         
         self.declare_symbol(f"page:{name}", page_token.line)
         
-        self.expect(TokenType.AT)
-        route_token = self.expect(TokenType.STRING)
-        route = route_token.value
+        route = "/"
+        if self.consume_if(TokenType.AT):
+            route_token = self.expect(TokenType.STRING)
+            route = route_token.value
         
         # Support both colon and brace syntax for page blocks
         statements = []
@@ -344,14 +345,34 @@ class DeclarationParsingMixin:
         
         # If legacy fields present, map to their dataclass fields
         if input_fields is not None:
-            config['input_fields'] = input_fields
+            # Convert dict/str schemas to PromptField-friendly list
+            converted_inputs = []
+            if isinstance(input_fields, dict):
+                for fname, fdef in input_fields.items():
+                    converted_inputs.append({"name": fname, **(fdef if isinstance(fdef, dict) else {})})
+            elif isinstance(input_fields, list):
+                converted_inputs = input_fields
+            else:
+                converted_inputs = [input_fields]
+            config['input_fields'] = converted_inputs
         
         if output_fields is not None:
-            config['output_fields'] = output_fields
+            converted_outputs = []
+            if isinstance(output_fields, dict):
+                for fname, fdef in output_fields.items():
+                    converted_outputs.append({"name": fname, **(fdef if isinstance(fdef, dict) else {})})
+            elif isinstance(output_fields, list):
+                converted_outputs = output_fields
+            else:
+                converted_outputs = [output_fields]
+            config['output_fields'] = converted_outputs
         
         # Provide default for template if not present (backwards compatibility)
         if 'template' not in config:
             config['template'] = ""
+        # Provide default model if missing to satisfy constructor
+        if 'model' not in config:
+            config['model'] = ""
         
         # Build with unified config pattern
         return build_dataclass_with_config(
@@ -1067,7 +1088,7 @@ class DeclarationParsingMixin:
             elif isinstance(param, dict):
                 param_objects.append(Parameter(
                     name=param.get('name', ''),
-                    type_annotation=param.get('type'),
+                    type_hint=param.get('type'),
                     default=param.get('default'),
                 ))
             elif isinstance(param, str):

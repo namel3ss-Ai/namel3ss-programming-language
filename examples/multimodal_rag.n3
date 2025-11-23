@@ -1,0 +1,37 @@
+# Multimodal RAG example
+
+app "Multimodal RAG" {
+  description: "Combine text and image embeddings"
+}
+
+# Define LLM for generation
+llm "gpt-4o-mini" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.4
+}
+
+index "media_index" {
+  source_dataset: "media_dataset"
+  embedding_model: "clip-vit-base-patch32"
+  extract_images: true
+  chunk_size: 256
+  overlap: 32
+}
+
+rag_pipeline "media_retrieval" {
+  query_encoder: "clip-vit-base-patch32"
+  index: "media_index"
+  enable_hybrid: true
+  sparse_model: "bm25"
+}
+
+prompt "multimodal_prompt" {
+  model: "gpt-4o-mini"
+  system: "Use both text and image context."
+  user: "Question: {{question}}\nImages: {{images}}\nContext: {{context}}"
+}
+
+chain "multimodal_chain" {
+  steps: ["rag:media_retrieval", "prompt:multimodal_prompt"]
+}

@@ -1,0 +1,19 @@
+# Minimal demo app
+
+app "Demo App" {
+  description: "Starter application for tests"
+}
+
+page "Home" at "/" {
+  show text "Welcome to Demo App"
+}
+
+prompt "greeting" {
+  template: "Hello {{name}}!"
+  model: "gpt-4o-mini"
+}
+
+llm "gpt-4o-mini" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+}

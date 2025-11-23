@@ -20,6 +20,9 @@ class ModalityType(str, Enum):
     AUDIO = "audio"
     VIDEO = "video"
 
+# Backwards compatibility alias used by tests
+ContentModality = ModalityType
+
 
 @dataclass
 class ExtractedContent:
@@ -35,24 +38,33 @@ class ExtractedContent:
 class IngestionResult:
     """Result from document ingestion."""
     document_id: str
-    contents: List[ExtractedContent]
+    contents: List[ExtractedContent] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
+    text_contents: List[ExtractedContent] = field(default_factory=list)
+    image_contents: List[ExtractedContent] = field(default_factory=list)
+    audio_contents: List[ExtractedContent] = field(default_factory=list)
+    video_contents: List[ExtractedContent] = field(default_factory=list)
     
-    @property
-    def text_contents(self) -> List[ExtractedContent]:
-        """Get all text contents."""
-        return [c for c in self.contents if c.modality == ModalityType.TEXT]
-    
-    @property
-    def image_contents(self) -> List[ExtractedContent]:
-        """Get all image contents."""
-        return [c for c in self.contents if c.modality == ModalityType.IMAGE]
-    
-    @property
-    def audio_contents(self) -> List[ExtractedContent]:
-        """Get all audio contents."""
-        return [c for c in self.contents if c.modality == ModalityType.AUDIO]
+    def __post_init__(self):
+        # If specific modality lists are provided, use them to populate contents
+        if not self.contents:
+            combined = []
+            combined.extend(self.text_contents)
+            combined.extend(self.image_contents)
+            combined.extend(self.audio_contents)
+            combined.extend(self.video_contents)
+            self.contents = combined
+        else:
+            # Derive modality lists from contents when not explicitly provided
+            if not self.text_contents:
+                self.text_contents = [c for c in self.contents if c.modality == ModalityType.TEXT]
+            if not self.image_contents:
+                self.image_contents = [c for c in self.contents if c.modality == ModalityType.IMAGE]
+            if not self.audio_contents:
+                self.audio_contents = [c for c in self.contents if c.modality == ModalityType.AUDIO]
+            if not self.video_contents:
+                self.video_contents = [c for c in self.contents if c.modality == ModalityType.VIDEO]
 
 
 class MultimodalIngester:
@@ -121,9 +133,11 @@ class MultimodalIngester:
             elif suffix in ['.docx', '.doc']:
                 return await self._ingest_word(file_path)
             else:
-                # Try as plain text
-                return await self._ingest_text(file_path)
+                raise ValueError(f"Unsupported file format: {suffix or mime_type or file_path.suffix}")
         except Exception as e:
+            if isinstance(e, ValueError):
+                # Propagate unsupported format errors to caller/tests
+                raise
             logger.error(f"Error ingesting {file_path}: {e}")
             return IngestionResult(
                 document_id=str(file_path),
@@ -160,10 +174,13 @@ class MultimodalIngester:
                 return await self._ingest_image_bytes(content, filename)
             elif suffix in ['.mp3', '.wav', '.flac']:
                 return await self._ingest_audio_bytes(content, filename)
-            else:
-                # Try as text
+            elif suffix in ['.txt', '.md', '.rst'] or (mime_type and 'text' in mime_type):
                 return await self._ingest_text_bytes(content, filename)
+            else:
+                raise ValueError(f"Unsupported file format: {suffix or mime_type or filename}")
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
             logger.error(f"Error ingesting bytes for {filename}: {e}")
             return IngestionResult(
                 document_id=filename,

@@ -1,0 +1,110 @@
+// Example: Using N3Provider in Namel3ss DSL
+// This demonstrates basic provider configuration and usage
+
+app "Provider Demo" {
+    description: "Provider-focused examples"
+}
+
+// Define LLM using provider system
+llm "chat_model" {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+    max_tokens: 1000
+}
+
+// Alternative: Anthropic Claude
+llm "claude" {
+    provider: "anthropic"
+    model: "claude-3-sonnet-20240229"
+    temperature: 0.8
+}
+
+// Alternative: Google Gemini
+llm "gemini" {
+    provider: "google"
+    model: "gemini-pro"
+    use_vertex: false  // Use Gemini API instead of Vertex AI
+}
+
+// Alternative: Local model
+llm "local_llama" {
+    provider: "local"
+    model: "llama2"
+    base_url: "http://localhost:11434"
+}
+
+// Simple prompt using provider
+prompt "simple_qa" {
+    model: "chat_model"
+    system: "You are a helpful assistant."
+    user: "What is {{question}}?"
+}
+
+// Chain using provider
+chain "answer_question" {
+    input: "question"
+    
+    step "llm_generate" {
+        kind: "prompt"
+        target: "simple_qa"
+        options: {
+            question: "$question"
+        }
+        stop_on_error: true
+    }
+    
+    return: "answer"
+}
+
+// Agent using provider
+agent "research_agent" {
+    llm: "claude"
+    system: "You are a research assistant."
+    max_turns: 5
+    
+    tools: ["search_web", "read_document"]
+    
+    goal: "Research the topic and provide comprehensive answer"
+}
+
+// Streaming example
+prompt "streaming_story" {
+    model: "chat_model"
+    system: "You are a creative storyteller."
+    user: "Write a short story about {{topic}}."
+    stream: true
+}
+
+// RAG with provider
+chain "rag_qa" {
+    input: "question"
+    
+    step "retrieve" {
+        kind: "tool"
+        target: "vector_search"
+        options: {"query": "$question"}
+    }
+    
+    step "generate" {
+        kind: "prompt"
+        target: "rag_prompt"
+        options: {
+            question: "$question",
+            contexts: "$contexts"
+        }
+    }
+}
+
+prompt "rag_prompt" {
+    model: "claude"
+    system: "Answer based on provided contexts."
+    user: """
+    Contexts:
+    {{contexts}}
+    
+    Question: {{question}}
+    
+    Answer:
+    """
+}

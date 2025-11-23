@@ -1,0 +1,35 @@
+# Symbolic reasoning demo
+
+app "Symbolic Demo" {
+  description: "Demonstrates simple symbolic expressions"
+}
+
+# Define model
+llm "gpt-4o-mini" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+}
+
+# Simple function
+fn double(x) => x * 2
+
+# Prompt using symbolic values
+prompt "symbolic_prompt" {
+  template: "Double of {{value}} is {{double(value)}}"
+  model: "gpt-4o-mini"
+}
+
+# Chain composing function and prompt
+chain "symbolic_chain" {
+  step "calc" {
+    kind: "python"
+    target: "double"
+    options: { value: "$value" }
+  }
+  step "render" {
+    kind: "prompt"
+    target: "symbolic_prompt"
+    options: { value: "$value" }
+  }
+}

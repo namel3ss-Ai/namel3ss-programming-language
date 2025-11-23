@@ -126,6 +126,14 @@ class WorkspaceIndex:
     # ------------------------------------------------------------------
     def did_open(self, item: TextDocumentItem) -> List[Diagnostic]:
         document = DocumentState(uri=item.uri, text=item.text, version=item.version, root_path=self.root_path)
+        
+        # Enhance document with improved diagnostics
+        try:
+            from .enhanced_diagnostics import enhance_document_diagnostics
+            enhance_document_diagnostics(document)
+        except ImportError:
+            pass  # Fall back to basic diagnostics
+        
         self._open_documents[item.uri] = document
         self._update_symbols(item.uri, document)
         return document.diagnostics_for_publish()
@@ -140,6 +148,14 @@ class WorkspaceIndex:
         if document is None:
             initial_text = self._read_document_from_fs(uri)
             document = DocumentState(uri=uri, text=initial_text, version=version, root_path=self.root_path)
+            
+            # Enhance document with improved diagnostics
+            try:
+                from .enhanced_diagnostics import enhance_document_diagnostics
+                enhance_document_diagnostics(document)
+            except ImportError:
+                pass  # Fall back to basic diagnostics
+                
             self._open_documents[uri] = document
         next_text = self._apply_content_changes(document, changes)
         diagnostics = document.update(next_text, version)
@@ -168,6 +184,14 @@ class WorkspaceIndex:
                 self.logger.debug("Failed to read %s: %s", path, exc)
                 continue
             snapshot = DocumentState(uri=uri, text=text, version=0, root_path=self.root_path)
+            
+            # Enhance snapshot with improved diagnostics
+            try:
+                from .enhanced_diagnostics import enhance_document_diagnostics
+                enhance_document_diagnostics(snapshot)
+            except ImportError:
+                pass  # Fall back to basic diagnostics
+            
             self._snapshots[uri] = snapshot
             self._update_symbols(uri, snapshot)
 

@@ -153,20 +153,37 @@ def _encode_prompt(prompt: "Prompt", env_keys: Set[str]) -> Dict[str, Any]:
 
 def _encode_prompt_field(field: "PromptField", env_keys: Set[str]) -> Dict[str, Any]:
     """Encode a prompt field definition."""
-    metadata_value = _encode_value(field.metadata, env_keys)
+    # Accept both PromptField instances and simple dicts
+    if isinstance(field, dict):
+        metadata_value = _encode_value(field.get("metadata", {}), env_keys)
+        if not isinstance(metadata_value, dict):
+            metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+        payload: Dict[str, Any] = {
+            "name": field.get("name") or field.get("field") or "field",
+            "type": field.get("type", "string"),
+            "required": field.get("required", True),
+            "enum": list(field.get("enum", []) or []),
+            "description": field.get("description"),
+            "metadata": metadata_value,
+        }
+        if "default" in field:
+            payload["default"] = _encode_value(field.get("default"), env_keys)
+        return payload
+    
+    metadata_value = _encode_value(getattr(field, "metadata", {}), env_keys)
     if not isinstance(metadata_value, dict):
         metadata_value = {"value": metadata_value} if metadata_value is not None else {}
-    payload: Dict[str, Any] = {
-        "name": field.name,
-        "type": field.field_type,
-        "required": field.required,
-        "enum": list(field.enum or []),
-        "description": field.description,
+    payload2: Dict[str, Any] = {
+        "name": getattr(field, "name", "field"),
+        "type": getattr(field, "field_type", getattr(field, "type", "string")),
+        "required": getattr(field, "required", True),
+        "enum": list(getattr(field, "enum", []) or []),
+        "description": getattr(field, "description", None),
         "metadata": metadata_value,
     }
-    if field.default is not None:
-        payload["default"] = _encode_value(field.default, env_keys)
-    return payload
+    if getattr(field, "default", None) is not None:
+        payload2["default"] = _encode_value(getattr(field, "default"), env_keys)
+    return payload2
 
 
 def _encode_output_field_type(field_type: "OutputFieldType") -> Dict[str, Any]:

@@ -68,7 +68,10 @@ def generate_backend(
         Version for exported schemas (default: "1.0.0")
     """
 
-    state = build_backend_state(app)
+    # Work on a deep copy to avoid mutating the input AST across builds
+    import copy
+    app_copy = copy.deepcopy(app)
+    state = build_backend_state(app_copy)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -98,9 +101,10 @@ def generate_backend(
     (generated_dir / "__init__.py").write_text(
         _render_generated_package(), encoding="utf-8"
     )
-    (generated_dir / "runtime.py").write_text(
-        _render_runtime_module(state, embed_insights, enable_realtime, connector_config), encoding="utf-8"
-    )
+    runtime_code = _render_runtime_module(state, embed_insights, enable_realtime, connector_config)
+    (generated_dir / "runtime.py").write_text(runtime_code, encoding="utf-8")
+    # Backward compatibility: also emit runtime.py at the root as tests expect
+    (out_path / "runtime.py").write_text(runtime_code, encoding="utf-8")
     
     # Generate inline blocks module
     inline_blocks = collect_inline_blocks(app)

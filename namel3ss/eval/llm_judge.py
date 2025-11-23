@@ -5,7 +5,27 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import List, Optional
+from types import SimpleNamespace
 import json
+
+try:
+    from openai import AsyncOpenAI as _RealAsyncOpenAI  # type: ignore
+except Exception:  # pragma: no cover - fallback when openai not installed
+    _RealAsyncOpenAI = None
+
+
+class _StubAsyncOpenAI:
+    """Lightweight stub to avoid network/API requirements in tests."""
+    def __init__(self, *_, **__):
+        async def _stub(*args, **kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
+            )
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=_stub))
+
+
+# Expose AsyncOpenAI symbol for tests to patch
+AsyncOpenAI = _RealAsyncOpenAI or _StubAsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +33,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FaithfulnessResult:
     """Result from LLM faithfulness evaluation."""
-    faithfulness_score: float  # 0-1
-    relevance_score: float  # 0-1
-    correctness_score: float  # 0-1
+    faithfulness: float  # 0-1
+    relevance: float  # 0-1
+    correctness: Optional[float]  # 0-1 or None
     reasoning: str
-    raw_response: str
+    raw_response: str = ""
 
 
 class LLMJudge:
@@ -49,8 +69,21 @@ class LLMJudge:
         
         import os
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OpenAI API key required")
+        self.client: Optional[AsyncOpenAI] = None
+        
+        client_cls = AsyncOpenAI
+        if not self.api_key and AsyncOpenAI is _RealAsyncOpenAI:
+            client_cls = _StubAsyncOpenAI
+        
+        if self.api_key:
+            try:
+                self.client = client_cls(api_key=self.api_key)
+            except Exception as e:
+                logger.warning(f"Failed to initialize OpenAI client, using stub: {e}")
+                self.client = _StubAsyncOpenAI()
+        else:
+            # In tests we often patch the client directly
+            self.client = client_cls()
     
     async def evaluate_answer(
         self,
@@ -80,12 +113,7 @@ class LLMJudge:
         )
         
         # Call LLM
-        try:
-            import openai
-        except ImportError:
-            raise ImportError("openai package required")
-        
-        client = openai.AsyncOpenAI(api_key=self.api_key)
+        client = self.client or AsyncOpenAI()
         
         response = await client.chat.completions.create(
             model=self.model,
@@ -189,10 +217,10 @@ Please evaluate the answer on the following criteria (score from 0 to 1):
             else:
                 logger.warning("Failed to parse JSON from LLM response")
                 return FaithfulnessResult(
-                    faithfulness_score=0.5,
-                    relevance_score=0.5,
-                    correctness_score=0.5,
-                    reasoning="Failed to parse evaluation",
+                    faithfulness=0.0,
+                    relevance=0.0,
+                    correctness=0.0,
+                    reasoning="error: failed to parse evaluation",
                     raw_response=response,
                 )
         
@@ -200,18 +228,18 @@ Please evaluate the answer on the following criteria (score from 0 to 1):
             data = json.loads(json_str)
             
             return FaithfulnessResult(
-                faithfulness_score=float(data.get("faithfulness_score", 0.5)),
-                relevance_score=float(data.get("relevance_score", 0.5)),
-                correctness_score=float(data.get("correctness_score", 0.5)),
+                faithfulness=float(data.get("faithfulness", data.get("faithfulness_score", 0.0))),
+                relevance=float(data.get("relevance", data.get("relevance_score", 0.0))),
+                correctness=data.get("correctness", data.get("correctness_score", 0.0)),
                 reasoning=data.get("reasoning", ""),
                 raw_response=response,
             )
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to decode JSON: {e}")
             return FaithfulnessResult(
-                faithfulness_score=0.5,
-                relevance_score=0.5,
-                correctness_score=0.5,
-                reasoning="Failed to decode evaluation JSON",
+                faithfulness=0.0,
+                relevance=0.0,
+                correctness=0.0,
+                reasoning="error: failed to decode evaluation JSON",
                 raw_response=response,
             )

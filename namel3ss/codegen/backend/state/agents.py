@@ -7,35 +7,41 @@ from typing import Any, Dict, Set, TYPE_CHECKING
 from .expressions import _encode_value
 
 if TYPE_CHECKING:
-    from ....ast import Agent, MultiAgentGraph
+    from ....ast import AgentDefinition, GraphDefinition
 
 
-def _encode_agent(agent: "Agent", env_keys: Set[str]) -> Dict[str, Any]:
+def _encode_agent(agent: "AgentDefinition", env_keys: Set[str]) -> Dict[str, Any]:
     """Encode an agent definition for backend state."""
+    metadata_value = _encode_value(getattr(agent, "metadata", {}), env_keys)
+    if not isinstance(metadata_value, dict):
+        metadata_value = {"value": metadata_value} if metadata_value is not None else {}
     return {
         "name": agent.name,
-        "llm": agent.llm,
-        "tools": list(agent.tools),
-        "system_prompt": agent.system_prompt,
-        "memory": agent.memory,
-        "guardrails": list(agent.guardrails or []),
-        "max_iterations": agent.max_iterations,
-        "description": agent.description,
-        "metadata": _encode_value(agent.metadata, env_keys),
+        "llm": getattr(agent, "llm_name", None) or getattr(agent, "llm", None),
+        "tools": list(getattr(agent, "tool_names", []) or []),
+        "system_prompt": getattr(agent, "system_prompt", None),
+        "memory": getattr(agent, "memory_config", None),
+        "goal": getattr(agent, "goal", None),
+        "max_iterations": getattr(agent, "max_turns", None),
+        "max_tokens": getattr(agent, "max_tokens", None),
+        "temperature": getattr(agent, "temperature", None),
+        "top_p": getattr(agent, "top_p", None),
+        "config": _encode_value(getattr(agent, "config", {}), env_keys),
+        "metadata": metadata_value,
     }
 
 
-def _encode_graph(graph: "MultiAgentGraph", env_keys: Set[str]) -> Dict[str, Any]:
+def _encode_graph(graph: "GraphDefinition", env_keys: Set[str]) -> Dict[str, Any]:
     """Encode a multi-agent graph definition for backend state."""
     node_edges = {
-        source: list(edges) for source, edges in (graph.edges or {}).items()
+        source: list(edges) for source, edges in (getattr(graph, "edges", None) or {}).items()
     }
     return {
         "name": graph.name,
-        "nodes": list(graph.nodes),
+        "nodes": list(getattr(graph, "nodes", []) or getattr(graph, "agents", []) or []),
         "edges": node_edges,
-        "entry_point": graph.entry_point,
-        "conditional_edges": dict(graph.conditional_edges or {}),
-        "description": graph.description,
-        "metadata": _encode_value(graph.metadata, env_keys),
+        "entry_point": getattr(graph, "start_agent", None),
+        "conditional_edges": dict(getattr(graph, "conditional_edges", {}) or {}),
+        "description": getattr(graph, "description", None),
+        "metadata": _encode_value(getattr(graph, "metadata", {}), env_keys),
     }
