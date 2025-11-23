@@ -456,11 +456,37 @@ def main(argv: Optional[list] = None) -> None:
     # Test subcommand
     test_parser = subparsers.add_parser(
         'test',
-        help='Execute the configured test command for the workspace'
+        help='Run namel3ss application tests with deterministic mocks'
+    )
+    test_parser.add_argument(
+        'files',
+        nargs='*',
+        help='Test files or directories to run (default: discover tests in tests/ and current directory)'
+    )
+    test_parser.add_argument(
+        '--pattern',
+        default='*.test.yaml',
+        help='Pattern for test file discovery (default: *.test.yaml)'
+    )
+    test_parser.add_argument(
+        '--external',
+        action='store_true',
+        help='Use external test runner instead of native namel3ss testing'
     )
     test_parser.add_argument(
         '--command',
-        help='Override the configured test command'
+        help='Override the configured test command (only used with --external)'
+    )
+    test_parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output showing test execution details'
+    )
+    test_parser.add_argument(
+        '--fail-fast', '-f',
+        action='store_true',
+        dest='fail_fast',
+        help='Stop on first test failure'
     )
     test_parser.set_defaults(func=cmd_test)
     

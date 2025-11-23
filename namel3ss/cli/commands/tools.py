@@ -46,30 +46,151 @@ def _invoke_tool(command: str | None, label: str) -> None:
 
 def cmd_test(args: argparse.Namespace) -> None:
     """
-    Handle the 'test' subcommand to run test suite.
+    Handle the 'test' subcommand to run namel3ss application tests.
     
-    Invokes the test command configured in workspace configuration
-    (tools.test in namel3ss.toml) or uses the command override provided
-    via CLI argument.
+    Runs native namel3ss tests for .ai applications using deterministic mocks,
+    with fallback to configured external test command if needed.
     
     Args:
         args: Parsed command-line arguments containing:
-            - command: Optional command override
+            - command: Optional external command override
+            - files: Optional list of test files to run
+            - pattern: Test file pattern (default: *.test.yaml)
+            - external: Force use of external test runner
+            - verbose: Enable verbose output
+            - fail_fast: Stop on first test failure
     
     Raises:
-        SystemExit: If tests fail
+        SystemExit: If tests fail or encounter errors
     
     Examples:
-        >>> args = argparse.Namespace(command=None)
+        >>> args = argparse.Namespace(files=[], external=False, verbose=False)
         >>> cmd_test(args)  # doctest: +SKIP
-        → Running test: pytest tests/
+        → Running namel3ss application tests
     """
     try:
         ctx = get_cli_context(args)
         override = getattr(args, "command", None)
+        use_external = getattr(args, "external", False)
+        test_files = getattr(args, "files", [])
+        pattern = getattr(args, "pattern", "*.test.yaml")
+        verbose = getattr(args, "verbose", False)
+        fail_fast = getattr(args, "fail_fast", False)
+        
+        # Use native namel3ss test runner by default
+        if not override and not use_external:
+            try:
+                import asyncio
+                from namel3ss.testing import load_test_suite
+                from namel3ss.testing.runner import TestRunner
+                import pathlib
+                
+                # Discover test files
+                test_files_to_run = []
+                
+                if test_files:
+                    # Use specified files
+                    for file_arg in test_files:
+                        path = pathlib.Path(file_arg)
+                        if path.is_file() and (path.suffix in ['.yaml', '.yml'] or path.name.endswith('.test.yaml')):
+                            test_files_to_run.append(path)
+                        elif path.is_dir():
+                            test_files_to_run.extend(path.rglob(pattern))
+                else:
+                    # Discover tests in common directories
+                    for test_dir in ["tests", "test"]:
+                        test_path = pathlib.Path(test_dir)
+                        if test_path.exists() and test_path.is_dir():
+                            test_files_to_run.extend(test_path.rglob(pattern))
+                    
+                    # Also check for tests in current directory
+                    current_dir = pathlib.Path(".")
+                    test_files_to_run.extend(current_dir.glob(pattern))
+                
+                if not test_files_to_run:
+                    print(f"No test files found matching pattern '{pattern}'")
+                    print("Expected test files: tests/**/*.test.yaml or *.test.yaml")
+                    return
+                
+                print(f"→ Running namel3ss application tests ({len(test_files_to_run)} suite(s))")
+                
+                # Execute test suites
+                runner = TestRunner(verbose=verbose)
+                total_cases = 0
+                total_passed = 0
+                total_failed = 0
+                suite_results = []
+                
+                for test_file_path in test_files_to_run:
+                    try:
+                        if verbose:
+                            print(f"\\nLoading test suite: {test_file_path}")
+                        
+                        suite = load_test_suite(test_file_path)
+                        result = asyncio.run(runner.run_test_suite(suite))
+                        suite_results.append(result)
+                        
+                        total_cases += result.total_cases
+                        total_passed += result.passed_cases
+                        total_failed += result.failed_cases
+                        
+                        # Print suite summary
+                        if result.setup_error:
+                            print(f"SETUP ERROR: {result.setup_error}")
+                        else:
+                            status_icon = "✅" if result.failed_cases == 0 else "❌"
+                            print(f"{status_icon} {suite.name}: {result.passed_cases}/{result.total_cases} passed ({result.execution_time_ms:.1f}ms)")
+                        
+                        # Print failed test details if not verbose (verbose already prints them)
+                        if not verbose and result.failed_cases > 0:
+                            for case_result in result.case_results:
+                                if not case_result.success:
+                                    print(f"  ❌ {case_result.case_name}: {case_result.error or 'Assertion failed'}")
+                        
+                        # Stop on first failure if fail_fast is enabled
+                        if fail_fast and result.failed_cases > 0:
+                            break
+                            
+                    except Exception as e:
+                        total_failed += 1
+                        print(f"❌ Failed to run test suite {test_file_path}: {e}")
+                        if fail_fast:
+                            break
+                
+                # Print final summary
+                print(f"\\n{'='*50}")
+                if total_failed == 0:
+                    print(f"✅ All tests passed: {total_passed}/{total_cases} cases")
+                else:
+                    print(f"❌ Tests failed: {total_passed}/{total_cases} passed, {total_failed} failed")
+                
+                print(f"Suites: {len(suite_results)} run")
+                
+                # Exit with appropriate code
+                if total_failed > 0:
+                    raise SystemExit(1)
+                
+                return
+                
+            except ImportError as e:
+                print(f"Native test runner not available: {e}")
+                print("Install test dependencies or use external test runner with --external")
+                raise SystemExit(1)
+            except Exception as e:
+                if verbose:
+                    import traceback
+                    traceback.print_exc()
+                else:
+                    print(f"Test execution failed: {e}")
+                raise SystemExit(1)
+        
+        # Fall back to external test runner
         command = override or ctx.config.tools.test
         ctx.plugin_manager.emit_workspace(task="test", command=command, args=args)
         _invoke_tool(command, "test")
+        
+    except SystemExit:
+        raise  # Re-raise SystemExit to preserve exit code
     except Exception as exc:
         handle_cli_exception(exc, verbose=getattr(args, "verbose", False))
 

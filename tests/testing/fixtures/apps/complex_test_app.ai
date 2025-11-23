@@ -1,0 +1,130 @@
+# Complex Test Application
+# More complex app with multiple agents, tools, and chains for thorough testing
+
+app "Complex Test App" {
+  description: "Complex application for comprehensive testing framework validation"
+}
+
+llm "research_llm" {
+  provider: "openai"
+  model: "gpt-4"
+  temperature: 0.3
+  max_tokens: 1000
+}
+
+llm "creative_llm" {
+  provider: "anthropic"
+  model: "claude-3-opus"
+  temperature: 0.8
+}
+
+tool "search_tool" {
+  type: "http"
+  endpoint: "https://api.search.example.com"
+  method: "GET"
+  headers: {
+    "Authorization": "Bearer {{env.SEARCH_API_KEY}}"
+    "Content-Type": "application/json"
+  }
+}
+
+tool "database_tool" {
+  type: "database"
+  connection_string: "{{env.DATABASE_URL}}"
+  driver: "postgresql"
+}
+
+prompt "research_query" {
+  model: "research_llm"
+  template: """
+  Research the following topic and provide key insights:
+  
+  Topic: {{topic}}
+  Focus areas: {{focus_areas}}
+  
+  Provide a structured response with:
+  - Key findings (3-5 points)
+  - Relevant statistics or data
+  - Recommended next steps
+  """
+}
+
+prompt "creative_summary" {
+  model: "creative_llm"
+  template: """
+  Create an engaging summary of this research:
+  
+  {{research_data}}
+  
+  Make it:
+  - Accessible to non-experts
+  - Engaging and compelling
+  - Under 200 words
+  """
+}
+
+agent "ResearchAgent" {
+  llm: "research_llm"
+  tools: ["search_tool", "database_tool"]
+  memory: "full_history"
+  goal: "Conduct thorough research and provide actionable insights"
+  system_prompt: """
+  You are an expert research analyst.
+  Use available tools to gather comprehensive information.
+  Provide evidence-based insights and recommendations.
+  Always cite your sources and explain your reasoning.
+  """
+  max_turns: 10
+}
+
+agent "WriterAgent" {
+  llm: "creative_llm"
+  memory: "summary"
+  goal: "Transform research into compelling content"
+  system_prompt: """
+  You are a skilled technical writer.
+  Transform complex research into clear, engaging content.
+  Focus on storytelling and making information accessible.
+  Maintain accuracy while improving readability.
+  """
+  max_turns: 5
+}
+
+chain "research_and_write" {
+  steps: [
+    {
+      kind: "llm"
+      target: "research_query"
+      options: { 
+        output: "research_results",
+        model: "research_llm"
+      }
+    },
+    {
+      kind: "tool"
+      target: "search_tool"
+      options: {
+        input: "research_results",
+        output: "search_data"
+      }
+    },
+    {
+      kind: "llm" 
+      target: "creative_summary"
+      options: {
+        input: "search_data",
+        output: "final_summary"
+      }
+    }
+  ]
+}
+
+chain "validation_chain" {
+  steps: [
+    {
+      kind: "llm"
+      target: "research_query"
+      options: { output: "validation_input" }
+    }
+  ]
+}

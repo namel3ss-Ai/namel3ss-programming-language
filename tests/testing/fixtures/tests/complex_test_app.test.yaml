@@ -1,0 +1,149 @@
+app_module: "tests/testing/fixtures/apps/complex_test_app.ai"
+name: "Complex Test App Test Suite"
+
+setup:
+  fixtures_dir: "./fixtures"
+
+global_mocks:
+  llms:
+    - model_name: research_llm
+      response:
+        output_text: |
+          Based on my research, here are the key insights:
+          
+          Key Findings:
+          1. Market demand has increased 40% year-over-year
+          2. Consumer preferences are shifting toward sustainable options
+          3. Competition is intensifying in the premium segment
+          
+          Recommended next steps:
+          - Invest in sustainable product development
+          - Strengthen premium market positioning
+          - Monitor competitive landscape closely
+        
+    - model_name: creative_llm
+      response:
+        output_text: |
+          The market is experiencing unprecedented growth, with consumer demand 
+          surging 40% as buyers increasingly prioritize sustainability. This 
+          shift presents both exciting opportunities and new competitive 
+          challenges that forward-thinking companies can leverage for success.
+
+  tools:
+    - tool_name: search_tool
+      input_pattern:
+        query: "*"
+      response:
+        output:
+          results: [
+            {
+              title: "Market Growth Report 2024"
+              url: "https://example.com/report"
+              snippet: "Market analysis shows 40% growth in sustainable products"
+            }
+          ]
+        success: true
+        
+    - tool_name: database_tool
+      input_pattern:
+        sql: "*"
+      response:
+        output:
+          rows: [
+            { id: 1, metric: "growth_rate", value: 0.40 },
+            { id: 2, metric: "sustainability_preference", value: 0.75 }
+          ]
+        success: true
+
+cases:
+  - name: "test_research_agent_with_tools"
+    description: "Test agent that uses multiple tools for research"
+    target:
+      type: agent
+      name: ResearchAgent  
+    inputs:
+      user_input: "Research sustainable product market trends"
+      max_turns: 3
+    assertions:
+      - type: contains
+        value: "research"
+      - type: contains
+        value: "sustainable"
+      - type: field_exists
+        value: "tool_results"
+    mocks:
+      llms:
+        - model_name: research_llm
+          prompt_pattern: ".*sustainable.*market.*"
+          response:
+            output_text: |
+              I'll research sustainable product market trends using available tools.
+              
+              <tool_call>
+              search_tool({"query": "sustainable product market trends 2024"})
+              </tool_call>
+
+  - name: "test_research_and_write_chain"
+    description: "Test complex chain with LLM and tool steps"
+    target:
+      type: chain
+      name: research_and_write
+    inputs:
+      topic: "artificial intelligence trends"
+      focus_areas: "enterprise adoption, ethical considerations"
+    assertions:
+      - type: field_exists
+        value: "research_results"
+      - type: field_exists
+        value: "search_data"
+      - type: field_exists
+        value: "final_summary"
+      - type: contains
+        value: "artificial intelligence"
+
+  - name: "test_writer_agent_content_creation"
+    description: "Test creative agent for content generation"
+    target:
+      type: agent
+      name: WriterAgent
+    inputs:
+      user_input: "Transform this research data into an engaging blog post introduction"
+      max_turns: 2
+    assertions:
+      - type: contains
+        value: "engaging"
+      - type: type_is
+        value: "dict"
+      - type: field_exists
+        value: "final_response"
+
+  - name: "test_validation_chain_simple"
+    description: "Test simple chain for validation purposes"
+    target:
+      type: chain
+      name: validation_chain
+    inputs:
+      topic: "validation test"
+    assertions:
+      - type: field_exists
+        value: "validation_input"
+      - type: contains
+        value: "validation test"
+
+  - name: "test_prompt_with_complex_template"
+    description: "Test prompt with complex template rendering"
+    target:
+      type: prompt
+      name: research_query
+    inputs:
+      topic: "machine learning in healthcare"
+      focus_areas: "diagnostic accuracy, patient outcomes"
+    assertions:
+      - type: contains
+        value: "machine learning"
+      - type: contains
+        value: "healthcare" 
+      - type: contains
+        value: "diagnostic accuracy"
+      - type: contains
+        value: "Key findings"

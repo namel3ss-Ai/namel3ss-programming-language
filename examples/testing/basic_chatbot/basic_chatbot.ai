@@ -1,0 +1,175 @@
+"""
+Basic Chatbot Application
+
+This is a simple namel3ss application demonstrating basic chatbot functionality.
+It includes greeting prompts, a help agent, and simple conversation flows.
+
+This example is designed to demonstrate:
+- Basic prompt testing
+- Agent behavior validation  
+- Simple input/output assertions
+- Mock LLM configuration
+"""
+
+# Define greeting prompts with different styles
+prompt greeting_formal:
+    inputs:
+        - name: str
+        - time_of_day: str
+    template: """
+    Good {{ time_of_day }}, {{ name }}! 
+    
+    Welcome to our customer service. How may I assist you today?
+    
+    I'm here to help you with any questions or concerns you might have.
+    """
+
+prompt greeting_casual:
+    inputs:
+        - name: str
+    template: """
+    Hey {{ name }}! 👋
+    
+    What's up? How can I help you out today?
+    """
+
+# Define help and information prompts
+prompt help_menu:
+    inputs: []
+    template: """
+    Here are the things I can help you with:
+    
+    1. 🔍 Product Information
+    2. 📦 Order Status  
+    3. 🔄 Returns & Exchanges
+    4. 💳 Payment & Billing
+    5. 📞 Contact Information
+    
+    Just let me know what you need help with by selecting a number or describing your issue!
+    """
+
+prompt farewell:
+    inputs:
+        - name: str
+    template: """
+    Thank you for chatting with us today, {{ name }}!
+    
+    Have a wonderful day and don't hesitate to reach out if you need anything else. 
+    
+    Take care! 👋
+    """
+
+# Define a simple assistant agent
+agent customer_assistant:
+    model: "gpt-4"
+    capabilities:
+        - "answer_questions"
+        - "provide_support"
+        - "escalate_complex_issues"
+    
+    system_prompt: """
+    You are a friendly and helpful customer service assistant. Your role is to:
+    
+    1. Provide clear, accurate information about our products and services
+    2. Help customers with orders, returns, and billing questions
+    3. Maintain a professional but warm tone
+    4. Escalate complex technical issues to human agents when needed
+    5. Always prioritize customer satisfaction
+    
+    Keep responses concise but thorough. Use emojis sparingly and appropriately.
+    """
+    
+    def handle_question(query: str, customer_name: str) -> dict:
+        user_prompt = f"""
+        Customer: {customer_name}
+        Question: {query}
+        
+        Please provide a helpful response to this customer question.
+        """
+        
+        response = self.generate(user_prompt)
+        
+        return {
+            "response": response,
+            "customer": customer_name,
+            "escalation_needed": "technical issue" in query.lower() or "bug" in query.lower(),
+            "confidence": 0.9 if len(response) > 50 else 0.6
+        }
+
+# Define conversation flow chain
+chain conversation_flow:
+    description: "Handles a complete customer conversation from greeting to resolution"
+    
+    def execute(customer_name: str, initial_query: str, greeting_style: str = "formal") -> dict:
+        results = {
+            "steps": [],
+            "customer_satisfaction": None,
+            "conversation_complete": False
+        }
+        
+        # Step 1: Greet the customer
+        if greeting_style == "formal":
+            greeting = greeting_formal.execute({
+                "name": customer_name, 
+                "time_of_day": "morning"
+            })
+        else:
+            greeting = greeting_casual.execute({"name": customer_name})
+        
+        results["steps"].append({
+            "step": "greeting",
+            "output": greeting,
+            "status": "completed"
+        })
+        
+        # Step 2: Handle the initial query
+        if initial_query.lower() in ["help", "menu", "options"]:
+            help_response = help_menu.execute({})
+            results["steps"].append({
+                "step": "help_menu",
+                "output": help_response,
+                "status": "completed"
+            })
+        else:
+            # Use assistant to handle the question
+            assistance = customer_assistant.handle_question(initial_query, customer_name)
+            results["steps"].append({
+                "step": "assistance",
+                "output": assistance,
+                "status": "completed" if not assistance["escalation_needed"] else "escalated"
+            })
+        
+        # Step 3: Conclude conversation
+        farewell_message = farewell.execute({"name": customer_name})
+        results["steps"].append({
+            "step": "farewell", 
+            "output": farewell_message,
+            "status": "completed"
+        })
+        
+        results["conversation_complete"] = True
+        results["customer_satisfaction"] = "high" if len(results["steps"]) <= 3 else "medium"
+        
+        return results
+
+# Main application entry point
+app BasicChatbot:
+    description: "A simple customer service chatbot"
+    version: "1.0.0"
+    
+    def run(config: dict) -> dict:
+        customer_name = config.get("customer_name", "Customer")
+        query = config.get("query", "help")
+        style = config.get("greeting_style", "formal")
+        
+        # Run the conversation flow
+        conversation = conversation_flow.execute(customer_name, query, style)
+        
+        return {
+            "status": "success",
+            "customer": customer_name, 
+            "conversation": conversation,
+            "total_steps": len(conversation["steps"]),
+            "satisfaction": conversation["customer_satisfaction"],
+            "version": "1.0.0"
+        }

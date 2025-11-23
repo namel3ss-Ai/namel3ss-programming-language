@@ -1,0 +1,288 @@
+app_module: "examples/testing/basic_chatbot/basic_chatbot.ai"
+name: "Basic Chatbot Test Suite"
+description: "Comprehensive tests for the basic chatbot application"
+
+# Global mock configurations
+global_mocks:
+  llms:
+    # Mock responses for customer assistant agent
+    - model_name: "gpt-4"
+      prompt_pattern: "Customer: (\\w+)\\s*Question: (.*)\\s*Please provide a helpful response"
+      response:
+        output_text: "Thank you for your question, {1}! Regarding '{2}', I'd be happy to help you with that. Let me provide you with the information you need."
+        metadata:
+          tokens_used: 45
+          confidence: 0.9
+        delay_ms: 150
+    
+    # Mock for technical questions that need escalation
+    - model_name: "gpt-4"
+      prompt_pattern: ".*technical issue.*"
+      response:
+        output_text: "I understand you're experiencing a technical issue. Let me escalate this to our technical support team who can better assist you with this specific problem."
+        metadata:
+          tokens_used: 32
+          escalation_needed: true
+        delay_ms: 200
+    
+    # Fallback for any unmatched prompts
+    - model_name: "gpt-4"
+      prompt_pattern: ".*"
+      response:
+        output_text: "I'm here to help! Could you please provide more details about what you need assistance with?"
+        metadata:
+          tokens_used: 20
+          confidence: 0.7
+        delay_ms: 100
+
+# Test cases
+cases:
+  # Test greeting prompts
+  - name: "test_formal_greeting"
+    description: "Test formal greeting prompt with proper personalization"
+    target:
+      type: "prompt"
+      name: "greeting_formal"
+    inputs:
+      name: "Alice Johnson"
+      time_of_day: "morning"
+    assertions:
+      - type: "contains"
+        value: "Good morning, Alice Johnson"
+        description: "Should include personalized greeting"
+      - type: "contains"
+        value: "customer service"
+        description: "Should mention customer service context"
+      - type: "contains"
+        value: "How may I assist"
+        description: "Should offer assistance"
+      - type: "type_is"
+        value: "str"
+        description: "Should return string output"
+    timeout_ms: 3000
+
+  - name: "test_casual_greeting"
+    description: "Test casual greeting prompt"
+    target:
+      type: "prompt" 
+      name: "greeting_casual"
+    inputs:
+      name: "Bob"
+    assertions:
+      - type: "contains"
+        value: "Hey Bob"
+        description: "Should include casual greeting with name"
+      - type: "contains"
+        value: "👋"
+        description: "Should include wave emoji"
+      - type: "contains"
+        value: "help you out"
+        description: "Should offer help"
+    timeout_ms: 3000
+
+  - name: "test_help_menu"
+    description: "Test help menu displays all available options"
+    target:
+      type: "prompt"
+      name: "help_menu"
+    inputs: {}
+    assertions:
+      - type: "contains"
+        value: "Product Information"
+        description: "Should include product info option"
+      - type: "contains"
+        value: "Order Status"
+        description: "Should include order status option"
+      - type: "contains"
+        value: "Returns & Exchanges"
+        description: "Should include returns option"
+      - type: "contains"
+        value: "Payment & Billing"
+        description: "Should include payment option"
+      - type: "matches"
+        value: "\\d+\\."
+        description: "Should include numbered options"
+    timeout_ms: 3000
+
+  - name: "test_farewell_prompt"
+    description: "Test farewell prompt personalization"
+    target:
+      type: "prompt"
+      name: "farewell"
+    inputs:
+      name: "Charlie"
+    assertions:
+      - type: "contains"
+        value: "Charlie"
+        description: "Should include customer name"
+      - type: "contains" 
+        value: "Thank you"
+        description: "Should express gratitude"
+      - type: "contains"
+        value: "wonderful day"
+        description: "Should wish well"
+
+  # Test customer assistant agent
+  - name: "test_assistant_basic_question"
+    description: "Test assistant handling basic customer question"
+    target:
+      type: "agent"
+      name: "customer_assistant"
+    inputs:
+      query: "What are your store hours?"
+      customer_name: "Diana"
+    assertions:
+      - type: "has_keys"
+        value: ["response", "customer", "escalation_needed", "confidence"]
+        description: "Should return structured response"
+      - type: "json_path"
+        path: "$.customer"
+        value: "Diana"
+        description: "Should include customer name in response"
+      - type: "json_path"
+        path: "$.escalation_needed"
+        value: false
+        description: "Basic question should not need escalation"
+      - type: "json_path"
+        path: "$.confidence"
+        value: 0.9
+        description: "Should have high confidence for basic question"
+    timeout_ms: 5000
+
+  - name: "test_assistant_technical_question"
+    description: "Test assistant handling technical question requiring escalation"
+    target:
+      type: "agent"
+      name: "customer_assistant"
+    inputs:
+      query: "I'm having a technical issue with my account login"
+      customer_name: "Edward"
+    assertions:
+      - type: "json_path"
+        path: "$.escalation_needed"
+        value: true
+        description: "Technical issue should trigger escalation"
+      - type: "json_path"
+        path: "$.customer"
+        value: "Edward"
+        description: "Should track customer name"
+      - type: "contains"
+        value: "technical"
+        description: "Response should acknowledge technical nature"
+
+  # Test conversation flow chain
+  - name: "test_conversation_flow_help_request"
+    description: "Test complete conversation flow for help request"
+    target:
+      type: "chain"
+      name: "conversation_flow"
+    inputs:
+      customer_name: "Frank"
+      initial_query: "help"
+      greeting_style: "formal"
+    assertions:
+      - type: "has_keys"
+        value: ["steps", "customer_satisfaction", "conversation_complete"]
+        description: "Should return complete conversation structure"
+      - type: "json_path"
+        path: "$.conversation_complete"
+        value: true
+        description: "Conversation should be marked as complete"
+      - type: "json_path"
+        path: "$.steps[0].step"
+        value: "greeting"
+        description: "First step should be greeting"
+      - type: "json_path"
+        path: "$.steps[1].step"
+        value: "help_menu"
+        description: "Second step should be help menu for help request"
+      - type: "json_path"
+        path: "$.steps[2].step"
+        value: "farewell"
+        description: "Final step should be farewell"
+      - type: "has_length"
+        value: 3
+        description: "Should have exactly 3 steps"
+
+  - name: "test_conversation_flow_specific_question"
+    description: "Test conversation flow for specific customer question"
+    target:
+      type: "chain"
+      name: "conversation_flow"
+    inputs:
+      customer_name: "Grace"
+      initial_query: "What's your return policy?"
+      greeting_style: "casual"
+    assertions:
+      - type: "json_path"
+        path: "$.steps[0].step"
+        value: "greeting"
+        description: "Should start with greeting"
+      - type: "json_path"
+        path: "$.steps[1].step"
+        value: "assistance"
+        description: "Should provide assistance for specific question"
+      - type: "json_path"
+        path: "$.customer_satisfaction"
+        value: "high"
+        description: "Should achieve high satisfaction with efficient resolution"
+
+  # Test full application
+  - name: "test_full_app_basic_config"
+    description: "Test complete chatbot application with basic configuration"
+    target:
+      type: "app"
+    inputs:
+      customer_name: "Henry"
+      query: "help"
+      greeting_style: "formal"
+    assertions:
+      - type: "has_keys"
+        value: ["status", "customer", "conversation", "total_steps", "satisfaction", "version"]
+        description: "Should return complete application response"
+      - type: "json_path"
+        path: "$.status"
+        value: "success"
+        description: "Application should execute successfully"
+      - type: "json_path"
+        path: "$.customer"
+        value: "Henry"
+        description: "Should track customer name"
+      - type: "json_path"
+        path: "$.total_steps"
+        value: 3
+        description: "Should complete conversation in 3 steps"
+      - type: "json_path"
+        path: "$.version"
+        value: "1.0.0"
+        description: "Should return version information"
+
+  - name: "test_full_app_default_values"
+    description: "Test application with default configuration values"
+    target:
+      type: "app"
+    inputs: {}
+    assertions:
+      - type: "json_path"
+        path: "$.status"
+        value: "success"
+        description: "Should handle missing config gracefully"
+      - type: "json_path"
+        path: "$.customer"
+        value: "Customer"
+        description: "Should use default customer name"
+      - type: "field_exists"
+        value: "conversation"
+        description: "Should still execute conversation flow"
+      - type: "field_exists"
+        value: "satisfaction"
+        description: "Should measure customer satisfaction"
+
+# This test suite demonstrates:
+# 1. Testing individual prompts with various input combinations
+# 2. Validating agent responses and structured outputs  
+# 3. Testing multi-step chain workflows
+# 4. End-to-end application testing
+# 5. Using JSON path assertions for nested data
+# 6. Mock LLM configuration with pattern matching
+# 7. Comprehensive assertion coverage

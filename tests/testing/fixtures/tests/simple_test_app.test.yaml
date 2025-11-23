@@ -1,0 +1,120 @@
+app_module: "tests/testing/fixtures/apps/simple_test_app.ai"
+name: "Simple Test App Test Suite"
+
+setup:
+  fixtures_dir: "./fixtures"
+
+global_mocks:
+  llms:
+    - model_name: test_llm
+      prompt_pattern: "Hello.*"
+      response:
+        output_text: "Hello! I'm doing great, thank you for asking."
+        delay_ms: 50
+    
+    - model_name: analysis_llm
+      prompt_pattern: "Analyze.*content.*"
+      response:
+        output_text: |
+          {
+            "sentiment": "positive",
+            "topics": ["greeting", "wellbeing"], 
+            "confidence": 0.92
+          }
+
+cases:
+  - name: "test_simple_greeting_prompt"
+    description: "Test basic prompt execution with input substitution"
+    target:
+      type: prompt
+      name: simple_greeting
+    inputs:
+      name: "Alice"
+    assertions:
+      - type: contains
+        value: "Hello"
+      - type: contains
+        value: "Alice"
+      - type: contains
+        value: "great"
+
+  - name: "test_content_analysis_prompt"
+    description: "Test prompt that expects JSON output"
+    target:
+      type: prompt
+      name: content_analysis
+    inputs:
+      content: "This is wonderful news! The project exceeded all expectations."
+    assertions:
+      - type: json_path
+        path: "$.sentiment" 
+        value: "positive"
+      - type: field_exists
+        value: "confidence"
+      - type: has_keys
+        value: ["sentiment", "topics", "confidence"]
+    mocks:
+      llms:
+        - model_name: analysis_llm
+          prompt_pattern: ".*wonderful news.*"
+          response:
+            output_text: |
+              {
+                "sentiment": "positive",
+                "topics": ["project", "success", "achievement"],
+                "confidence": 0.95
+              }
+
+  - name: "test_support_agent_interaction"
+    description: "Test agent with single turn conversation"
+    target:
+      type: agent
+      name: SupportAgent
+    inputs:
+      user_input: "I need help with my account password"
+      max_turns: 1
+    assertions:
+      - type: contains
+        value: "password"
+      - type: contains  
+        value: "help"
+      - type: field_exists
+        value: "final_response"
+    mocks:
+      llms:
+        - model_name: test_llm
+          response:
+            output_text: |
+              I'd be happy to help you with your password! 
+              I can guide you through resetting it securely. 
+              Would you prefer to reset it via email or SMS?
+
+  - name: "test_analysis_chain_execution"
+    description: "Test chain that combines multiple LLM steps"
+    target:
+      type: chain
+      name: analysis_chain
+    inputs:
+      content: "The quarterly results show impressive growth"
+      name: "Team"
+    assertions:
+      - type: field_exists
+        value: "analysis_result"
+      - type: field_exists
+        value: "greeting"
+      - type: contains
+        value: "Team"
+    mocks:
+      llms:
+        - model_name: analysis_llm
+          response:
+            output_text: |
+              {
+                "sentiment": "positive",
+                "topics": ["business", "growth", "results"],
+                "confidence": 0.88
+              }
+        - model_name: test_llm
+          prompt_pattern: "Hello Team.*"
+          response:
+            output_text: "Hello Team, congratulations on the impressive quarterly growth!"

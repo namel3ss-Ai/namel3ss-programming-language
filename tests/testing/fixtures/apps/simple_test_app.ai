@@ -1,0 +1,66 @@
+# Test Application for Testing Framework
+# Simple app for validating namel3ss testing infrastructure
+
+app "Test App" {
+  description: "Simple application for testing the testing framework"
+}
+
+llm "test_llm" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.7
+}
+
+llm "analysis_llm" {
+  provider: "anthropic"  
+  model: "claude-3-sonnet"
+  temperature: 0.2
+}
+
+prompt "simple_greeting" {
+  model: "test_llm"
+  template: "Hello {{name}}, how are you today?"
+}
+
+prompt "content_analysis" {
+  model: "analysis_llm"
+  template: """
+  Analyze the following content for sentiment and key topics.
+  
+  Content: {{content}}
+  
+  Respond with JSON in this format:
+  {
+    "sentiment": "positive|neutral|negative",
+    "topics": ["topic1", "topic2"],
+    "confidence": 0.85
+  }
+  """
+}
+
+agent "SupportAgent" {
+  llm: "test_llm"
+  memory: "conversation_window"
+  goal: "Provide helpful customer support"
+  system_prompt: """
+  You are a helpful customer support agent.
+  Be friendly, professional, and solution-oriented.
+  If you need more information, ask clarifying questions.
+  """
+  max_turns: 5
+}
+
+chain "analysis_chain" {
+  steps: [
+    {
+      kind: "llm"
+      target: "content_analysis"
+      options: { output: "analysis_result" }
+    },
+    {
+      kind: "llm"
+      target: "simple_greeting"
+      options: { output: "greeting", input: "analysis_result" }
+    }
+  ]
+}
