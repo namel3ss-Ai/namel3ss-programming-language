@@ -19,6 +19,7 @@ from ..loader import load_program
 from ..parser import N3SyntaxError
 from ..resolver import ModuleResolutionError, resolve_program
 from ..types import N3TypeError
+from ..debugging import DebugConfiguration, initialize_tracing
 from .errors import (
     CLIError,
     CLIFileNotFoundError,
@@ -34,7 +35,7 @@ from .utils import get_program_root
 _RUNTIME_CACHE: Dict[str, Any] = {}
 
 
-def load_n3_app(source_path: Path) -> App:
+def load_n3_app(source_path: Path, *, enable_debug: bool = None) -> App:
     """
     Load and resolve Namel3ss application from source file.
     
@@ -44,6 +45,7 @@ def load_n3_app(source_path: Path) -> App:
     
     Args:
         source_path: Path to .ai source file
+        enable_debug: Whether to enable debug tracing (defaults to environment config)
     
     Returns:
         Resolved App AST
@@ -56,6 +58,10 @@ def load_n3_app(source_path: Path) -> App:
         >>> app = load_n3_app(Path("app.ai"))  # doctest: +SKIP
         >>> print(f"Loaded {app.name}")
     """
+    # Initialize debug tracing if enabled
+    if enable_debug or (enable_debug is None and DebugConfiguration.from_environment().enabled):
+        initialize_tracing()
+    
     # Validate file exists
     if not source_path.exists():
         raise CLIFileNotFoundError(

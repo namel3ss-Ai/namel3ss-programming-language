@@ -29,6 +29,7 @@ from .commands import (
     cmd_test,
     cmd_train,
     cmd_typecheck,
+    add_debug_command,
     add_stdlib_command,
     add_packages_command,
     add_modules_command,
@@ -561,6 +562,7 @@ def main(argv: Optional[list] = None) -> None:
     
     # SDK-Sync subcommand
     add_sdk_sync_command(subparsers)
+    add_debug_command(subparsers)
     add_stdlib_command(subparsers)
     add_packages_command(subparsers)
     add_modules_command(subparsers)
@@ -652,7 +654,7 @@ def main(argv: Optional[list] = None) -> None:
     # Configure logging level
     _configure_runtime_logging(args)
     
-    # Execute the command
+    # Execute command
     args.func(args)
 
 

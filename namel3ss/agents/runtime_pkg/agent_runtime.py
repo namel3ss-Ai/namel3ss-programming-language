@@ -11,6 +11,7 @@ from namel3ss.ast.agents import AgentDefinition, MemoryConfig
 from namel3ss.llm.base import BaseLLM, ChatMessage, LLMResponse
 from namel3ss.observability.metrics import record_metric
 from namel3ss.templates import get_default_engine, TemplateError
+from namel3ss.debugging.hooks import trace_agent_execution, trace_agent_turn, trace_memory_operation
 
 from .data_models import AgentMessage, AgentTurn, AgentResult
 from .memory import BaseMemory
@@ -49,6 +50,7 @@ class AgentRuntime:
         self.tool_registry = tool_registry or {}
         self.memory = BaseMemory(agent_def.memory_config)
     
+    @trace_agent_execution(capture_inputs=True, capture_outputs=True)
     async def aact(
         self,
         user_input: str,
@@ -86,17 +88,23 @@ class AgentRuntime:
             for turn_num in range(max_turns):
                 logger.debug(f"Agent {self.agent_def.name} turn {turn_num + 1}/{max_turns}")
                 
-                # Check if summarization is needed before this turn
-                await self.memory.maybe_summarize()
-                
-                # Record turn start
-                record_metric("agent.turn.start", 1, tags={
-                    "agent": self.agent_def.name,
-                    "turn": str(turn_num + 1)
-                })
-                
-                turn = self._execute_turn(context)
-                turns.append(turn)
+                # Trace agent turn
+                async with trace_agent_turn(
+                    agent_name=self.agent_def.name,
+                    turn_number=turn_num + 1,
+                    user_input=user_input if turn_num == 0 else None
+                ):
+                    # Check if summarization is needed before this turn
+                    await self.memory.maybe_summarize()
+                    
+                    # Record turn start
+                    record_metric("agent.turn.start", 1, tags={
+                        "agent": self.agent_def.name,
+                        "turn": str(turn_num + 1)
+                    })
+                    
+                    turn = self._execute_turn(context)
+                    turns.append(turn)
                 
                 # Record turn completion
                 record_metric("agent.turn.complete", 1, tags={

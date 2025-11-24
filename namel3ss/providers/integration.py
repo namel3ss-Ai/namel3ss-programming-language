@@ -6,6 +6,7 @@ import asyncio
 from namel3ss.llm.base import BaseLLM, ChatMessage, LLMResponse
 from namel3ss.providers.base import N3Provider, ProviderMessage, ProviderResponse
 from namel3ss.templates import get_default_engine, TemplateError
+from namel3ss.debugging.hooks import trace_chain_execution
 
 
 class ProviderLLMBridge(BaseLLM):
@@ -160,6 +161,7 @@ class ProviderLLMBridge(BaseLLM):
         )
 
 
+@trace_chain_execution(capture_steps=True)
 async def run_chain_with_provider(
     chain_steps: List[Any],
     provider: N3Provider,

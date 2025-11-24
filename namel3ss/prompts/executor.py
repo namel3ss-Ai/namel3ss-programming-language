@@ -17,6 +17,7 @@ from namel3ss.llm.base import BaseLLM, LLMError
 from namel3ss.prompts.runtime import PromptProgram, create_prompt_program
 from namel3ss.prompts.validator import OutputValidator, ValidationError
 from namel3ss.errors import N3Error
+from namel3ss.debugging.hooks import trace_prompt_execution, trace_validation_event
 
 
 class StructuredPromptError(N3Error):
@@ -56,6 +57,7 @@ class StructuredPromptResult:
     """Whether validation succeeded on first try"""
 
 
+@trace_prompt_execution(capture_inputs=True, capture_outputs=True)
 async def execute_structured_prompt(
     prompt_def: Prompt,
     llm: BaseLLM,
@@ -154,6 +156,15 @@ async def execute_structured_prompt(
             
             # Validate output
             validation_result = validator.validate(raw_text)
+            
+            # Trace validation event
+            await trace_validation_event(
+                validator_name=prompt_def.name,
+                input_data=raw_text,
+                result=validation_result,
+                success=validation_result.valid,
+                errors=[str(e) for e in validation_result.errors] if not validation_result.valid else None
+            )
             
             if validation_result.valid:
                 # Success!
