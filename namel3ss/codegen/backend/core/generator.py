@@ -33,6 +33,7 @@ from .routers import (
     _render_pages_router_module,
     _render_routers_package,
     _render_training_router_module,
+    _render_websocket_router_module,
 )
 from .runtime import _render_runtime_module
 from .schemas import _render_schemas_module
@@ -167,7 +168,7 @@ def generate_backend(
     )
 
     (routers_dir / "__init__.py").write_text(
-        _render_routers_package(include_metadata=export_schemas), encoding="utf-8"
+        _render_routers_package(include_metadata=export_schemas, include_websocket=enable_realtime), encoding="utf-8"
     )
     (routers_dir / "insights.py").write_text(
         _render_insights_router_module(), encoding="utf-8"
@@ -192,6 +193,9 @@ def generate_backend(
     )
     (routers_dir / "datasets.py").write_text(
         _render_datasets_router_module(backend_ir), encoding="utf-8"
+    )
+    (routers_dir / "websocket.py").write_text(
+        _render_websocket_router_module(backend_ir, enable_realtime), encoding="utf-8"
     )
     (routers_dir / "observability.py").write_text(
         _render_observability_router_module(), encoding="utf-8"

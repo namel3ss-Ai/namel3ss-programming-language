@@ -306,6 +306,32 @@ async def broadcast_mutation_event(
     return event
 
 
+async def emit_dataset_change(dataset_name: str, event_type: str, data: Dict[str, Any]) -> None:
+    """Emit a dataset change event for realtime subscriptions.
+    
+    This function publishes create/update/delete events to the Redis pub/sub channel
+    for a specific dataset. Subscribers receive these events in real-time.
+    
+    Args:
+        dataset_name: Name of the dataset
+        event_type: Type of change ('create', 'update', 'delete')
+        data: The record data (new record, updated record, or deleted record)
+    """
+    if not use_redis_pubsub():
+        return
+    
+    event = {
+        "type": f"dataset.{event_type}",
+        "dataset": dataset_name,
+        "payload": data,
+        "meta": _build_event_meta(f"dataset-{event_type}", {"event_type": event_type}),
+    }
+    
+    # Publish to dataset-specific channel
+    topic = f"dataset:{dataset_name}:changes"
+    await publish_event(topic, _with_timestamp(event))
+
+
 async def resolve_websocket_context(websocket: WebSocket) -> Dict[str, Any]:
     context = get_request_context({})
     headers = getattr(websocket, "headers", {}) or {}
@@ -402,6 +428,11 @@ async def broadcast_mutation_event(
         "payload": payload,
         "meta": {"source": source, "status": status, "operation_id": operation_id, "error": error, **(meta or {})},
     }
+
+
+async def emit_dataset_change(dataset_name: str, event_type: str, data: Dict[str, Any]) -> None:
+    """No-op dataset change emission when realtime is disabled."""
+    return None
 
 
 async def resolve_websocket_context(websocket: Any) -> Dict[str, Any]:

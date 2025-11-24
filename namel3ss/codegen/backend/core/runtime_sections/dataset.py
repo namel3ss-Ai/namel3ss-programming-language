@@ -17,6 +17,23 @@ from namel3ss.codegen.backend.core.runtime.expression_sandbox import (
 )
 
 
+# Dataset model registry for dynamic CRUD operations
+DATASET_MODELS: Dict[str, Any] = {}
+
+
+def get_dataset_model(dataset_name: str) -> Optional[Any]:
+    """Retrieve the SQLAlchemy model for a dataset.
+    
+    Returns None if the dataset doesn't have a SQL-based model.
+    """
+    return DATASET_MODELS.get(dataset_name)
+
+
+def register_dataset_model(dataset_name: str, model: Any) -> None:
+    """Register a SQLAlchemy model for a dataset."""
+    DATASET_MODELS[dataset_name] = model
+
+
 async def fetch_dataset_rows(
     key: str,
     session: AsyncSession,
