@@ -44,7 +44,7 @@ Best Practices:
     - Use reset_registry() only in tests
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from .base import BaseTool
 from .errors import ToolRegistrationError, ToolValidationError

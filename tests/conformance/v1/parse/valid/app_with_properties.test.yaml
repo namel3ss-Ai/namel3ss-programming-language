@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-009"
+category: "parse"
+name: "App with properties"
+description: |
+  Tests parsing app block with configuration properties.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_properties.ai"
+
+expect:
+  parse:
+    status: "success"

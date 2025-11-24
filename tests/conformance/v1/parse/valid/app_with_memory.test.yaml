@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-006"
+category: "parse"
+name: "App with memory declaration"
+description: |
+  Tests parsing a memory declaration with configuration properties.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_memory.ai"
+
+expect:
+  parse:
+    status: "success"

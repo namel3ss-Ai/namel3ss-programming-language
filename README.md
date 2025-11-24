@@ -537,6 +537,10 @@ pytest tests/test_backend_integration.py
 
 # Error message quality
 pytest tests/test_error_messages.py
+
+# Conformance tests (language specification)
+namel3ss conformance
+pytest tests/conformance_runner/  # Meta-tests for conformance infrastructure
 ```
 
 Run with coverage:
@@ -545,15 +549,82 @@ Run with coverage:
 pytest --cov=namel3ss --cov-report=html
 ```
 
+## Conformance & Governance
+
+Namel3ss includes a comprehensive conformance test suite to ensure consistency across implementations and guide language evolution.
+
+### Running Conformance Tests
+
+```bash
+# Run all conformance tests
+namel3ss conformance
+
+# Run specific category
+namel3ss conformance --category parse
+
+# Run specific test
+namel3ss conformance --test parse-valid-001
+
+# Verbose output
+namel3ss conformance --verbose
+
+# JSON output (for CI)
+namel3ss conformance --format json
+```
+
+### Conformance Test Results
+
+Current test coverage:
+- **Parse Phase**: 30 tests (100% passing)
+  - 18 valid syntax tests
+  - 12 invalid syntax tests
+- **Type System**: Coming soon
+- **Runtime**: Coming soon
+
+### For External Implementers
+
+If you're building an alternative Namel3ss implementation:
+
+1. **Read the specification**: See [tests/conformance/SPEC.md](tests/conformance/SPEC.md) for the test format
+2. **Run the test suite**: Test descriptors are in `tests/conformance/v1/`
+3. **Validate conformance**: Tests are machine-readable YAML files
+4. **Report results**: Use the same test IDs for cross-implementation comparison
+
+See [CONFORMANCE.md](CONFORMANCE.md) for a complete guide with examples in Python and JavaScript.
+
+### Language Governance
+
+Namel3ss follows an RFC (Request for Comments) process for language changes:
+
+1. **Submit RFC**: Propose changes with motivation and design
+2. **Discussion**: Community feedback (2-4 weeks)
+3. **FCP**: Final Comment Period (10 days)
+4. **Decision**: Accepted or Rejected by maintainers
+
+**All language-level changes must include**:
+- RFC document with rationale
+- Conformance tests demonstrating the new behavior
+- Implementation in the reference implementation
+- Documentation updates
+
+See [GOVERNANCE.md](GOVERNANCE.md) for the complete process and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
 ## Documentation
 
 Comprehensive documentation is available in the `docs/` directory:
 
+### Core Documentation
 - **[Documentation Index](docs/INDEX.md)** - Central navigation hub
 - **[Testing Guide](docs/TESTING.md)** - Complete testing reference
 - **[Memory System](docs/MEMORY_SYSTEM.md)** - Memory scopes and patterns
 - **[Control Flow](CONTROL_FLOW_SYNTAX.md)** - Conditionals and loops
 - **[CLI Documentation](CLI_DOCUMENTATION.md)** - Full CLI reference
+
+### Conformance & Governance
+- **[CONFORMANCE.md](CONFORMANCE.md)** - External implementation guide
+- **[GOVERNANCE.md](GOVERNANCE.md)** - Language governance and RFC process
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines with conformance requirements
+- **[tests/conformance/SPEC.md](tests/conformance/SPEC.md)** - Conformance test specification
 
 ## Architecture
 
@@ -633,6 +704,12 @@ namel3ss-programming-language/
 │   ├── content-analyzer/     # Agent-based content analysis
 │   └── research-assistant/   # Multi-turn research workflows
 ├── tests/                    # Comprehensive test suite
+│   ├── conformance/          # Language conformance tests
+│   │   ├── SPEC.md          # Conformance test specification
+│   │   └── v1/              # Version 1.0.0 test suite
+│   │       ├── parse/       # Parse phase tests (30 tests)
+│   │       └── fixtures/    # Test source files
+│   ├── conformance_runner/   # Meta-tests for conformance infrastructure (41 tests)
 │   ├── unit/fixtures/       # Unit test fixtures by component
 │   └── integration/         # Integration and build validation
 ├── scripts/                 # Development utilities
@@ -644,7 +721,18 @@ namel3ss-programming-language/
 │   ├── specifications/     # Technical specifications
 │   └── archive/            # Historical documents
 ├── namel3ss/               # Core language implementation
+│   ├── conformance/        # Conformance test infrastructure
+│   │   ├── models.py       # Test descriptors and discovery
+│   │   └── runner.py       # Test execution engine
+│   ├── cli/                # Command-line interface
+│   └── ...                 # Parser, codegen, runtime, etc.
+├── rfcs/                   # RFC (Request for Comments) proposals
+│   ├── 0000-template.md   # RFC template
+│   └── README.md          # RFC process documentation
 ├── api/                    # REST API server
+├── CONFORMANCE.md          # External implementation guide
+├── GOVERNANCE.md           # Language governance model
+├── CONTRIBUTING.md         # Contribution guidelines
 └── [configuration files]   # Build and deployment configs
 ```
 
@@ -687,12 +775,28 @@ namel3ss-programming-language/
 
 Contributions welcome! This is a production-ready AI programming language with:
 
-- 500+ tests across language, backend, and AI features
-- Comprehensive documentation and guides
-- Type-safe compilation pipeline
-- Production deployment patterns
+- **500+ tests** across language, backend, and AI features
+- **Conformance suite** with 71 tests (30 conformance + 41 meta-tests)
+- **RFC-based governance** for language changes
+- **Comprehensive documentation** and guides
+- **Type-safe compilation** pipeline
+- **Production deployment** patterns
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+### Contributing Requirements
+
+All contributions must follow these guidelines:
+
+1. **Code changes**: Include tests and documentation
+2. **Language changes**: Must include RFC + conformance tests
+3. **Bug fixes**: Add regression tests
+4. **Features**: Update relevant documentation
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for complete details on:
+- Development setup
+- Testing requirements
+- RFC process
+- Conformance test requirements
+- Code style and PR guidelines
 
 ## Migration Notice
 

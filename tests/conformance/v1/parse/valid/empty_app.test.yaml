@@ -1,0 +1,18 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-001"
+category: "parse"
+name: "Empty app declaration"
+description: |
+  Tests parsing of a minimal valid application with no declarations.
+  This is the simplest possible valid Namel3ss program.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/empty_app.ai"
+
+expect:
+  parse:
+    status: "success"

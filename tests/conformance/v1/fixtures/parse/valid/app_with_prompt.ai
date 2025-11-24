@@ -1,0 +1,5 @@
+app "PromptApp"
+
+prompt "greeting" {
+    template: "Hello {{name}}!"
+}

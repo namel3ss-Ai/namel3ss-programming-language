@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-012"
+category: "parse"
+name: "LLM declaration without block"
+description: |
+  Tests that LLM declarations require braces.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/missing_llm_block.ai"
+
+expect:
+  parse:
+    status: "error"

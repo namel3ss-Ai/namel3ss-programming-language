@@ -1,0 +1,3 @@
+llm "missing_provider" {
+    model: "gpt-4"
+}

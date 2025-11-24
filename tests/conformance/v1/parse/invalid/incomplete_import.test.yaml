@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-008"
+category: "parse"
+name: "Incomplete import statement"
+description: |
+  Tests that import without module name produces parse error.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/incomplete_import.ai"
+
+expect:
+  parse:
+    status: "error"

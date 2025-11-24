@@ -1,0 +1,9 @@
+app "TestApp"
+
+llm "gpt4" {
+    provider: "openai"
+}
+
+agent "assistant" {
+    llm: "gpt4"
+}

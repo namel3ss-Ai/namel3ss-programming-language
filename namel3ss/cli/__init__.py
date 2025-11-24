@@ -33,6 +33,8 @@ from .commands import (
     add_stdlib_command,
     add_packages_command,
     add_modules_command,
+    add_security_command,
+    add_conformance_command,
 )
 from namel3ss.sdk_sync.cli import add_sdk_sync_command
 from .context import CLIContext
@@ -566,6 +568,8 @@ def main(argv: Optional[list] = None) -> None:
     add_stdlib_command(subparsers)
     add_packages_command(subparsers)
     add_modules_command(subparsers)
+    add_security_command(subparsers)
+    add_conformance_command(subparsers)
     
     # RAG index building command
     build_index_parser = subparsers.add_parser(

@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-007"
+category: "parse"
+name: "Malformed app block"
+description: |
+  Tests that malformed content inside app block produces parse error.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/malformed_block.ai"
+
+expect:
+  parse:
+    status: "error"

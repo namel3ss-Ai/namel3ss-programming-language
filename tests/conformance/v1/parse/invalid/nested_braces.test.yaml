@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-009"
+category: "parse"
+name: "Nested braces without property"
+description: |
+  Tests that unexpected nested braces produce parse error.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/nested_braces.ai"
+
+expect:
+  parse:
+    status: "error"

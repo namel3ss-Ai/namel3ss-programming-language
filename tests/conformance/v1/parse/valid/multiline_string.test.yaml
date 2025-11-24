@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-021"
+category: "parse"
+name: "Multiline string with escape"
+description: |
+  Tests parsing strings with newline escape sequences.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/multiline_string.ai"
+
+expect:
+  parse:
+    status: "success"

@@ -20,7 +20,7 @@ Example:
     )
 """
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from .base import ToolError
 

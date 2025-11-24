@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-005"
+category: "parse"
+name: "Invalid property syntax"
+description: |
+  Tests that properties must use colon syntax (:) not equals (=).
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/invalid_property_syntax.ai"
+
+expect:
+  parse:
+    status: "error"

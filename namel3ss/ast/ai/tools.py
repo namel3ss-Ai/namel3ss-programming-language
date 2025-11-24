@@ -193,6 +193,14 @@ class ToolDefinition:
     returns: Optional[Dict[str, Any]] = None  # JSON Schema for outputs
     implementation: Dict[str, Any] = field(default_factory=dict)  # Implementation details
     examples: List[Dict[str, Any]] = field(default_factory=list)  # Example invocations
+    
+    # Security fields (optional, defaults to READ_ONLY)
+    security_config: Optional[Any] = None  # ToolSecurity from ast.security
+    permission_level: Optional[str] = None  # PermissionLevel as string
+    required_capabilities: List[str] = field(default_factory=list)  # Capability names
+    timeout_seconds: Optional[float] = None
+    rate_limit_per_minute: Optional[int] = None
+    
     source_location: Optional['SourceLocation'] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 

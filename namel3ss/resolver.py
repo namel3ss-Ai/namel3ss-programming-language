@@ -19,6 +19,11 @@ from namel3ss.stdlib.typing_enhanced import (
     is_stdlib_import, parse_stdlib_import, validate_stdlib_import,
     get_stdlib_checker, StdLibImport, StdLibSymbol
 )
+from namel3ss.security.validation import (
+    validate_application_security,
+    SecurityValidator
+)
+from namel3ss.security.config import get_security_config
 
 
 EXPORT_ATTRS: Tuple[str, ...] = (
@@ -206,6 +211,9 @@ def resolve_program(
     _validate_training_artifacts(resolved_modules)
     _validate_symbolic_expressions(resolved_modules)
     merged_app = _merge_apps(resolved_modules, root)
+    
+    # Validate security constraints
+    _validate_security(merged_app, resolved_modules)
     
     # Create resolved program for stdlib-aware type checking
     resolved_program = ResolvedProgram(modules=resolved_modules, root=root, app=merged_app, language_version=language_version)
@@ -1069,6 +1077,50 @@ def _validate_symbolic_expressions(resolved_modules: Dict[str, ResolvedModule]) 
     # Validate collected expressions
     if all_functions or all_rules:
         validate_symbolic_expressions(all_functions, all_rules)
+
+
+def _validate_security(merged_app: App, resolved_modules: Dict[str, ResolvedModule]) -> None:
+    """
+    Validate security constraints in the application.
+    
+    Performs compile-time security checks:
+    - Agents only reference declared tools
+    - Tool capabilities match agent capabilities  
+    - Permission levels are satisfied
+    - Security policies are well-formed
+    
+    Raises ModuleResolutionError if security violations are found.
+    """
+    try:
+        security_config = get_security_config()
+    except Exception:
+        # If security config fails to load, use default
+        # This allows programs without security config to work
+        security_config = None
+    
+    # Validate application-wide security
+    result = validate_application_security(merged_app, security_config)
+    
+    if not result.allowed:
+        # Build detailed error message
+        errors = []
+        for violation in result.violations:
+            errors.append(f"  - {violation}")
+        
+        error_msg = "Security validation failed:\n" + "\n".join(errors)
+        
+        # Include warnings if any
+        if result.warnings:
+            warnings = [f"  - {w}" for w in result.warnings]
+            error_msg += "\n\nWarnings:\n" + "\n".join(warnings)
+        
+        raise ModuleResolutionError(error_msg)
+    
+    # If strict mode is enabled and there are warnings, fail
+    if security_config and security_config.strict_mode and result.warnings:
+        warnings = [f"  - {w}" for w in result.warnings]
+        error_msg = "Security warnings in strict mode:\n" + "\n".join(warnings)
+        raise ModuleResolutionError(error_msg)
 
 
 def _iter_chain_steps(nodes: List[Any]) -> List[ChainStep]:

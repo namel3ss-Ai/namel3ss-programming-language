@@ -1,0 +1,10 @@
+app "ToolApp"
+
+tool "calculator" {
+    description: "A basic calculator"
+}
+
+agent "math_assistant" {
+    llm: "gpt4"
+    tools: ["calculator"]
+}

@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-014"
+category: "parse"
+name: "LLM with detailed configuration"
+description: |
+  Tests parsing LLM with multiple configuration properties.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/llm_with_config.ai"
+
+expect:
+  parse:
+    status: "success"

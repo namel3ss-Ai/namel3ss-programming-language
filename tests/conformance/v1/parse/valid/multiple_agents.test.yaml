@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-007"
+category: "parse"
+name: "Multiple LLMs and agents"
+description: |
+  Tests parsing multiple LLM definitions and multiple agent definitions.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/multiple_agents.ai"
+
+expect:
+  parse:
+    status: "success"

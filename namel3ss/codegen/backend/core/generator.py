@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from namel3ss.ast import App
 
@@ -40,7 +40,7 @@ __all__ = ["generate_backend"]
 
 
 def generate_backend(
-    app: App,
+    app: Union[App, "BackendIR"],  # Accept both App AST and BackendIR
     out_dir: Path,
     embed_insights: bool = False,
     enable_realtime: bool = False,
@@ -50,10 +50,19 @@ def generate_backend(
 ) -> None:
     """Generate the backend scaffold for ``app`` into ``out_dir``.
     
+    PHASE 3 ARCHITECTURE:
+    ---------------------
+    Accepts either App AST or BackendIR for maximum flexibility:
+    - Legacy path: App → build IR internally → generate
+    - New path: BackendIR → generate directly
+    
+    This dual signature enables gradual migration while maintaining
+    backward compatibility.
+    
     Parameters
     ----------
-    app : App
-        The parsed application
+    app : Union[App, BackendIR]
+        Either the parsed application AST or pre-built BackendIR
     out_dir : Path
         Output directory for backend
     embed_insights : bool
@@ -68,9 +77,36 @@ def generate_backend(
         Version for exported schemas (default: "1.0.0")
     """
 
+    # ========================================================================
+    # PHASE 3: Handle both App and BackendIR inputs
+    # ========================================================================
+    from namel3ss.ir import BackendIR, build_backend_ir
+    
+    # Determine if input is IR or App
+    if isinstance(app, BackendIR):
+        backend_ir = app
+        # Extract original app from IR metadata for backward compat
+        app_ast = backend_ir.metadata.get("_original_app")
+        if app_ast is None:
+            raise ValueError(
+                "BackendIR missing '_original_app' metadata. "
+                "Please ensure IR was built with build_backend_ir()."
+            )
+    else:
+        # Legacy path: App AST provided
+        app_ast = app
+        backend_ir = build_backend_ir(app_ast)
+    
+    # TODO Phase 4: Remove dependency on app_ast, use only backend_ir
+    # For now, we continue with existing BackendState flow
+    
+    # ========================================================================
+    # EXISTING LOGIC: Generate FastAPI backend from BackendState
+    # ========================================================================
+    
     # Work on a deep copy to avoid mutating the input AST across builds
     import copy
-    app_copy = copy.deepcopy(app)
+    app_copy = copy.deepcopy(app_ast)
     state = build_backend_state(app_copy)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -106,8 +142,8 @@ def generate_backend(
     # Backward compatibility: also emit runtime.py at the root as tests expect
     (out_path / "runtime.py").write_text(runtime_code, encoding="utf-8")
     
-    # Generate inline blocks module
-    inline_blocks = collect_inline_blocks(app)
+    # Generate inline blocks module (use app_copy which is the App AST)
+    inline_blocks = collect_inline_blocks(app_copy)
     if inline_blocks.get("python"):
         inline_python_module = generate_inline_python_module(inline_blocks["python"])
         (generated_dir / "inline_blocks.py").write_text(

@@ -99,8 +99,8 @@ class MockToolSpec:
     Maps tool calls (name + input patterns) to deterministic responses.
     """
     tool_name: str
-    input_pattern: Optional[Dict[str, Any]] = None  # Pattern to match inputs
     response: MockToolResponse
+    input_pattern: Optional[Dict[str, Any]] = None  # Pattern to match inputs
 
 
 @dataclass

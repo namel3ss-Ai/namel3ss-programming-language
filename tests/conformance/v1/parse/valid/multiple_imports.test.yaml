@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-010"
+category: "parse"
+name: "Multiple import statements"
+description: |
+  Tests parsing multiple import statements with and without aliases.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/multiple_imports.ai"
+
+expect:
+  parse:
+    status: "success"

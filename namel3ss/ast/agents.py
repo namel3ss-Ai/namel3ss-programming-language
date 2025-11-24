@@ -40,6 +40,14 @@ class AgentDefinition:
             system_prompt: "You are a research assistant..."  # optional
             max_turns: 10  # optional
             temperature: 0.7  # optional
+            
+            # Security configuration
+            security: {
+                capabilities: [NETWORK, HTTP_READ]
+                permission_level: READ_ONLY
+                max_tokens_per_request: 2000
+                rate_limit_per_minute: 20
+            }
         }
     """
     name: str
@@ -52,6 +60,12 @@ class AgentDefinition:
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     top_p: Optional[float] = None
+    
+    # Security fields (optional, defaults to minimal permissions)
+    security_config: Optional[Any] = None  # AgentSecurity from ast.security
+    capabilities: List[str] = field(default_factory=list)  # Capability names as strings
+    permission_level: Optional[str] = None  # PermissionLevel as string
+    
     config: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     location: Optional[Any] = None  # SourceLocation when available

@@ -15,6 +15,12 @@ def _encode_agent(agent: "AgentDefinition", env_keys: Set[str]) -> Dict[str, Any
     metadata_value = _encode_value(getattr(agent, "metadata", {}), env_keys)
     if not isinstance(metadata_value, dict):
         metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    
+    # Extract security metadata
+    capabilities = list(getattr(agent, "capabilities", []) or [])
+    permission_level = getattr(agent, "permission_level", None)
+    security_config = getattr(agent, "security_config", None)
+    
     return {
         "name": agent.name,
         "llm": getattr(agent, "llm_name", None) or getattr(agent, "llm", None),
@@ -26,6 +32,10 @@ def _encode_agent(agent: "AgentDefinition", env_keys: Set[str]) -> Dict[str, Any
         "max_tokens": getattr(agent, "max_tokens", None),
         "temperature": getattr(agent, "temperature", None),
         "top_p": getattr(agent, "top_p", None),
+        # Security metadata
+        "capabilities": capabilities,
+        "permission_level": permission_level,
+        "security_config": security_config,
         "config": _encode_value(getattr(agent, "config", {}), env_keys),
         "metadata": metadata_value,
     }

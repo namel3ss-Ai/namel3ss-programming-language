@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-003"
+category: "parse"
+name: "Unquoted app name"
+description: |
+  Tests that app names must be quoted strings, not bare identifiers.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/unquoted_app_name.ai"
+
+expect:
+  parse:
+    status: "error"

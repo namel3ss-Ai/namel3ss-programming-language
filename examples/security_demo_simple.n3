@@ -1,0 +1,48 @@
+// Simple Security Demo - Valid Namel3ss Syntax
+// Demonstrates security features with agents and tools
+
+app "security_demo" {
+  // Define agents with security constraints
+  agent "file_reader" {
+    role: "Reads files from the filesystem"
+    capabilities: ["filesystem"]
+    permission_level: "read_only"
+    timeout: 30
+  }
+  
+  agent "web_fetcher" {
+    role: "Fetches content from web URLs"
+    capabilities: ["network"]
+    permission_level: "read_write"
+    timeout: 60
+  }
+  
+  agent "admin_agent" {
+    role: "Performs administrative tasks"
+    capabilities: ["filesystem", "system", "network"]
+    permission_level: "admin"
+    timeout: 120
+  }
+  
+  // Define tools with security requirements
+  tool "read_file" {
+    description: "Reads content from a file"
+    capability: "filesystem"
+    permission_level: "read_write"
+    rate_limit: "100/minute"
+  }
+  
+  tool "fetch_url" {
+    description: "Fetches content from a URL"
+    capability: "network"
+    permission_level: "read_write"
+    rate_limit: "50/minute"
+  }
+  
+  tool "execute_command" {
+    description: "Executes a system command"
+    capability: "system"
+    permission_level: "admin"
+    rate_limit: "10/minute"
+  }
+}

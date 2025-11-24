@@ -1,0 +1,7 @@
+tool "search" {
+    description: "Search tool"
+}
+
+tool "calculator" {
+    description: "Calculator tool"
+}

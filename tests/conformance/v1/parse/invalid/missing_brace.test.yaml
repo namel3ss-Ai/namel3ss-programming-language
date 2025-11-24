@@ -1,0 +1,22 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-001"
+category: "parse"
+name: "Missing closing brace"
+description: |
+  Tests that parser correctly rejects an app declaration missing its closing brace.
+  This is a basic syntax error that must be detected.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/missing_brace.ai"
+
+expect:
+  parse:
+    status: "error"
+    errors:
+      - code: "SYNTAX_ERROR"
+        message: "Unexpected token"
+        severity: "error"

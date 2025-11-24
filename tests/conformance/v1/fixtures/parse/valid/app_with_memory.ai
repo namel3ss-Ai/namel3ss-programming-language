@@ -1,0 +1,6 @@
+app "MemoryApp"
+
+memory "user_context" {
+    type: "conversation"
+    max_tokens: 4000
+}

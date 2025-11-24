@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-008"
+category: "parse"
+name: "App with prompt template"
+description: |
+  Tests parsing prompt template with variable substitution syntax.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_prompt.ai"
+
+expect:
+  parse:
+    status: "success"

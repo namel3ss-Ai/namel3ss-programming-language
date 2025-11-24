@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-015"
+category: "parse"
+name: "App with list property"
+description: |
+  Tests parsing list/array syntax in properties.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_list.ai"
+
+expect:
+  parse:
+    status: "success"

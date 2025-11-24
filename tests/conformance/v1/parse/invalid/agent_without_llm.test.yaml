@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-006"
+category: "parse"
+name: "Duplicate LLM names"
+description: |
+  Tests that duplicate LLM names are not allowed.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/agent_without_llm.ai"
+
+expect:
+  parse:
+    status: "error"

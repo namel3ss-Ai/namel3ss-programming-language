@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-003"
+category: "parse"
+name: "App with tool declaration"
+description: |
+  Tests parsing an app with a tool declaration and an agent that references the tool.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_tool.ai"
+
+expect:
+  parse:
+    status: "success"

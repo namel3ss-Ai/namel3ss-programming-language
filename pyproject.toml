@@ -28,12 +28,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "fastapi>=0.110,<1.0",      # Generated backend framework
-    "httpx>=0.28,<0.29",        # HTTP client for generated code
-    "pydantic>=2.7,<3.0",       # Schema validation in generated code
-    "uvicorn>=0.30,<0.31",      # Development server for running generated backends
-    "pygls>=1.3,<2.0",          # Language server protocol support
+    # Core language dependencies (parser, AST, IR, codegen)
+    "pydantic>=2.7,<3.0",       # Schema validation
     "jinja2>=3.1,<4.0",         # Template engine for code generation
+    "pygls>=1.3,<2.0",          # Language server protocol support
+    # Note: FastAPI, uvicorn, httpx moved to namel3ss-runtime-http
+    # Generated backends list these in their requirements.txt
 ]
 
 [project.urls]

@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "namel3ss-runtime-deploy"
+version = "0.5.0"
+description = "Deployment runtime adapters for Namel3ss language"
+readme = "README.md"
+authors = [
+    { name = "Namel3ss Developers" }
+]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["namel3ss", "runtime", "deployment", "docker", "kubernetes"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Code Generators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "namel3ss>=0.5.0",          # Language core with IR
+    "jinja2>=3.1,<4.0",          # Template engine
+    "pyyaml>=6.0,<7.0",          # YAML generation for K8s
+]
+
+[project.optional-dependencies]
+# Docker support
+docker = [
+    "docker>=7.0,<8.0",
+]
+
+# Kubernetes support
+k8s = [
+    "kubernetes>=30.0,<31.0",
+]
+
+# Cloud platforms
+aws = [
+    "boto3>=1.34,<2.0",
+]
+gcp = [
+    "google-cloud-run>=0.10,<1.0",
+]
+azure = [
+    "azure-mgmt-containerinstance>=10.0,<11.0",
+]
+
+# Development tools
+dev = [
+    "pytest>=8.0",
+    "black>=24.0",
+    "ruff>=0.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Repository = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Documentation = "https://github.com/SsebowaDisan/namel3ss-programming-language/tree/main/runtimes/deploy"
+Issues = "https://github.com/SsebowaDisan/namel3ss-programming-language/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["namel3ss_runtime_deploy*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

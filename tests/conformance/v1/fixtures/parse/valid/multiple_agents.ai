@@ -1,0 +1,17 @@
+app "MultiAgent"
+
+llm "gpt4" {
+    provider: "openai"
+}
+
+llm "claude" {
+    provider: "anthropic"
+}
+
+agent "writer" {
+    llm: "gpt4"
+}
+
+agent "reviewer" {
+    llm: "claude"
+}

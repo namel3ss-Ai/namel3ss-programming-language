@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-005"
+category: "parse"
+name: "App with import statement"
+description: |
+  Tests parsing an import statement with module alias.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_import.ai"
+
+expect:
+  parse:
+    status: "success"

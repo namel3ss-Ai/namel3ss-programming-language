@@ -256,34 +256,43 @@ def _encode_llm(llm: "LLMDefinition", env_keys: Set[str]) -> Dict[str, Any]:
 
 def _encode_tool(tool: "ToolDefinition", env_keys: Set[str]) -> Dict[str, Any]:
     """Encode a first-class Tool definition for the backend runtime."""
-    input_schema_value = _encode_value(tool.input_schema, env_keys)
+    # Encode parameters as input_schema
+    input_schema_value = _encode_value(getattr(tool, "parameters", {}), env_keys)
     if not isinstance(input_schema_value, dict):
         input_schema_value = {"value": input_schema_value} if input_schema_value is not None else {}
-    output_schema_value = _encode_value(tool.output_schema, env_keys)
+    
+    # Encode returns as output_schema
+    output_schema_value = _encode_value(getattr(tool, "returns", {}), env_keys)
     if not isinstance(output_schema_value, dict):
         output_schema_value = {"value": output_schema_value} if output_schema_value is not None else {}
-    headers_value = _encode_value(tool.headers, env_keys)
-    if not isinstance(headers_value, dict):
-        headers_value = {"value": headers_value} if headers_value is not None else {}
-    config_value = _encode_value(tool.config, env_keys)
-    if not isinstance(config_value, dict):
-        config_value = {"value": config_value} if config_value is not None else {}
+    
     metadata_value = _encode_value(tool.metadata, env_keys)
     if not isinstance(metadata_value, dict):
         metadata_value = {"value": metadata_value} if metadata_value is not None else {}
+    
+    # Extract security metadata
+    required_capabilities = list(getattr(tool, "required_capabilities", []) or [])
+    permission_level = getattr(tool, "permission_level", None)
+    timeout_seconds = getattr(tool, "timeout_seconds", None)
+    rate_limit_per_minute = getattr(tool, "rate_limit_per_minute", None)
+    security_config = getattr(tool, "security_config", None)
+    
     payload: Dict[str, Any] = {
         "name": tool.name,
-        "type": tool.type,
-        "method": tool.method,
+        "description": tool.description,
         "input_schema": input_schema_value,
         "output_schema": output_schema_value,
-        "headers": headers_value,
-        "timeout": tool.timeout,
-        "config": config_value,
+        "implementation": getattr(tool, "implementation", {}),
+        "examples": getattr(tool, "examples", []),
+        # Security metadata
+        "required_capabilities": required_capabilities,
+        "permission_level": permission_level,
+        "timeout_seconds": timeout_seconds,
+        "rate_limit_per_minute": rate_limit_per_minute,
+        "security_config": security_config,
         "metadata": metadata_value,
     }
-    if tool.endpoint:
-        payload["endpoint"] = tool.endpoint
+    
     return payload
 
 

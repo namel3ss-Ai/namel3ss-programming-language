@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-004"
+category: "parse"
+name: "Duplicate app declarations"
+description: |
+  Tests that only one app declaration is allowed per file.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/duplicate_app.ai"
+
+expect:
+  parse:
+    status: "error"

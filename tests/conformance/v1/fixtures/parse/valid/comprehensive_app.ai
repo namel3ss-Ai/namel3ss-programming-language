@@ -1,0 +1,28 @@
+app "ComplexApp" {
+    name: "My App"
+    version: "1.0.0"
+    description: "A comprehensive test"
+}
+
+llm "gpt4" {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+}
+
+tool "search" {
+    description: "Search tool"
+}
+
+memory "context" {
+    type: "conversation"
+}
+
+agent "assistant" {
+    llm: "gpt4"
+    tools: ["search"]
+}
+
+prompt "greeting" {
+    template: "Hello {{name}}"
+}

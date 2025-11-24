@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-017"
+category: "parse"
+name: "LLM with minimal config"
+description: |
+  Tests that LLM can be parsed with minimal properties (provider not required at parse time).
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/llm_minimal.ai"
+
+expect:
+  parse:
+    status: "success"

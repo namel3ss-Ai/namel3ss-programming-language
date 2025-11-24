@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-018"
+category: "parse"
+name: "App with empty block"
+description: |
+  Tests parsing app with empty braces (no properties).
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_empty_block.ai"
+
+expect:
+  parse:
+    status: "success"

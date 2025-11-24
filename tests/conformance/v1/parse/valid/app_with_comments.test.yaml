@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-020"
+category: "parse"
+name: "App with comments"
+description: |
+  Tests parsing files with comments (// style).
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_comments.ai"
+
+expect:
+  parse:
+    status: "success"

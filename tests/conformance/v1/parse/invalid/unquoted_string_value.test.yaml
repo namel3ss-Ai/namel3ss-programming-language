@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-010"
+category: "parse"
+name: "Unquoted string property value"
+description: |
+  Tests that string property values must be quoted.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/unquoted_string_value.ai"
+
+expect:
+  parse:
+    status: "error"

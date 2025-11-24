@@ -1,0 +1,50 @@
+// Security Model Demonstration
+// This example showcases the Namel3ss security features across different environments
+
+// Define a tool with security constraints
+tool "read_file"(path: string) -> string
+  capability: filesystem
+  permission_level: read_write
+  rate_limit: 100/minute
+
+// Define a tool requiring elevated permissions
+tool "execute_command"(cmd: string) -> string
+  capability: system
+  permission_level: admin
+  rate_limit: 10/minute
+
+// Define a tool with network access
+tool "fetch_url"(url: string) -> string
+  capability: network
+  permission_level: read_write
+  rate_limit: 50/minute
+
+// Agent with minimal permissions (safe for production)
+agent "safe_reader"
+  capabilities: [filesystem]
+  permission_level: read_only
+  timeout: 30
+  tools: ["read_file"]
+
+// Agent with elevated permissions (development/staging only)
+agent "system_admin"
+  capabilities: [filesystem, system, network]
+  permission_level: admin
+  timeout: 120
+  tools: ["read_file", "execute_command", "fetch_url"]
+
+// Agent with network-only access
+agent "web_scraper"
+  capabilities: [network]
+  permission_level: read_write
+  timeout: 60
+  tools: ["fetch_url"]
+
+// Application entry point
+app "security_demo"
+  // In production: only safe_reader and web_scraper would be allowed
+  // In staging: safe_reader, web_scraper, and system_admin (without admin tools)
+  // In development: all agents unrestricted
+  agent "safe_reader"
+  agent "system_admin"
+  agent "web_scraper"

@@ -1,0 +1,5 @@
+import ai.models as models
+
+app "ImportApp" {
+    version: "1.0.0"
+}

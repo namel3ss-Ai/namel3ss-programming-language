@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "namel3ss-runtime-http"
+version = "0.5.0"
+description = "HTTP/FastAPI runtime adapter for Namel3ss language"
+readme = "README.md"
+authors = [
+    { name = "Namel3ss Developers" }
+]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["namel3ss", "runtime", "http", "fastapi", "rest-api"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Code Generators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "namel3ss>=0.5.0",          # Language core with IR
+    "fastapi>=0.110,<1.0",       # HTTP framework
+    "uvicorn>=0.30,<0.31",       # ASGI server
+    "httpx>=0.28,<0.29",         # HTTP client
+    "pydantic>=2.7,<3.0",        # Schema validation
+    "jinja2>=3.1,<4.0",          # Template engine
+]
+
+[project.optional-dependencies]
+# WebSocket support
+websockets = [
+    "websockets>=12.0,<13.0",
+]
+
+# Real-time streaming
+realtime = [
+    "websockets>=12.0,<13.0",
+    "redis>=5.0,<6.0",
+]
+
+# Development tools
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "black>=24.0",
+    "ruff>=0.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Repository = "https://github.com/SsebowaDisan/namel3ss-programming-language"
+Documentation = "https://github.com/SsebowaDisan/namel3ss-programming-language/tree/main/runtimes/http"
+Issues = "https://github.com/SsebowaDisan/namel3ss-programming-language/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["namel3ss_runtime_http*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

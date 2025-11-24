@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-011"
+category: "parse"
+name: "App with module declaration"
+description: |
+  Tests parsing module declaration with app.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_module.ai"
+
+expect:
+  parse:
+    status: "success"

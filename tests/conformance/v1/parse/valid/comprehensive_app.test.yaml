@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-012"
+category: "parse"
+name: "Comprehensive app with multiple declarations"
+description: |
+  Tests parsing a complex app with multiple types of declarations.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/comprehensive_app.ai"
+
+expect:
+  parse:
+    status: "success"

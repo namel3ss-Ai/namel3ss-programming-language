@@ -65,4 +65,19 @@ except _metadata.PackageNotFoundError:  # pragma: no cover - source tree
 else:  # pragma: no cover - version override for in-repo runs
   __version__ = _local_version() or __version__
 
-__all__ = ["__version__"]
+
+# Export IR types for runtime adapters
+from namel3ss.ir import (
+    BackendIR,
+    FrontendIR,
+    build_backend_ir,
+    build_frontend_ir,
+)
+
+__all__ = [
+    "__version__",
+    "BackendIR",
+    "FrontendIR",
+    "build_backend_ir",
+    "build_frontend_ir",
+]

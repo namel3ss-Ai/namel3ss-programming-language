@@ -1,0 +1,18 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-002"
+category: "parse"
+name: "App with LLM and agent"
+description: |
+  Tests parsing an application with an LLM declaration and an agent that uses it.
+  This validates basic agent and LLM syntax.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/app_with_agent.ai"
+
+expect:
+  parse:
+    status: "success"

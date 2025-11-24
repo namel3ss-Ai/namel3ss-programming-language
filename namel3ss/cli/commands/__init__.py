@@ -16,6 +16,8 @@ from .debug import cmd_debug, add_debug_command
 from .cmd_stdlib import cmd_stdlib, add_stdlib_command
 from .packages import cmd_packages, add_packages_command
 from .modules import cmd_modules, add_modules_command
+from .security import add_security_command
+from .conformance import cmd_conformance, add_conformance_command
 
 __all__ = [
     "cmd_build",
@@ -38,4 +40,7 @@ __all__ = [
     "add_packages_command",
     "cmd_modules", 
     "add_modules_command",
+    "add_security_command",
+    "cmd_conformance",
+    "add_conformance_command",
 ]

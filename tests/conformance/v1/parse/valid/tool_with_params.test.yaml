@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-valid-019"
+category: "parse"
+name: "Multiple tool declarations"
+description: |
+  Tests parsing multiple tool declarations in one file.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/valid/tool_with_params.ai"
+
+expect:
+  parse:
+    status: "success"

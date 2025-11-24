@@ -1,0 +1,22 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-002"
+category: "parse"
+name: "Unterminated string literal"
+description: |
+  Tests that parser correctly rejects an unterminated string literal.
+  String literals must be properly closed with a matching quote.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/unterminated_string.ai"
+
+expect:
+  parse:
+    status: "error"
+    errors:
+      - code: "SYNTAX_ERROR"
+        message: "Unterminated string"
+        severity: "error"

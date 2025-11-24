@@ -1,0 +1,3 @@
+app TestApp {
+    description: "This should fail"
+}

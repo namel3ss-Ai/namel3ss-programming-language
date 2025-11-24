@@ -1,0 +1,7 @@
+llm "gpt4" {
+    provider: "openai"
+}
+
+llm "gpt4" {
+    provider: "anthropic"
+}

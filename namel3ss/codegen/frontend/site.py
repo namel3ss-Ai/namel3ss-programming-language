@@ -7,7 +7,7 @@ import json
 import textwrap
 from pathlib import Path
 from string import Template
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from namel3ss.ast import App, Page
 
@@ -20,7 +20,7 @@ from .theme import infer_theme_mode
 
 
 def generate_site(
-    app: App,
+    app: Union[App, "FrontendIR"],  # Accept both App AST and FrontendIR
     output_dir: str,
     *,
     enable_realtime: bool = False,
@@ -28,10 +28,12 @@ def generate_site(
 ) -> None:
     """Generate a frontend project in ``output_dir`` for the provided ``app``.
 
+    PHASE 3: Accepts either App AST or FrontendIR for flexibility.
+
     Parameters
     ----------
     app:
-        Parsed application AST.
+        Either the parsed application AST or pre-built FrontendIR
     output_dir:
         Destination directory for generated assets.
     enable_realtime:
@@ -42,18 +44,34 @@ def generate_site(
         HTML/CSS output. ``"react-vite"`` produces a Vite + React + TypeScript
         project scaffold.
     """
+    
+    # PHASE 3: Handle both App and FrontendIR inputs
+    from namel3ss.ir import FrontendIR
+    
+    if isinstance(app, FrontendIR):
+        # Extract original app from IR metadata for backward compat
+        app_ast = app.metadata.get("_original_app")
+        if app_ast is None:
+            raise ValueError(
+                "FrontendIR missing '_original_app' metadata. "
+                "Please ensure IR was built with build_frontend_ir()."
+            )
+    else:
+        # Legacy path: App AST provided directly
+        app_ast = app
 
     if target == "static":
-        generate_static_site(app, output_dir, enable_realtime=enable_realtime)
+        generate_static_site(app_ast, output_dir, enable_realtime=enable_realtime)
         return
 
     if target == "react-vite":
         from .react_vite import generate_react_vite_site
 
-        generate_react_vite_site(app, output_dir, enable_realtime=enable_realtime)
+        generate_react_vite_site(app_ast, output_dir, enable_realtime=enable_realtime)
         return
 
     raise ValueError(f"Unsupported frontend target '{target}'")
+
 
 
 def generate_static_site(app: App, output_dir: str, *, enable_realtime: bool = False) -> None:

@@ -1,0 +1,17 @@
+spec_version: "1.0.0"
+language_version: "1.0.0"
+test_id: "parse-invalid-011"
+category: "parse"
+name: "Unclosed string in property"
+description: |
+  Tests that unclosed strings produce parse errors.
+
+phases:
+  - parse
+
+sources:
+  - path: "../../fixtures/parse/invalid/unclosed_string.ai"
+
+expect:
+  parse:
+    status: "error"
