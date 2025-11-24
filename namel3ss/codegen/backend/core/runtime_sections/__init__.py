@@ -13,6 +13,7 @@ from .errors import ERRORS_SECTION
 from .insights import INSIGHTS_SECTION
 from .llm import LLM_SECTION
 from .models import MODELS_SECTION
+from .planning import render_planning_runtime_block
 from .prediction import PREDICTION_SECTION
 from .registry import REGISTRY_SECTION
 from .rendering import RENDERING_SECTION
@@ -21,6 +22,9 @@ from .pubsub import PUBSUB_SECTION
 from .streams import STREAMS_SECTION
 from .observability import OBSERVABILITY_SECTION
 from .training import TRAINING_SECTION
+
+# Planning section is generated dynamically
+PLANNING_SECTION = render_planning_runtime_block()
 
 __all__ = [
     "ACTIONS_SECTION",
@@ -35,6 +39,7 @@ __all__ = [
     "LLM_SECTION",
     "MODELS_SECTION",
     "TRAINING_SECTION",
+    "PLANNING_SECTION",
     "PREDICTION_SECTION",
     "REGISTRY_SECTION",
     "RENDERING_SECTION",

@@ -395,7 +395,114 @@ def _encode_chain_step(
         if step.evaluation.guardrail:
             evaluation_payload["guardrail"] = step.evaluation.guardrail
         payload["evaluation"] = evaluation_payload
+    
+    # Planning-specific fields
+    if hasattr(step, "planner_type") and step.planner_type:
+        payload["planner_type"] = step.planner_type
+    if hasattr(step, "planning_context") and step.planning_context:
+        planning_context_encoded = _encode_value(step.planning_context, env_keys)
+        if isinstance(planning_context_encoded, dict):
+            payload["planning_context"] = planning_context_encoded
+        
     return payload
+
+
+def _encode_planner(planner: Any, env_keys: Set[str]) -> Dict[str, Any]:
+    """
+    Encode a planner definition for backend generation.
+    
+    Handles ReAct, Chain-of-Thought, and Graph-based planners.
+    """
+    from ....ast.planning import ReActPlanner, ChainOfThoughtPlanner, GraphBasedPlanner
+    
+    base_payload: Dict[str, Any] = {
+        "name": planner.name,
+        "metadata": _encode_value(planner.metadata, env_keys) if hasattr(planner, "metadata") else {}
+    }
+    
+    if isinstance(planner, ReActPlanner):
+        base_payload.update({
+            "planner_type": "react",
+            "goal": planner.goal,
+            "max_cycles": planner.max_cycles,
+            "reasoning_prompt": planner.reasoning_prompt,
+            "action_tools": list(planner.action_tools),
+            "fallback_action": planner.fallback_action,
+            "initial_context": _encode_value(planner.initial_context, env_keys),
+        })
+        
+        if planner.success_condition:
+            # Encode success condition expression
+            base_payload["success_condition"] = _expression_to_runtime(planner.success_condition)
+            base_payload["success_condition_source"] = _expression_to_source(planner.success_condition)
+    
+    elif isinstance(planner, ChainOfThoughtPlanner):
+        base_payload.update({
+            "planner_type": "chain_of_thought",
+            "problem": planner.problem,
+            "reasoning_steps": list(planner.reasoning_steps),
+            "step_prompts": dict(planner.step_prompts),
+            "step_tools": {k: list(v) for k, v in planner.step_tools.items()},
+            "dependencies": {k: list(v) for k, v in planner.dependencies.items()},
+            "intermediate_validation": bool(planner.intermediate_validation),
+        })
+    
+    elif isinstance(planner, GraphBasedPlanner):
+        base_payload.update({
+            "planner_type": "graph_based", 
+            "initial_state": _encode_value(planner.initial_state, env_keys),
+            "goal_state": _encode_value(planner.goal_state, env_keys),
+            "state_transitions": list(planner.state_transitions),
+            "heuristic_function": planner.heuristic_function,
+            "max_search_time": planner.max_search_time,
+        })
+        
+        # Encode search policy
+        if planner.search_policy:
+            search_policy_payload = {
+                "policy_type": planner.search_policy.policy_type,
+                "parameters": dict(planner.search_policy.parameters)
+            }
+            base_payload["search_policy"] = search_policy_payload
+    
+    else:
+        # Generic planner fallback
+        base_payload.update({
+            "planner_type": "generic",
+            "goal": getattr(planner, "goal", "Complete planning task"),
+        })
+    
+    return base_payload
+
+
+def _encode_planning_workflow(workflow: Any, env_keys: Set[str]) -> Dict[str, Any]:
+    """
+    Encode a planning workflow definition.
+    
+    Handles multi-stage planning workflows that coordinate multiple planners.
+    """
+    from ....ast.planning import PlanningWorkflow
+    
+    if not isinstance(workflow, PlanningWorkflow):
+        # Generic workflow fallback
+        return {
+            "name": getattr(workflow, "name", "unnamed_workflow"),
+            "workflow_type": "planning",
+            "stages": [],
+            "metadata": _encode_value(getattr(workflow, "metadata", {}), env_keys)
+        }
+    
+    return {
+        "name": workflow.name,
+        "workflow_type": "planning",
+        "input_schema": workflow.input_schema,
+        "output_schema": workflow.output_schema,
+        "stages": list(workflow.stages),
+        "stage_dependencies": {k: list(v) for k, v in workflow.stage_dependencies.items()},
+        "global_context": _encode_value(workflow.global_context, env_keys),
+        "error_handling": _encode_value(workflow.error_handling, env_keys),
+        "metadata": _encode_value(workflow.metadata, env_keys)
+    }
 
 
 def _encode_index(index: "IndexDefinition", env_keys: Set[str]) -> Dict[str, Any]:

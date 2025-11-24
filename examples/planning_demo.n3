@@ -1,0 +1,518 @@
+# Advanced Planning & Reasoning Demo
+# Demonstrates ReAct, Chain-of-Thought, and Graph-based planning capabilities
+
+app "Advanced Planning Demo" {
+  description: "Comprehensive demo of planning and reasoning capabilities"
+  version: "1.0.0"
+}
+
+# =============================================================================
+# LLM Configurations for Different Planning Types
+# =============================================================================
+
+llm "reasoning_llm" {
+  provider: "openai"
+  model: "gpt-4"
+  temperature: 0.1  # Low temperature for logical reasoning
+  max_tokens: 2000
+}
+
+llm "creative_llm" {
+  provider: "anthropic" 
+  model: "claude-3-opus"
+  temperature: 0.7  # Higher temperature for creative solutions
+  max_tokens: 1500
+}
+
+llm "fast_llm" {
+  provider: "openai"
+  model: "gpt-3.5-turbo"
+  temperature: 0.3
+  max_tokens: 1000
+}
+
+# =============================================================================
+# Tools for Planning Operations
+# =============================================================================
+
+tool "knowledge_search" {
+  type: "rag"
+  index: "company_knowledge"
+  top_k: 5
+  description: "Search company knowledge base for relevant information"
+}
+
+tool "data_analyzer" {
+  type: "python"
+  function: "analyze_customer_data"
+  description: "Analyze customer data and extract insights"
+}
+
+tool "workflow_executor" {
+  type: "api"
+  endpoint: "{{env.WORKFLOW_API_URL}}/execute"
+  method: "POST"
+  description: "Execute predefined workflow steps"
+}
+
+tool "notification_sender" {
+  type: "api"
+  endpoint: "{{env.NOTIFICATION_URL}}/send"
+  method: "POST"
+  description: "Send notifications to stakeholders"
+}
+
+# =============================================================================
+# Prompts for Planning Components
+# =============================================================================
+
+prompt "react_reasoning" {
+  model: "reasoning_llm"
+  template: """
+  You are analyzing a problem and need to decide the next action.
+  
+  Current Situation: {{current_state}}
+  Goal: {{goal}}
+  Available Tools: {{available_tools}}
+  Previous Actions: {{history}}
+  
+  Think through this step-by-step:
+  1. What is the current state of the problem?
+  2. What information do I need to gather?
+  3. What action should I take next?
+  4. How will this action help achieve the goal?
+  
+  Respond with:
+  - reasoning: Your thought process
+  - next_action: The tool/action to use next
+  - action_input: Parameters for the action
+  """
+}
+
+prompt "cot_data_analysis" {
+  model: "reasoning_llm"
+  template: """
+  Analyze the following data step by step:
+  
+  Data: {{data}}
+  Analysis Goal: {{goal}}
+  Previous Results: {{previous_results}}
+  
+  Provide detailed analysis with:
+  - Key patterns identified
+  - Statistical insights
+  - Actionable recommendations
+  """
+}
+
+prompt "creative_solution" {
+  model: "creative_llm"  
+  template: """
+  Generate creative solutions for: {{problem}}
+  
+  Context: {{context}}
+  Constraints: {{constraints}}
+  
+  Provide 3-5 innovative approaches with:
+  - Brief description
+  - Implementation steps
+  - Expected outcomes
+  """
+}
+
+# =============================================================================
+# ReAct Planner for Customer Support
+# =============================================================================
+
+planner "customer_support_agent" {
+  type: "react"
+  goal: "Resolve customer issues efficiently and effectively"
+  max_cycles: 8
+  
+  reasoning_prompt: "react_reasoning"
+  action_tools: ["knowledge_search", "data_analyzer", "notification_sender"]
+  
+  success_condition: {
+    issue_resolved: true,
+    customer_satisfied: true
+  }
+  
+  fallback_action: "escalate_to_human"
+  
+  initial_context: {
+    priority: "normal",
+    department: "support",
+    escalation_level: 0
+  }
+  
+  security: {
+    permission_level: "support_agent"
+    allowed_tools: ["knowledge_search", "data_analyzer", "notification_sender"]
+    capabilities: ["customer_interaction", "data_access"]
+  }
+  
+  performance: {
+    timeout_seconds: 300
+    max_memory_usage: 50000000  # 50MB
+  }
+}
+
+# =============================================================================
+# Chain-of-Thought Planner for Data Analysis
+# =============================================================================
+
+planner "data_insights_analyzer" {
+  type: "chain_of_thought"
+  problem: "Analyze customer data to identify churn risk and growth opportunities"
+  
+  reasoning_steps: [
+    {
+      step: "data_collection"
+      description: "Gather relevant customer data from multiple sources"
+    },
+    {
+      step: "pattern_analysis"  
+      description: "Identify usage patterns and behavioral trends"
+    },
+    {
+      step: "risk_assessment"
+      description: "Calculate churn risk scores for customer segments"
+    },
+    {
+      step: "opportunity_identification"
+      description: "Find upselling and engagement opportunities"
+    },
+    {
+      step: "recommendation_generation"
+      description: "Generate actionable business recommendations"
+    }
+  ]
+  
+  step_prompts: {
+    data_collection: "cot_data_analysis"
+    pattern_analysis: "cot_data_analysis"
+    risk_assessment: "cot_data_analysis"
+    opportunity_identification: "creative_solution"
+    recommendation_generation: "creative_solution"
+  }
+  
+  step_tools: {
+    data_collection: ["data_analyzer", "knowledge_search"]
+    pattern_analysis: ["data_analyzer"]
+    risk_assessment: ["data_analyzer"]
+    opportunity_identification: ["knowledge_search"]
+    recommendation_generation: ["notification_sender"]
+  }
+  
+  dependencies: {
+    pattern_analysis: ["data_collection"]
+    risk_assessment: ["pattern_analysis"]
+    opportunity_identification: ["pattern_analysis"]
+    recommendation_generation: ["risk_assessment", "opportunity_identification"]
+  }
+  
+  intermediate_validation: true
+  
+  security: {
+    permission_level: "data_analyst"
+    capabilities: ["data_analysis", "insight_generation"]
+  }
+}
+
+# =============================================================================
+# Graph-based Planner for Workflow Optimization
+# =============================================================================
+
+planner "workflow_optimizer" {
+  type: "graph_based"
+  
+  initial_state: {
+    status: "new_request"
+    priority: "medium"
+    assigned: false
+    estimated_effort: 0
+  }
+  
+  goal_state: {
+    status: "completed"
+    quality_score: ">= 0.8"
+    customer_satisfaction: ">= 0.9"
+  }
+  
+  search_policy: {
+    policy_type: "beam_search"
+    beam_width: 4
+    max_depth: 12
+    scoring_function: "workflow_efficiency_score"
+  }
+  
+  state_transitions: [
+    {
+      from: {status: "new_request"}
+      action: "triage"
+      to: {status: "triaged", estimated_effort: 2}
+      cost: 1
+    },
+    {
+      from: {status: "triaged"}
+      action: "assign_specialist"
+      to: {status: "assigned", assigned: true}
+      cost: 2
+    },
+    {
+      from: {status: "triaged"}  
+      action: "auto_resolve"
+      to: {status: "auto_completed"}
+      cost: 1
+      conditions: {priority: "low"}
+    },
+    {
+      from: {status: "assigned"}
+      action: "investigate"
+      to: {status: "investigating", estimated_effort: 5}
+      cost: 3
+    },
+    {
+      from: {status: "investigating"}
+      action: "implement_solution"
+      to: {status: "solution_ready"}
+      cost: 8
+    },
+    {
+      from: {status: "solution_ready"}
+      action: "quality_check"
+      to: {status: "quality_verified", quality_score: 0.85}
+      cost: 2
+    },
+    {
+      from: {status: "quality_verified"}
+      action: "deploy"
+      to: {status: "completed", customer_satisfaction: 0.9}
+      cost: 3
+    }
+  ]
+  
+  heuristic_function: "completion_time_estimator"
+  max_search_time: 45.0
+  
+  security: {
+    permission_level: "workflow_manager"
+    capabilities: ["workflow_control", "resource_allocation"]
+  }
+}
+
+# =============================================================================
+# Multi-Stage Planning Workflow
+# =============================================================================
+
+planning_workflow "incident_response" {
+  input_schema: "IncidentAlert"
+  output_schema: "ResolutionReport"
+  
+  stages: [
+    {
+      name: "initial_assessment"
+      planner: "customer_support_agent"
+      goal: "Quickly assess incident severity and gather initial information"
+      output_mapping: {
+        severity: "incident_severity"
+        affected_customers: "impact_scope"
+        initial_diagnosis: "preliminary_findings"
+      }
+    },
+    {
+      name: "deep_analysis"
+      planner: "data_insights_analyzer" 
+      goal: "Perform detailed analysis of incident data and impact"
+      output_mapping: {
+        root_cause: "incident_root_cause"
+        affected_systems: "system_impact"
+        customer_impact: "business_impact"
+      }
+    },
+    {
+      name: "resolution_planning"
+      planner: "workflow_optimizer"
+      goal: "Create optimal resolution plan balancing speed and quality"
+      output_mapping: {
+        plan: "resolution_plan"
+        timeline: "expected_resolution_time" 
+        resources: "required_resources"
+      }
+    }
+  ]
+  
+  stage_dependencies: {
+    deep_analysis: ["initial_assessment"]
+    resolution_planning: ["deep_analysis"]
+  }
+  
+  global_context: {
+    response_team: "sre"
+    escalation_policy: "standard"
+    communication_channels: ["slack", "email", "dashboard"]
+  }
+  
+  error_handling: {
+    retry_failed_stages: true
+    max_retries: 2
+    fallback_to_manual: true
+  }
+}
+
+# =============================================================================
+# Chains that Use Planners
+# =============================================================================
+
+chain "intelligent_support" {
+  input_key: "customer_request"
+  
+  steps: [
+    {
+      kind: "planner"
+      target: "customer_support_agent"
+      planner_type: "react"
+      options: {
+        customer_request: "$customer_request"
+        priority: "$priority"
+      }
+      output_mapping: {
+        resolution: "support_resolution"
+        confidence: "resolution_confidence"
+      }
+      stop_on_error: false
+    },
+    {
+      kind: "conditional"
+      condition: "$resolution_confidence < 0.8"
+      then: [
+        {
+          kind: "planning_workflow"
+          target: "incident_response"
+          workflow_spec: {
+            name: "incident_response"
+            escalation_trigger: true
+          }
+        }
+      ]
+      else: [
+        {
+          kind: "prompt"
+          target: "customer_satisfaction_survey"
+          options: {
+            resolution: "$support_resolution"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+chain "analytics_pipeline" {
+  input_key: "analysis_request"
+  
+  steps: [
+    {
+      kind: "planner" 
+      target: "data_insights_analyzer"
+      planner_type: "chain_of_thought"
+      options: {
+        dataset: "$dataset"
+        analysis_type: "$analysis_type"
+        business_context: "$context"
+      }
+      planning_context: {
+        deadline: "$deadline"
+        stakeholders: "$stakeholders"
+      }
+    },
+    {
+      kind: "tool"
+      target: "notification_sender"
+      options: {
+        recipients: "$stakeholders"
+        message: "Analysis completed: $insights"
+        priority: "normal"
+      }
+    }
+  ]
+}
+
+# =============================================================================
+# API Endpoints
+# =============================================================================
+
+api "/api/planning/support" {
+  method: POST
+  handler: "intelligent_support"
+  input_schema: {
+    customer_request: "string"
+    priority: "string"
+    customer_id: "string"
+  }
+  description: "Intelligent customer support with ReAct planning"
+}
+
+api "/api/planning/analytics" {
+  method: POST
+  handler: "analytics_pipeline" 
+  input_schema: {
+    dataset: "string"
+    analysis_type: "string"
+    context: "string"
+    deadline: "string"
+    stakeholders: "array"
+  }
+  description: "Data analytics with Chain-of-Thought reasoning"
+}
+
+api "/api/planning/workflow/{workflow_name}" {
+  method: POST
+  handler: "execute_planning_workflow"
+  path_params: {
+    workflow_name: "string"
+  }
+  description: "Execute multi-stage planning workflows"
+}
+
+# =============================================================================
+# Memory and Context
+# =============================================================================
+
+memory "planning_context" {
+  scope: "session"
+  kind: "conversational"
+  max_items: 100
+  config: {
+    retention_policy: "7_days"
+    compression: true
+  }
+}
+
+# =============================================================================
+# Datasets for Planning
+# =============================================================================
+
+dataset "planning_metrics" {
+  columns: [
+    {name: "planner_name", type: "string"},
+    {name: "execution_time", type: "float"}, 
+    {name: "success_rate", type: "float"},
+    {name: "step_count", type: "integer"},
+    {name: "session_id", type: "string"},
+    {name: "timestamp", type: "datetime"}
+  ]
+  description: "Performance metrics for planning executions"
+}
+
+dataset "planning_traces" {
+  columns: [
+    {name: "session_id", type: "string"},
+    {name: "planner_name", type: "string"},
+    {name: "step_number", type: "integer"},
+    {name: "step_type", type: "string"},
+    {name: "step_content", type: "json"},
+    {name: "timestamp", type: "datetime"}
+  ]
+  description: "Detailed execution traces for planning sessions"
+}

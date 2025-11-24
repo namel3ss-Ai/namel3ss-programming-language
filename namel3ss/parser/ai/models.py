@@ -42,6 +42,9 @@ _AI_MODEL_PROVIDER_HINTS = {
     "mistral",
     "cohere",
     "ollama",
+    "vllm",
+    "local_ai",
+    "lm_studio",
 }
 
 _GENERAL_MODEL_BLOCK_HINTS = (
@@ -368,6 +371,17 @@ class ModelsParserMixin:
         if model_id_raw is None:
             raise self._error("AI model block must define 'model:' (provider model id)", line_no, line)
         model_id = self._stringify_value(model_id_raw)
+        
+        # Handle local deployment configuration
+        deployment_config_raw = config.pop('deployment_config', {})
+        deployment_config = self._coerce_options_dict(deployment_config_raw)
+        local_model_path = config.pop('local_model_path', None)
+        local_model_path_str = str(local_model_path) if local_model_path is not None else None
+        
+        # Determine if this is a local provider
+        local_providers = {'vllm', 'ollama', 'local_ai', 'lm_studio'}
+        is_local = str(provider).lower() in local_providers
+        
         return AIModel(
             name=name,
             provider=str(provider),
@@ -375,6 +389,9 @@ class ModelsParserMixin:
             config=config,
             description=description,
             metadata=metadata,
+            is_local=is_local,
+            deployment_config=deployment_config,
+            local_model_path=local_model_path_str,
         )
 
     def _parse_chain_step_options(self: 'ParserBase', tokens: List[str]) -> Dict[str, Any]:

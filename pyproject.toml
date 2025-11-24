@@ -96,6 +96,22 @@ anthropic = [
     "anthropic>=0.40,<1.0",
 ]
 
+# Local model deployment support
+local-models = [
+    "vllm>=0.4.0,<1.0",            # vLLM inference engine
+    "ollama-python>=0.1.0,<1.0",   # Ollama Python client
+    "docker>=7.0,<8.0",            # Docker management for LocalAI
+]
+vllm = [
+    "vllm>=0.4.0,<1.0",
+]
+ollama = [
+    "ollama-python>=0.1.0,<1.0",
+]
+localai = [
+    "docker>=7.0,<8.0",
+]
+
 # Observability and monitoring
 otel = [
     "opentelemetry-api>=1.25,<2.0",
@@ -133,6 +149,10 @@ all = [
     "openai>=1.0,<2.0",
     "anthropic>=0.40,<1.0",
     "tiktoken>=0.7,<1.0",
+    # Local models
+    "vllm>=0.4.0,<1.0",
+    "ollama-python>=0.1.0,<1.0",
+    "docker>=7.0,<8.0",
     # Observability
     "opentelemetry-api>=1.25,<2.0",
     "opentelemetry-sdk>=1.25,<2.0",

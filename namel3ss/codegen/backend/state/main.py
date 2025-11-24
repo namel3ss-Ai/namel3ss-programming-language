@@ -14,6 +14,8 @@ from .ai import (
     _encode_index,
     _encode_llm,
     _encode_memory,
+    _encode_planner,
+    _encode_planning_workflow,
     _encode_prompt,
     _encode_rag_pipeline,
     _encode_template,
@@ -131,6 +133,19 @@ def build_backend_state(app: "App") -> BackendState:
         chains: Dict[str, Dict[str, Any]] = {}
         for chain in app.chains:
             chains[chain.name] = _encode_chain(chain, env_keys, memory_names)
+
+        # Encode planners
+        planners: Dict[str, Dict[str, Any]] = {}
+        planning_workflows: Dict[str, Dict[str, Any]] = {}
+        
+        # Check if app has planners and planning workflows
+        if hasattr(app, "planners"):
+            for planner in app.planners:
+                planners[planner.name] = _encode_planner(planner, env_keys)
+        
+        if hasattr(app, "planning_workflows"):
+            for workflow in app.planning_workflows:
+                planning_workflows[workflow.name] = _encode_planning_workflow(workflow, env_keys)
         
         # Encode agents
         agents: Dict[str, Dict[str, Any]] = {}
@@ -226,6 +241,8 @@ def build_backend_state(app: "App") -> BackendState:
             models=models,
             templates=templates,
             chains=chains,
+            planners=planners,
+            planning_workflows=planning_workflows,
             agents=agents,
             graphs=graphs,
             experiments=experiments,

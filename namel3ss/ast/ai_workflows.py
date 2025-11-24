@@ -2,10 +2,11 @@
 Workflow and chain definitions for multi-step AI processes.
 
 This module contains AST nodes for orchestrating multi-step AI workflows:
-- ChainStep: Individual steps in a workflow
-- Control flow blocks: if/elif/else, for, while loops
+- ChainStep: Individual steps in a workflow (extended with planning support)
+- Control flow blocks: if/elif/else, for, while loops  
 - Chain: Complete workflow definitions
 - WorkflowNode: Union type for all workflow nodes
+- Planning integration: Support for ReAct, CoT, and Graph-based planners
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ class ChainStep:
     - Calling a tool
     - Running a sub-chain
     - Querying a knowledge base
+    - Executing a planner (ReAct, CoT, Graph-based)
     
     Example DSL:
         step summarize {
@@ -57,13 +59,26 @@ class ChainStep:
                 evaluators: ["quality_check"]
             }
         }
+        
+        step plan_resolution {
+            kind: planner
+            target: "react_incident_planner"
+            options: {
+                incident_data: $input,
+                max_cycles: 5
+            }
+        }
     """
-    kind: str  # prompt, tool, chain, knowledge_query, etc.
-    target: str  # Name of the prompt/tool/chain to execute
+    kind: str  # prompt, tool, chain, knowledge_query, planner, etc.
+    target: str  # Name of the prompt/tool/chain/planner to execute
     options: Dict[str, Any] = field(default_factory=dict)
     name: Optional[str] = None
     stop_on_error: bool = True
     evaluation: Optional[StepEvaluationConfig] = None
+    
+    # Planning-specific options
+    planner_type: Optional[str] = None  # "react", "chain_of_thought", "graph_based"
+    planning_context: Optional[Dict[str, Any]] = None  # Additional context for planners
 
 
 @dataclass

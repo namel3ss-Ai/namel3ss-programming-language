@@ -45,6 +45,7 @@ from .spec import (
     MemorySpec,
     ChainSpec,
     InsightSpec,
+    LocalModelSpec,
     
     # Frontend specifications
     PageSpec,
@@ -71,6 +72,22 @@ from .serialization import (
     deserialize_backend_ir,
     serialize_frontend_ir,
     deserialize_frontend_ir,
+)
+
+# Plugin IR extensions
+from .plugins import (
+    PluginType,
+    PluginSpec,
+    PluginProvidedSpec,
+    PluginProvidedToolSpec,
+    PluginProvidedConnectorSpec,
+    PluginProvidedDatasetSpec,
+    PluginProvidedTemplateSpec,
+    EnhancedToolSpec,
+    EnhancedConnectorSpec,
+    PluginRequirementSpec,
+    BackendIRWithPlugins,
+    validate_plugin_ir,
 )
 
 __all__ = [
@@ -112,4 +129,18 @@ __all__ = [
     "deserialize_backend_ir",
     "serialize_frontend_ir",
     "deserialize_frontend_ir",
+    
+    # Plugin IR types
+    "PluginType",
+    "PluginSpec",
+    "PluginProvidedSpec",
+    "PluginProvidedToolSpec",
+    "PluginProvidedConnectorSpec",
+    "PluginProvidedDatasetSpec",
+    "PluginProvidedTemplateSpec",
+    "EnhancedToolSpec",
+    "EnhancedConnectorSpec",
+    "PluginRequirementSpec",
+    "BackendIRWithPlugins",
+    "validate_plugin_ir",
 ]

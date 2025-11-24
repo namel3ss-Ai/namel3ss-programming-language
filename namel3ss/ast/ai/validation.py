@@ -163,6 +163,7 @@ def validate_ai_model(model: 'AIModel') -> None:
     - Provider is specified
     - Model name is specified
     - Config is a valid dictionary
+    - Local deployment configuration is valid (if applicable)
     
     Args:
         model: AIModel instance to validate
@@ -185,7 +186,7 @@ def validate_ai_model(model: 'AIModel') -> None:
             construct_name=model.name,
             field="provider",
             code="AI021",
-            hint="Specify a provider like 'openai', 'anthropic', 'google', etc."
+            hint="Specify a provider like 'openai', 'anthropic', 'google', 'vllm', 'ollama', etc."
         )
         
     if not model.model_name or not model.model_name.strip():
@@ -195,7 +196,24 @@ def validate_ai_model(model: 'AIModel') -> None:
             construct_name=model.name,
             field="model_name",
             code="AI022",
-            hint="Specify a model identifier like 'gpt-4', 'claude-3-opus', etc."
+            hint="Specify a model identifier like 'gpt-4', 'claude-3-opus', 'meta-llama/Llama-2-7b-chat-hf', etc."
+        )
+        
+    # Validate local deployment configuration
+    local_providers = {'vllm', 'ollama', 'local_ai', 'lm_studio'}
+    is_local_provider = model.provider.lower() in local_providers
+    
+    if is_local_provider:
+        model.is_local = True
+        _validate_local_deployment_config(model)
+    elif model.is_local or model.deployment_config or model.local_model_path:
+        raise AIValidationError(
+            f"Local deployment options (is_local, deployment_config, local_model_path) "
+            f"can only be used with local providers: {', '.join(local_providers)}",
+            construct_type="AIModel",
+            construct_name=model.name,
+            field="provider",
+            code="AI029"
         )
         
     if not isinstance(model.config, dict):
@@ -207,6 +225,126 @@ def validate_ai_model(model: 'AIModel') -> None:
             value=type(model.config).__name__,
             code="AI023"
         )
+
+
+def _validate_local_deployment_config(model: 'AIModel') -> None:
+    """
+    Validate local deployment configuration for an AIModel.
+    
+    Args:
+        model: AIModel instance with local deployment
+        
+    Raises:
+        AIValidationError: If local deployment configuration is invalid
+    """
+    provider = model.provider.lower()
+    deployment_config = model.deployment_config or {}
+    
+    # Provider-specific validation
+    if provider == 'vllm':
+        _validate_vllm_config(model, deployment_config)
+    elif provider == 'ollama':
+        _validate_ollama_config(model, deployment_config)
+    elif provider in ['local_ai', 'lm_studio']:
+        _validate_local_ai_config(model, deployment_config)
+    
+    # Validate local model path if specified
+    if model.local_model_path:
+        if not isinstance(model.local_model_path, str) or not model.local_model_path.strip():
+            raise AIValidationError(
+                "Local model path must be a non-empty string",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="local_model_path",
+                code="AI030"
+            )
+
+
+def _validate_vllm_config(model: 'AIModel', deployment_config: Dict) -> None:
+    """Validate vLLM-specific deployment configuration."""
+    # Validate GPU memory utilization
+    if 'gpu_memory_utilization' in deployment_config:
+        gpu_mem = deployment_config['gpu_memory_utilization']
+        if not isinstance(gpu_mem, (int, float)) or not 0.1 <= gpu_mem <= 1.0:
+            raise AIValidationError(
+                "vLLM gpu_memory_utilization must be between 0.1 and 1.0",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.gpu_memory_utilization",
+                value=gpu_mem,
+                code="AI031"
+            )
+    
+    # Validate tensor parallel size
+    if 'tensor_parallel_size' in deployment_config:
+        tp_size = deployment_config['tensor_parallel_size']
+        if not isinstance(tp_size, int) or tp_size < 1:
+            raise AIValidationError(
+                "vLLM tensor_parallel_size must be a positive integer",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.tensor_parallel_size",
+                value=tp_size,
+                code="AI032"
+            )
+
+
+def _validate_ollama_config(model: 'AIModel', deployment_config: Dict) -> None:
+    """Validate Ollama-specific deployment configuration."""
+    # Validate num_gpu
+    if 'num_gpu' in deployment_config:
+        num_gpu = deployment_config['num_gpu']
+        if not isinstance(num_gpu, int) or num_gpu < 0:
+            raise AIValidationError(
+                "Ollama num_gpu must be a non-negative integer",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.num_gpu",
+                value=num_gpu,
+                code="AI033"
+            )
+    
+    # Validate num_thread
+    if 'num_thread' in deployment_config:
+        num_thread = deployment_config['num_thread']
+        if not isinstance(num_thread, int) or num_thread < 1:
+            raise AIValidationError(
+                "Ollama num_thread must be a positive integer",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.num_thread",
+                value=num_thread,
+                code="AI034"
+            )
+
+
+def _validate_local_ai_config(model: 'AIModel', deployment_config: Dict) -> None:
+    """Validate LocalAI/LM Studio-specific deployment configuration."""
+    # Validate threads
+    if 'threads' in deployment_config:
+        threads = deployment_config['threads']
+        if not isinstance(threads, int) or threads < 1:
+            raise AIValidationError(
+                "LocalAI threads must be a positive integer",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.threads",
+                value=threads,
+                code="AI035"
+            )
+    
+    # Validate context_length
+    if 'context_length' in deployment_config:
+        context_length = deployment_config['context_length']
+        if not isinstance(context_length, int) or context_length < 1:
+            raise AIValidationError(
+                "LocalAI context_length must be a positive integer",
+                construct_type="AIModel",
+                construct_name=model.name,
+                field="deployment_config.context_length",
+                value=context_length,
+                code="AI036"
+            )
 
 
 # ============================================================================

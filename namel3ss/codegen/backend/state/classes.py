@@ -50,6 +50,8 @@ class BackendState:
     models: Dict[str, Dict[str, Any]]
     templates: Dict[str, Dict[str, Any]]
     chains: Dict[str, Dict[str, Any]]
+    planners: Dict[str, Dict[str, Any]]  # Planning & reasoning definitions
+    planning_workflows: Dict[str, Dict[str, Any]]  # Multi-stage planning workflows
     agents: Dict[str, Dict[str, Any]]  # Agent definitions
     graphs: Dict[str, Dict[str, Any]]  # Multi-agent graph definitions
     experiments: Dict[str, Dict[str, Any]]

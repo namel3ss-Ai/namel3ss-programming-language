@@ -31,6 +31,7 @@ from .routers import (
     _render_models_router_module,
     _render_observability_router_module,
     _render_pages_router_module,
+    _render_planning_router_module,
     _render_routers_package,
     _render_training_router_module,
     _render_websocket_router_module,
@@ -199,6 +200,9 @@ def generate_backend(
     )
     (routers_dir / "observability.py").write_text(
         _render_observability_router_module(), encoding="utf-8"
+    )
+    (routers_dir / "planning.py").write_text(
+        _render_planning_router_module(state), encoding="utf-8"
     )
 
     (out_path / "main.py").write_text(

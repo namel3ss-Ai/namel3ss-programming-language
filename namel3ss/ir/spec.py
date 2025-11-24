@@ -20,14 +20,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-# Import security types for IR metadata
+# Import security and parallel execution types for IR metadata
 try:
     from namel3ss.ast.security import PermissionLevel, SecurityPolicy
+    from namel3ss.ast.parallel import ParallelStrategy, DistributionPolicy, QueueType
     HAS_SECURITY = True
+    HAS_PARALLEL = True
 except ImportError:
     HAS_SECURITY = False
+    HAS_PARALLEL = False
     PermissionLevel = None
     SecurityPolicy = None
+    ParallelStrategy = None
+    DistributionPolicy = None
+    QueueType = None
 
 
 # =============================================================================
@@ -232,6 +238,84 @@ class ChainSpec:
 
 
 @dataclass
+class PlannerSpec:
+    """Planning and reasoning specification"""
+    name: str
+    planner_type: str  # "react", "chain_of_thought", "graph_based"
+    goal: str
+    input_schema: TypeSpec
+    output_schema: TypeSpec
+    
+    # ReAct-specific configuration
+    max_cycles: Optional[int] = None
+    reasoning_prompt: Optional[str] = None
+    action_tools: List[str] = field(default_factory=list)
+    success_condition: Optional[Dict[str, Any]] = None
+    fallback_action: Optional[str] = None
+    
+    # Chain-of-Thought configuration
+    reasoning_steps: List[Dict[str, Any]] = field(default_factory=list)
+    step_prompts: Dict[str, str] = field(default_factory=dict)
+    step_tools: Dict[str, List[str]] = field(default_factory=dict)
+    dependencies: Dict[str, List[str]] = field(default_factory=dict)
+    
+    # Graph-based configuration  
+    initial_state: Optional[Dict[str, Any]] = None
+    goal_state: Optional[Dict[str, Any]] = None
+    search_policy: Optional[Dict[str, Any]] = None
+    state_transitions: List[Dict[str, Any]] = field(default_factory=list)
+    heuristic_function: Optional[str] = None
+    max_search_time: Optional[float] = None
+    
+    # Security metadata
+    allowed_tools: List[str] = field(default_factory=list)
+    capabilities: List[str] = field(default_factory=list) 
+    permission_level: Optional[str] = None
+    security_policy: Optional[Dict[str, Any]] = None
+    
+    # Performance & monitoring
+    timeout_seconds: Optional[float] = None
+    max_memory_usage: Optional[int] = None  # bytes
+    trace_enabled: bool = True
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SearchPolicySpec:
+    """Search policy specification for graph-based planners"""
+    policy_type: str  # "beam_search", "greedy_search", "mcts"
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    
+    # Beam search parameters
+    beam_width: Optional[int] = None
+    max_depth: Optional[int] = None
+    scoring_function: Optional[str] = None
+    
+    # Greedy search parameters  
+    max_steps: Optional[int] = None
+    confidence_threshold: Optional[float] = None
+    
+    # MCTS parameters
+    num_simulations: Optional[int] = None
+    exploration_constant: Optional[float] = None
+    max_simulation_depth: Optional[int] = None
+
+
+@dataclass
+class PlanningWorkflowSpec:
+    """High-level planning workflow specification"""
+    name: str
+    input_schema: TypeSpec
+    output_schema: TypeSpec
+    stages: List[Dict[str, Any]] = field(default_factory=list)
+    stage_dependencies: Dict[str, List[str]] = field(default_factory=dict)
+    global_context: Dict[str, Any] = field(default_factory=dict)
+    error_handling: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class InsightSpec:
     """Insight specification"""
     name: str
@@ -239,6 +323,52 @@ class InsightSpec:
     dataset_ref: str
     aggregations: List[Dict[str, Any]] = field(default_factory=list)
     filters: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LocalModelSpec:
+    """Local model deployment specification"""
+    name: str
+    engine_type: str  # "vllm", "ollama", "local_ai", "lm_studio"
+    model_name: str
+    model_path: Optional[str] = None  # Path to model files for local models
+    
+    # Deployment configuration
+    deployment_config: Dict[str, Any] = field(default_factory=dict)
+    
+    # Engine-specific configurations
+    vllm_config: Optional[Dict[str, Any]] = None
+    ollama_config: Optional[Dict[str, Any]] = None
+    local_ai_config: Optional[Dict[str, Any]] = None
+    
+    # Model configuration
+    model_config: Dict[str, Any] = field(default_factory=dict)
+    
+    # Hardware requirements
+    gpu_required: bool = False
+    min_vram_gb: Optional[float] = None
+    min_ram_gb: Optional[float] = None
+    cpu_cores: Optional[int] = None
+    
+    # Serving configuration
+    host: str = "0.0.0.0"
+    port: int = 8000
+    max_concurrent_requests: int = 100
+    max_model_len: Optional[int] = None
+    
+    # Fine-tuning support
+    supports_fine_tuning: bool = False
+    fine_tuning_config: Optional[Dict[str, Any]] = None
+    
+    # Health and monitoring
+    health_check_endpoint: str = "/health"
+    metrics_enabled: bool = True
+    
+    # Security
+    api_key_required: bool = False
+    allowed_origins: List[str] = field(default_factory=list)
+    
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -261,6 +391,11 @@ class BackendIR:
     agents: List[AgentSpec] = field(default_factory=list)
     tools: List[ToolSpec] = field(default_factory=list)
     chains: List[ChainSpec] = field(default_factory=list)
+    planners: List[PlannerSpec] = field(default_factory=list)
+    planning_workflows: List[PlanningWorkflowSpec] = field(default_factory=list)
+    
+    # Local model deployments
+    local_models: List[LocalModelSpec] = field(default_factory=list)
     
     # Data components
     datasets: List[DatasetSpec] = field(default_factory=list)
@@ -270,6 +405,14 @@ class BackendIR:
     # Data binding & realtime
     update_channels: List[UpdateChannelSpec] = field(default_factory=list)
     
+    # Parallel and distributed execution
+    parallel_blocks: List[ParallelBlockSpec] = field(default_factory=list)
+    worker_pools: List[WorkerPoolSpec] = field(default_factory=list)
+    task_queues: List[TaskQueueSpec] = field(default_factory=list)
+    distributed_configs: List[DistributedExecutionSpec] = field(default_factory=list)
+    event_triggers: List[EventTriggerSpec] = field(default_factory=list)
+    event_handlers: List[EventHandlerSpec] = field(default_factory=list)
+    
     # State management
     memory: List[MemorySpec] = field(default_factory=list)
     
@@ -278,6 +421,7 @@ class BackendIR:
     auth_config: Optional[Dict[str, Any]] = None
     cors_config: Optional[Dict[str, Any]] = None
     realtime_config: Optional[Dict[str, Any]] = None  # WebSocket/Redis configuration
+    distributed_config: Optional[Dict[str, Any]] = None  # Distributed execution configuration
     
     # Security configuration
     security_config: Optional[Dict[str, Any]] = None  # Global security settings
@@ -355,6 +499,222 @@ class UpdateChannelSpec:
     
     # Redis pub/sub configuration (when realtime extra is available)
     redis_channel: Optional[str] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
+# Parallel and Distributed Execution IR Specifications
+# =============================================================================
+
+@dataclass
+class ParallelBlockSpec:
+    """
+    IR specification for parallel execution blocks.
+    
+    Runtime-agnostic representation of parallel step execution
+    with configurable strategies and concurrency control.
+    """
+    name: str
+    steps: List[Dict[str, Any]]  # Step specifications to execute in parallel
+    strategy: str = "all"  # ParallelStrategy enum value as string
+    max_concurrency: Optional[int] = None
+    timeout_seconds: Optional[float] = None
+    
+    # Error handling
+    fail_fast: bool = True
+    retry_failed: bool = False
+    max_retries: int = 3
+    
+    # Result aggregation
+    reduce_function: Optional[str] = None
+    output_key: Optional[str] = None
+    
+    # Dependencies
+    depends_on: List[str] = field(default_factory=list)
+    
+    # Security metadata
+    required_permission_level: Optional[str] = None
+    allowed_capabilities: List[str] = field(default_factory=list)
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class WorkerPoolSpec:
+    """
+    IR specification for distributed worker pools.
+    
+    Defines worker pool configuration, scaling policies,
+    and security constraints for distributed execution.
+    """
+    name: str
+    queue_name: str
+    description: Optional[str] = None
+    
+    # Worker scaling
+    min_workers: int = 1
+    max_workers: int = 10
+    auto_scaling: bool = True
+    scaling_metric: str = "queue_depth"
+    target_value: float = 5.0
+    scale_up_threshold: float = 10.0
+    scale_down_threshold: float = 2.0
+    
+    # Security configuration (as strings for IR)
+    capabilities: List[str] = field(default_factory=list)
+    permission_level: str = "read_only"
+    allowed_tools: List[str] = field(default_factory=list)
+    allowed_agents: List[str] = field(default_factory=list)
+    
+    # Resource limits
+    max_memory_mb: Optional[int] = None
+    max_cpu_cores: Optional[float] = None
+    timeout_seconds: Optional[float] = None
+    
+    # Worker configuration
+    worker_config: Dict[str, Any] = field(default_factory=dict)
+    environment_variables: Dict[str, str] = field(default_factory=dict)
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TaskQueueSpec:
+    """
+    IR specification for task queues.
+    
+    Runtime-agnostic queue configuration for distributed
+    task execution with reliability and monitoring.
+    """
+    name: str
+    queue_type: str = "redis_streams"  # QueueType enum value as string
+    description: Optional[str] = None
+    
+    # Reliability configuration
+    reliability: str = "at_least_once"
+    max_retries: int = 3
+    retry_backoff: str = "exponential"
+    initial_retry_delay: float = 1.0
+    max_retry_delay: float = 60.0
+    
+    # Queue behavior
+    visibility_timeout: float = 300.0
+    message_retention: float = 86400.0
+    max_message_size: int = 1048576
+    
+    # Dead letter queue
+    dead_letter_queue: Optional[str] = None
+    max_dead_letter_retries: int = 3
+    
+    # Broker-specific configuration
+    redis_config: Dict[str, Any] = field(default_factory=dict)
+    rabbitmq_config: Dict[str, Any] = field(default_factory=dict)
+    external_config: Dict[str, Any] = field(default_factory=dict)
+    
+    # Monitoring
+    enable_metrics: bool = True
+    metric_tags: Dict[str, str] = field(default_factory=dict)
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DistributedExecutionSpec:
+    """
+    IR specification for distributed step execution.
+    
+    Defines how to execute workflow steps on remote workers
+    with load balancing and failure handling.
+    """
+    worker_pool: str
+    queue_name: Optional[str] = None
+    distribution_policy: str = "round_robin"  # DistributionPolicy enum as string
+    
+    # Locality and affinity
+    locality_preference: Optional[str] = None
+    worker_affinity: Optional[str] = None
+    avoid_workers: List[str] = field(default_factory=list)
+    
+    # Failure handling
+    failure_mode: str = "retry_remote"
+    max_wait_seconds: Optional[float] = None
+    fallback_to_local: bool = True
+    
+    # Resource requirements
+    required_memory_mb: Optional[int] = None
+    required_cpu_cores: Optional[float] = None
+    required_capabilities: List[str] = field(default_factory=list)
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EventTriggerSpec:
+    """
+    IR specification for event-driven triggers.
+    
+    Runtime-agnostic representation of event triggers
+    that can start workflow execution.
+    """
+    name: str
+    event_type: str
+    trigger_target: str  # Chain/workflow/agent to trigger
+    description: Optional[str] = None
+    
+    # Event source configuration
+    source_config: Dict[str, Any] = field(default_factory=dict)
+    
+    # Event filtering
+    filter_expression: Optional[str] = None
+    filter_fields: Dict[str, Any] = field(default_factory=dict)
+    
+    # Trigger behavior
+    trigger_delay: Optional[float] = None
+    deduplicate_window: Optional[float] = None
+    
+    # Execution context
+    context_mapping: Dict[str, str] = field(default_factory=dict)
+    execution_mode: str = "async"
+    
+    # Rate limiting
+    max_triggers_per_minute: Optional[int] = None
+    max_triggers_per_hour: Optional[int] = None
+    
+    # Security
+    required_capabilities: List[str] = field(default_factory=list)
+    permission_level: str = "read_only"
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EventHandlerSpec:
+    """
+    IR specification for event handlers.
+    
+    Defines event processing logic and routing
+    in a runtime-agnostic manner.
+    """
+    name: str
+    event_types: List[str] = field(default_factory=list)
+    description: Optional[str] = None
+    
+    # Event processing
+    transform_function: Optional[str] = None
+    enrichment_sources: List[str] = field(default_factory=list)
+    
+    # Routing
+    route_to: Optional[str] = None
+    routing_rules: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Error handling
+    retry_policy: Dict[str, Any] = field(default_factory=dict)
+    dead_letter_queue: Optional[str] = None
+    
+    # Security
+    required_capabilities: List[str] = field(default_factory=list)
+    permission_level: str = "read_only"
     
     metadata: Dict[str, Any] = field(default_factory=dict)
 

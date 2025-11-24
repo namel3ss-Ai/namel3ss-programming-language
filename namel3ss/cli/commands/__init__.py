@@ -18,6 +18,7 @@ from .packages import cmd_packages, add_packages_command
 from .modules import cmd_modules, add_modules_command
 from .security import add_security_command
 from .conformance import cmd_conformance, add_conformance_command
+from .local_deploy import cmd_deploy_local, add_local_deploy_command
 
 __all__ = [
     "cmd_build",
@@ -43,4 +44,6 @@ __all__ = [
     "add_security_command",
     "cmd_conformance",
     "add_conformance_command",
+    "cmd_deploy_local",
+    "add_local_deploy_command",
 ]

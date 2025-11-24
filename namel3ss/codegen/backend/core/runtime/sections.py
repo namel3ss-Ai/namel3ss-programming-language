@@ -17,6 +17,7 @@ from ..runtime_sections import (
     LLM_SECTION,
     MODELS_SECTION,
     OBSERVABILITY_SECTION,
+    PLANNING_SECTION,
     PREDICTION_SECTION,
     PUBSUB_SECTION,
     REGISTRY_SECTION,
@@ -47,6 +48,7 @@ def collect_runtime_sections() -> List[str]:
         MODELS_SECTION,
         TRAINING_SECTION,
         CONNECTORS_SECTION,
+        PLANNING_SECTION,
         PREDICTION_SECTION,
         INSIGHTS_SECTION,
     ]

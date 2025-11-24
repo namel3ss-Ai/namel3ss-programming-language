@@ -30,6 +30,8 @@ def render_registries_block(
         _assign_literal("AI_PROMPTS", "Dict[str, Dict[str, Any]]", state.prompts),
         _assign_literal("AI_TEMPLATES", "Dict[str, Dict[str, Any]]", state.templates),
         _assign_literal("AI_CHAINS", "Dict[str, Dict[str, Any]]", state.chains),
+        _assign_literal("PLANNERS", "Dict[str, Dict[str, Any]]", state.planners),
+        _assign_literal("PLANNING_WORKFLOWS", "Dict[str, Dict[str, Any]]", state.planning_workflows),
         _assign_literal("AGENT_DEFS", "Dict[str, Dict[str, Any]]", state.agents),
         _assign_literal("AGENT_GRAPHS", "Dict[str, Dict[str, Any]]", state.graphs),
         _assign_literal("AI_EXPERIMENTS", "Dict[str, Dict[str, Any]]", state.experiments),

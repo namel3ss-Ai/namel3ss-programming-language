@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Set, Tuple
+import re
+import logging
 
-__all__ = ["compile_dataset_to_sql"]
+logger = logging.getLogger(__name__)
+
+__all__ = ["compile_dataset_to_sql", "compile_dataset_insert", "compile_dataset_update", "compile_dataset_delete"]
 
 
 def compile_dataset_to_sql(
@@ -436,3 +440,154 @@ def compile_dataset_to_sql(
         "notes": notes,
         "status": status,
     }
+
+
+def compile_dataset_insert(
+    dataset_name: str,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Compile dataset insert operation to SQL.
+    
+    Args:
+        dataset_name: Name of the dataset
+        data: Data to insert
+        
+    Returns:
+        Dictionary with 'query', 'params', and 'select_query'
+    """
+    table_name = _sanitize_table_name(dataset_name)
+    
+    # Filter out None values and prepare columns/values
+    filtered_data = {k: v for k, v in data.items() if v is not None}
+    
+    if not filtered_data:
+        raise ValueError("No valid data provided for insert")
+    
+    columns = [_sanitize_column_name(col) for col in filtered_data.keys()]
+    placeholders = [f"%({col})s" for col in filtered_data.keys()]
+    
+    query = f"""
+        INSERT INTO {table_name} ({', '.join(columns)})
+        VALUES ({', '.join(placeholders)})
+        RETURNING id
+    """.strip()
+    
+    # Query to select the created record
+    select_query = f"""
+        SELECT * FROM {table_name} WHERE id = %(id)s
+    """.strip()
+    
+    return {
+        "query": query,
+        "params": filtered_data,
+        "select_query": select_query,
+    }
+
+
+def compile_dataset_update(
+    dataset_name: str,
+    record_id: str,
+    data: Dict[str, Any],
+    primary_key: str = "id",
+) -> Dict[str, Any]:
+    """
+    Compile dataset update operation to SQL.
+    
+    Args:
+        dataset_name: Name of the dataset
+        record_id: ID of record to update
+        data: Data to update
+        primary_key: Primary key column name
+        
+    Returns:
+        Dictionary with 'query', 'params', and 'select_query'
+    """
+    table_name = _sanitize_table_name(dataset_name)
+    pk_column = _sanitize_column_name(primary_key)
+    
+    # Filter out None values and prepare SET clause
+    filtered_data = {k: v for k, v in data.items() if v is not None}
+    
+    if not filtered_data:
+        raise ValueError("No valid data provided for update")
+    
+    set_clauses = []
+    for column in filtered_data.keys():
+        safe_column = _sanitize_column_name(column)
+        set_clauses.append(f"{safe_column} = %({column})s")
+    
+    # Add primary key to params
+    params = dict(filtered_data)
+    params[primary_key] = record_id
+    
+    query = f"""
+        UPDATE {table_name}
+        SET {', '.join(set_clauses)}
+        WHERE {pk_column} = %({primary_key})s
+    """.strip()
+    
+    # Query to select the updated record
+    select_query = f"""
+        SELECT * FROM {table_name} WHERE {pk_column} = %({primary_key})s
+    """.strip()
+    
+    return {
+        "query": query,
+        "params": params,
+        "select_query": select_query,
+    }
+
+
+def compile_dataset_delete(
+    dataset_name: str,
+    record_id: str,
+    primary_key: str = "id",
+) -> Dict[str, Any]:
+    """
+    Compile dataset delete operation to SQL.
+    
+    Args:
+        dataset_name: Name of the dataset
+        record_id: ID of record to delete
+        primary_key: Primary key column name
+        
+    Returns:
+        Dictionary with 'query' and 'params'
+    """
+    table_name = _sanitize_table_name(dataset_name)
+    pk_column = _sanitize_column_name(primary_key)
+    
+    query = f"""
+        DELETE FROM {table_name}
+        WHERE {pk_column} = %({primary_key})s
+    """.strip()
+    
+    return {
+        "query": query,
+        "params": {primary_key: record_id},
+    }
+
+
+def _sanitize_table_name(name: str) -> str:
+    """Sanitize table name to prevent SQL injection."""
+    # Remove any non-alphanumeric characters except underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)
+    
+    # Ensure it starts with a letter
+    if not sanitized or not sanitized[0].isalpha():
+        raise ValueError(f"Invalid table name: {name}")
+    
+    return sanitized
+
+
+def _sanitize_column_name(name: str) -> str:
+    """Sanitize column name to prevent SQL injection."""
+    # Remove any non-alphanumeric characters except underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '', name)
+    
+    # Ensure it starts with a letter or underscore
+    if not sanitized or not (sanitized[0].isalpha() or sanitized[0] == '_'):
+        raise ValueError(f"Invalid column name: {name}")
+    
+    return sanitized

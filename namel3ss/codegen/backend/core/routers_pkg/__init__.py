@@ -16,6 +16,7 @@ from .crud_router import _render_crud_router_module
 from .datasets_router import _render_datasets_router_module
 from .websocket_router import _render_websocket_router_module
 from .observability_router import _render_observability_router_module
+from .planning_router import _render_planning_router_module
 from .endpoint_generators import (
     _render_page_endpoint,
     _render_component_endpoint,
@@ -34,6 +35,7 @@ __all__ = [
     "_render_datasets_router_module",
     "_render_websocket_router_module",
     "_render_observability_router_module",
+    "_render_planning_router_module",
     "_render_page_endpoint",
     "_render_component_endpoint",
     "_render_insight_endpoint",

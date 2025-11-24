@@ -35,6 +35,7 @@ from .commands import (
     add_modules_command,
     add_security_command,
     add_conformance_command,
+    add_local_deploy_command,
 )
 from namel3ss.sdk_sync.cli import add_sdk_sync_command
 from .context import CLIContext
@@ -436,18 +437,31 @@ def main(argv: Optional[list] = None) -> None:
     )
     train_parser.set_defaults(func=cmd_train)
     
-    # Deploy subcommand
+    # Deploy subcommand with subcommands for different deployment types
     deploy_parser = subparsers.add_parser(
         'deploy',
-        help='Deploy a model prediction endpoint'
+        help='Deploy models to various environments'
     )
-    deploy_parser.add_argument('file', help='Path to the .ai source file (.ai also supported)')
-    deploy_parser.add_argument(
+    deploy_subparsers = deploy_parser.add_subparsers(
+        dest='deploy_command',
+        help='Deployment targets'
+    )
+    
+    # Original deploy command (for backward compatibility)
+    cloud_deploy_parser = deploy_subparsers.add_parser(
+        'cloud',
+        help='Deploy a model to cloud endpoints (original deploy command)'
+    )
+    cloud_deploy_parser.add_argument('file', help='Path to the .ai source file (.ai also supported)')
+    cloud_deploy_parser.add_argument(
         '--model',
         required=True,
         help='Name of the model to deploy (must exist in the DSL or model registry)'
     )
-    deploy_parser.set_defaults(func=cmd_deploy)
+    cloud_deploy_parser.set_defaults(func=cmd_deploy)
+    
+    # Add local deployment subcommands
+    add_local_deploy_command(deploy_subparsers)
     
     # Doctor subcommand
     doctor_parser = subparsers.add_parser(

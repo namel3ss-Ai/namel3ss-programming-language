@@ -93,6 +93,20 @@ from .frames import (
     FrameJoin,
     FrameSourceDef,
 )
+from .plugins import (
+    PluginReference,
+    PluginUsage,
+    PluginProvidedTool,
+    PluginProvidedConnector,
+    PluginProvidedDataset,
+    PluginProvidedTemplate,
+    EnhancedTool,
+    EnhancedConnector,
+    PluginCapabilityRequirement,
+    PluginMetadata,
+    extract_plugin_metadata,
+    validate_plugin_references,
+)
 from .insights import (
     Insight,
     InsightAssignment,
@@ -415,4 +429,17 @@ __all__ = [
     "InlineBlock",
     "InlinePythonBlock",
     "InlineReactBlock",
+    # Plugin system
+    "PluginReference",
+    "PluginUsage", 
+    "PluginProvidedTool",
+    "PluginProvidedConnector",
+    "PluginProvidedDataset",
+    "PluginProvidedTemplate",
+    "EnhancedTool",
+    "EnhancedConnector",
+    "PluginCapabilityRequirement",
+    "PluginMetadata",
+    "extract_plugin_metadata",
+    "validate_plugin_references",
 ]

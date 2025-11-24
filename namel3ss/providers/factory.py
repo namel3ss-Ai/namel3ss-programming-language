@@ -109,6 +109,22 @@ def _load_provider_modules() -> None:
     except ImportError:
         pass
     
+    # Import new local model providers
+    try:
+        from .local import vllm  # noqa: F401
+    except ImportError:
+        pass
+        
+    try:
+        from .local import ollama  # noqa: F401
+    except ImportError:
+        pass
+        
+    try:
+        from .local import local_ai  # noqa: F401
+    except ImportError:
+        pass
+    
     try:
         from . import http_provider  # noqa: F401
     except ImportError:

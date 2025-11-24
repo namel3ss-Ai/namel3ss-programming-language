@@ -15,6 +15,7 @@ Namel3ss is designed from the ground up for AI-first development:
 - **Multi-Agent Orchestration**: Declarative agent graphs with routing, handoffs, and state management  
 - **Chain Workflows**: Compose templates, connectors, and Python hooks into deterministic pipelines
 - **RAG & Vector Search**: First-class dataset integration with semantic search and retrieval
+- **Local Model Deployment**: Production-grade support for vLLM, Ollama, and LocalAI with built-in deployment management
 - **Logic Engine**: Constraint-based reasoning compiled into backend execution
 - **Observability Built-In**: Automatic tracing, metrics, and monitoring for all AI operations
 
@@ -85,6 +86,31 @@ This compiles to a complete FastAPI backend with:
 - Prompt execution with schema enforcement
 - Conditional workflow orchestration
 - Deterministic testing stubs for CI/CD
+
+### Local Model Example
+
+For private, cost-effective AI without external APIs:
+
+```text
+# Deploy a local model for private AI
+model "local_chat" using local_engine:
+  engine_type: "ollama" 
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    gpu_layers: -1
+    context_length: 4096
+
+prompt "PrivateChat":
+  input: message: text
+  output: response: text
+  using model "local_chat":
+    "You are a helpful assistant. {{message}}"
+
+# Deploy and use
+# namel3ss deploy local start local_chat
+# namel3ss run prompt PrivateChat --input '{"message": "Hello!"}'
+```
 
 ## Language Features
 
@@ -196,6 +222,34 @@ define chain "RAG_Query":
   input -> retrieve_similar_from documentation top_k 5 -> prompt AnswerQuestion
 ```
 
+#### Local Model Deployment
+```text
+# Define local model with deployment configuration
+model "local_llama" using local_engine:
+  engine_type: "ollama"  # or "vllm", "localai"
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    gpu_layers: -1
+    context_length: 4096
+    max_tokens: 2048
+  health_check:
+    endpoint: "/api/health"
+    timeout: 30
+
+# Deploy and manage local models via CLI
+# namel3ss deploy local start local_llama
+# namel3ss deploy local stop local_llama
+# namel3ss deploy local status
+
+# Use in prompts like any other model
+prompt "LocalChat":
+  input: message: text
+  output: response: text
+  using model "local_llama":
+    "You are a helpful assistant. {{message}}"
+```
+
 ## Installation
 
 Namel3ss requires **Python 3.10 or newer**.
@@ -225,15 +279,21 @@ Install only the features you need:
 #### AI & LLM Providers
 
 ```bash
-# All AI providers
+# All AI providers (including local models)
 pip install namel3ss[ai]
 
 # Or individual providers
 pip install namel3ss[openai]      # OpenAI (GPT-4, etc.)
 pip install namel3ss[anthropic]   # Anthropic (Claude)
+pip install namel3ss[local-models] # vLLM, Ollama, LocalAI
+
+# Specific local model engines
+pip install namel3ss[vllm]        # vLLM (high-performance)
+pip install namel3ss[ollama]      # Ollama (easy setup)
+pip install namel3ss[localai]     # LocalAI (multi-format)
 ```
 
-**Enables**: Structured prompts, model adapters, token counting, AI chains
+**Enables**: Structured prompts, model adapters, token counting, AI chains, local model deployment
 
 #### Databases
 
@@ -287,12 +347,27 @@ pip install namel3ss[all]         # All optional features
 pip install namel3ss[postgres]
 ```
 
-**AI-powered application**:
+**AI-powered application with external APIs**:
 ```bash
 pip install namel3ss[ai,postgres,redis]
 ```
 
-**Full-featured production setup**:
+**Local AI application with private models**:
+```bash
+pip install namel3ss[local-models,postgres]
+```
+
+**Development with Ollama**:
+```bash
+pip install namel3ss[ollama,postgres]
+```
+
+**Production with vLLM**:
+```bash
+pip install namel3ss[vllm,postgres,redis,otel]
+```
+
+**Full-featured setup**:
 ```bash
 pip install namel3ss[all]
 ```
@@ -329,7 +404,11 @@ Quick reference for what each extra provides:
 | **Core** (always included) | _(none)_ | `fastapi`, `pydantic`, `uvicorn`, `httpx`, `pygls`, `jinja2` |
 | OpenAI (GPT models) | `[openai]` | `openai`, `tiktoken` |
 | Anthropic (Claude) | `[anthropic]` | `anthropic` |
-| All AI providers | `[ai]` | `openai`, `anthropic`, `tiktoken` |
+| Local models (all) | `[local-models]` | `vllm`, `ollama-python`, `docker` |
+| vLLM (high-performance) | `[vllm]` | `vllm` |
+| Ollama (easy setup) | `[ollama]` | `ollama-python` |
+| LocalAI (multi-format) | `[localai]` | `docker` |
+| All AI providers | `[ai]` | `openai`, `anthropic`, `tiktoken`, `vllm`, `ollama-python`, `docker` |
 | PostgreSQL | `[postgres]` | `sqlalchemy`, `asyncpg`, `psycopg[binary]` |
 | MySQL | `[mysql]` | `sqlalchemy`, `aiomysql` |
 | All SQL databases | `[sql]` | `sqlalchemy`, `asyncpg`, `psycopg`, `aiomysql` |
@@ -380,6 +459,149 @@ pip install -e ".[dev]"
 ./scripts/run_tests.sh
 ```
 
+## Local Model Deployment
+
+Namel3ss provides production-grade support for deploying and managing local LLM models using industry-standard engines like vLLM, Ollama, and LocalAI. This enables private, cost-effective, and low-latency AI applications without relying on external APIs.
+
+### Supported Local Model Engines
+
+#### vLLM - High-Performance Production Inference
+- **Best for**: Production workloads requiring maximum throughput
+- **Features**: GPU optimization, continuous batching, tensor parallelism
+- **Models**: Any HuggingFace model with supported architectures
+- **Installation**: `pip install namel3ss[vllm]`
+
+#### Ollama - Easy Development & Deployment  
+- **Best for**: Development, prototyping, and simple deployment scenarios
+- **Features**: Automatic model pulling, easy setup, CPU/GPU support
+- **Models**: Pre-optimized models from Ollama library (Llama, Mistral, etc.)
+- **Installation**: `pip install namel3ss[ollama]`
+
+#### LocalAI - Multi-Format Model Support
+- **Best for**: Diverse model formats and experimental models
+- **Features**: OpenAI-compatible API, multiple model formats, Docker deployment
+- **Models**: GGML, GGUF, HuggingFace, custom models
+- **Installation**: `pip install namel3ss[localai]`
+
+### Quick Local Model Setup
+
+1. **Install local model support**:
+   ```bash
+   pip install namel3ss[local-models]  # All engines
+   # OR
+   pip install namel3ss[ollama]        # Just Ollama
+   ```
+
+2. **Define a model in your `.ai` file**:
+   ```text
+   model "chat_model" using local_engine:
+     engine_type: "ollama"
+     model_name: "llama3.2:latest"
+     deployment:
+       port: 11434
+       gpu_layers: -1
+       context_length: 4096
+   ```
+
+3. **Deploy the model**:
+   ```bash
+   namel3ss deploy local start chat_model
+   ```
+
+4. **Use in your application**:
+   ```text
+   prompt "ChatWithLocal":
+     input: message: text
+     output: response: text  
+     using model "chat_model":
+       "You are a helpful assistant. {{message}}"
+   ```
+
+### Model Configuration Examples
+
+#### vLLM Configuration (Production)
+```text
+model "production_model" using local_engine:
+  engine_type: "vllm"
+  model_name: "microsoft/DialoGPT-large"
+  deployment:
+    port: 8000
+    host: "0.0.0.0"
+    gpu_memory_utilization: 0.9
+    tensor_parallel_size: 2
+    max_model_len: 4096
+    served_model_name: "gpt-3.5-turbo"  # OpenAI-compatible name
+  health_check:
+    endpoint: "/health"
+    timeout: 30
+```
+
+#### Ollama Configuration (Development)
+```text
+model "dev_model" using local_engine:
+  engine_type: "ollama" 
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    host: "127.0.0.1"
+    gpu_layers: -1  # Use all GPU layers
+    num_ctx: 4096   # Context length
+    temperature: 0.7
+  health_check:
+    endpoint: "/api/health"
+    timeout: 60
+```
+
+#### LocalAI Configuration (Multi-format)
+```text
+model "localai_model" using local_engine:
+  engine_type: "localai"
+  model_name: "ggml-gpt4all-j.bin"
+  deployment:
+    port: 8080
+    deployment_type: "docker"  # or "binary"
+    models_path: "./models"
+    threads: 4
+    context_size: 4096
+  health_check:
+    endpoint: "/readiness"
+    timeout: 45
+```
+
+### Deployment Management
+
+```bash
+# Start models
+namel3ss deploy local start chat_model
+namel3ss deploy local start --all  # Start all defined models
+
+# Monitor status
+namel3ss deploy local status       # All models
+namel3ss deploy local status chat_model  # Specific model
+
+# Manage running models  
+namel3ss deploy local stop chat_model
+namel3ss deploy local restart chat_model
+
+# Health monitoring
+namel3ss deploy local health chat_model
+namel3ss deploy local logs chat_model
+
+# Configuration
+namel3ss deploy local list         # List available models
+namel3ss deploy local config chat_model  # Show configuration
+```
+
+### Production Considerations
+
+- **Resource Requirements**: Each model requires significant RAM/VRAM
+- **Port Management**: Ensure ports don't conflict between models  
+- **Health Monitoring**: Built-in health checks for reliability
+- **Deployment Automation**: Integrates with Docker and orchestration tools
+- **OpenAI Compatibility**: All engines support OpenAI-compatible APIs
+
+See `examples/local-model-chat/` for a complete working application demonstrating local model deployment with all three engines.
+
 ## Quick Start
 
 ### 1. Create your first AI application
@@ -390,17 +612,36 @@ namel3ss generate examples/ai_demo.ai out
 
 # Or create your own my_app.ai file
 namel3ss generate my_app.ai out
+
+# For local model examples
+namel3ss generate examples/local-model-chat/app.ai out
 ```
 
-### 2. Run the backend
+### 2. Install dependencies and run
 
 ```bash
 cd out/backend
 pip install -r requirements.txt
+
+# For local models, also install model engines
+pip install namel3ss[local-models]  # All engines
+# OR
+pip install namel3ss[ollama]        # Just Ollama
+
 uvicorn main:app --reload
 ```
 
-### 3. Open the frontend
+### 3. Deploy local models (optional)
+
+```bash
+# Start a local model (if using local model example)
+namel3ss deploy local start your_model_name
+
+# Check status
+namel3ss deploy local status
+```
+
+### 4. Open the frontend
 
 Open `out/frontend/index.html` in your browser or serve with:
 
@@ -446,6 +687,25 @@ namel3ss run chain RAG_Query --trace --payload '{"query": "..."}'
 namel3ss graph ResearchPipeline --output graph.json
 ```
 
+### Local Model Deployment Commands
+
+```bash
+# Deploy local models
+namel3ss deploy local start my_model     # Start model deployment
+namel3ss deploy local stop my_model      # Stop running model
+namel3ss deploy local restart my_model   # Restart model
+namel3ss deploy local status             # Show all model statuses
+namel3ss deploy local list               # List available models
+
+# Model configuration
+namel3ss deploy local config my_model    # Show model configuration
+namel3ss deploy local validate my_model  # Validate model config
+
+# Health monitoring
+namel3ss deploy local health my_model    # Check model health
+namel3ss deploy local logs my_model      # View model logs
+```
+
 ### Configuration
 
 ```bash
@@ -477,6 +737,26 @@ NAMEL3SS_API_KEY=your-api-key
 NAMEL3SS_DATABASE_URL=postgresql://...
 NAMEL3SS_REDIS_URL=redis://localhost:6379
 MONGODB_URI=mongodb://...
+```
+
+**Local Model Deployment:**
+```bash
+# Model deployment paths
+NAMEL3SS_LOCAL_MODELS_ROOT=/opt/models
+NAMEL3SS_DEPLOYMENT_LOGS=/var/log/namel3ss
+
+# vLLM configuration
+VLLM_HOST=0.0.0.0
+VLLM_PORT=8000
+VLLM_GPU_MEMORY_UTILIZATION=0.9
+
+# Ollama configuration 
+OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_MODELS=/usr/share/ollama/.ollama/models
+
+# LocalAI configuration
+LOCALAI_MODELS_PATH=/models
+LOCALAI_THREADS=4
 ```
 
 **AI Providers:**
