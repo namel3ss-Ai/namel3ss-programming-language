@@ -24,6 +24,7 @@ from .packages import (
 )
 from .routers import (
     _render_crud_router_module,
+    _render_datasets_router_module,
     _render_experiments_router_module,
     _render_frames_router_module,
     _render_insights_router_module,
@@ -188,6 +189,9 @@ def generate_backend(
     )
     (routers_dir / "crud.py").write_text(
         _render_crud_router_module(state), encoding="utf-8"
+    )
+    (routers_dir / "datasets.py").write_text(
+        _render_datasets_router_module(backend_ir), encoding="utf-8"
     )
     (routers_dir / "observability.py").write_text(
         _render_observability_router_module(), encoding="utf-8"

@@ -23,7 +23,7 @@ def _render_routers_package(include_metadata: bool = False) -> str:
 
 from __future__ import annotations
 
-from . import crud, experiments, frames, insights, metadata, models, observability, pages, training
+from . import crud, datasets, experiments, frames, insights, metadata, models, observability, pages, training
 
 insights_router = insights.router
 models_router = models.router
@@ -32,6 +32,7 @@ frames_router = frames.router
 training_router = training.router
 pages_router = pages.router
 crud_router = crud.router
+datasets_router = datasets.router
 observability_router = observability.router
 metadata_router = metadata.router
 
@@ -43,6 +44,7 @@ GENERATED_ROUTERS = (
     training_router,
     pages_router,
     crud_router,
+    datasets_router,
     observability_router,
     metadata_router,
 )
@@ -55,6 +57,7 @@ __all__ = [
     "training_router",
     "pages_router",
     "crud_router",
+    "datasets_router",
     "observability_router",
     "metadata_router",
     "GENERATED_ROUTERS",
@@ -66,7 +69,7 @@ __all__ = [
 
 from __future__ import annotations
 
-from . import crud, experiments, frames, insights, models, observability, pages, training
+from . import crud, datasets, experiments, frames, insights, models, observability, pages, training
 
 insights_router = insights.router
 models_router = models.router
@@ -75,6 +78,7 @@ frames_router = frames.router
 training_router = training.router
 pages_router = pages.router
 crud_router = crud.router
+datasets_router = datasets.router
 observability_router = observability.router
 
 GENERATED_ROUTERS = (
@@ -85,6 +89,7 @@ GENERATED_ROUTERS = (
     training_router,
     pages_router,
     crud_router,
+    datasets_router,
     observability_router,
 )
 
@@ -96,6 +101,7 @@ __all__ = [
     "training_router",
     "pages_router",
     "crud_router",
+    "datasets_router",
     "observability_router",
     "GENERATED_ROUTERS",
 ]
