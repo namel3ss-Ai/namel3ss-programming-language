@@ -29,6 +29,7 @@ from .components import (
 from .hooks import write_realtime_hook
 from .client import write_client_lib
 from .dataset_client import write_dataset_client_lib
+from .bound_components import generate_bound_components
 from .pages import (
     ReactPage,
     build_placeholder_page,
@@ -143,6 +144,10 @@ def generate_react_vite_site(
     write_table_widget(components_dir)
     write_form_widget(components_dir)
     write_text_widget(components_dir)
+    
+    # Generate bound components for data binding
+    if backend_ir:
+        generate_bound_components(components_dir)
     
     # Generate hooks and client library
     write_realtime_hook(lib_dir)
