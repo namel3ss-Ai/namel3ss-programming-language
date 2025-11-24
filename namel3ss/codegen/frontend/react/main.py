@@ -7,10 +7,13 @@ configuration files, components, pages, and supporting libraries.
 """
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from namel3ss.ast import App
 from namel3ss.codegen.frontend.preview import PreviewDataResolver
+
+if TYPE_CHECKING:
+    from namel3ss.ir import BackendIR
 
 from .config import write_package_json, write_tsconfig, write_tsconfig_node, write_vite_config
 from .scaffolding import write_index_html, write_main_tsx, write_index_css
@@ -25,6 +28,7 @@ from .components import (
 )
 from .hooks import write_realtime_hook
 from .client import write_client_lib
+from .dataset_client import write_dataset_client_lib
 from .pages import (
     ReactPage,
     build_placeholder_page,
@@ -34,7 +38,13 @@ from .pages import (
 )
 
 
-def generate_react_vite_site(app: App, output_dir: str, *, enable_realtime: bool = False) -> None:
+def generate_react_vite_site(
+    app: App,
+    output_dir: str,
+    *,
+    enable_realtime: bool = False,
+    backend_ir: Optional["BackendIR"] = None,
+) -> None:
     """
     Generate a complete Vite + React + TypeScript project for the given app.
     
@@ -54,6 +64,7 @@ def generate_react_vite_site(app: App, output_dir: str, *, enable_realtime: bool
         app: Namel3ss application to generate frontend for
         output_dir: Directory path for generated Vite project
         enable_realtime: Whether to enable WebSocket realtime connections
+        backend_ir: Optional BackendIR for dataset client generation
     
     Generated structure:
         output_dir/
@@ -136,6 +147,10 @@ def generate_react_vite_site(app: App, output_dir: str, *, enable_realtime: bool
     # Generate hooks and client library
     write_realtime_hook(lib_dir)
     write_client_lib(lib_dir)
+    
+    # Generate dataset client if backend_ir provided
+    if backend_ir:
+        write_dataset_client_lib(lib_dir, backend_ir)
     
     # Generate App.tsx with routing
     write_app_tsx(src_dir, page_builds)
