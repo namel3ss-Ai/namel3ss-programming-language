@@ -51,6 +51,37 @@ class LayoutMeta:
 
 
 @dataclass
+class DataBindingConfig:
+    """
+    Configuration for dynamic data binding on UI components.
+    
+    Controls how components fetch, display, and update data from datasets.
+    """
+    # Read behavior
+    auto_refresh: bool = False  # Auto-refresh when dataset changes
+    refresh_interval: Optional[int] = None  # Polling interval in seconds (if not using realtime)
+    page_size: int = 50  # Default items per page
+    enable_sorting: bool = True  # Allow user to sort columns
+    enable_filtering: bool = True  # Allow user to filter rows
+    enable_search: bool = False  # Show search box
+    cache_ttl: Optional[int] = None  # Client-side cache TTL in seconds
+    
+    # Write behavior
+    editable: bool = False  # Allow inline editing
+    enable_create: bool = False  # Show "Add" button
+    enable_update: bool = False  # Allow row updates
+    enable_delete: bool = False  # Show delete actions
+    
+    # Realtime behavior
+    subscribe_to_changes: bool = False  # Subscribe to WebSocket updates (requires realtime extra)
+    
+    # Advanced
+    field_mapping: Dict[str, str] = field(default_factory=dict)  # Map component fields to dataset columns
+    write_endpoint: Optional[str] = None  # Custom write endpoint
+    optimistic_updates: bool = True  # Update UI immediately before server confirms
+
+
+@dataclass
 class ShowTable(Statement):
     title: str
     source_type: str
@@ -62,6 +93,9 @@ class ShowTable(Statement):
     layout: Optional[LayoutMeta] = None
     insight: Optional[str] = None
     dynamic_columns: Optional[Dict[str, Any]] = None
+    
+    # Data binding configuration
+    binding: Optional[DataBindingConfig] = None
 
 
 @dataclass
@@ -79,6 +113,9 @@ class ShowChart(Statement):
     style: Optional[Dict[str, Any]] = field(default_factory=dict)
     title: Optional[str] = None
     legend: Optional[Dict[str, Any]] = None
+    
+    # Data binding configuration
+    binding: Optional[DataBindingConfig] = None
 
 
 @dataclass
@@ -144,6 +181,11 @@ class ShowForm(Statement):
     styles: Dict[str, str] = field(default_factory=dict)
     layout: LayoutSpec = field(default_factory=LayoutSpec)
     effects: Set[str] = field(default_factory=set)
+    
+    # Data binding configuration
+    binding: Optional[DataBindingConfig] = None
+    bound_dataset: Optional[str] = None  # Dataset to load initial values from
+    bound_record_id: Optional[Expression] = None  # Specific record ID to load
 
 
 @dataclass
@@ -245,6 +287,7 @@ __all__ = [
     "ShowText",
     "LayoutSpec",
     "LayoutMeta",
+    "DataBindingConfig",
     "ShowTable",
     "ShowChart",
     "FormField",

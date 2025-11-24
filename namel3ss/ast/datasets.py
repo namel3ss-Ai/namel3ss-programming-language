@@ -173,6 +173,22 @@ class RefreshPolicy:
 
 
 @dataclass
+class DatasetAccessPolicy:
+    """
+    Defines read/write access patterns for a dataset.
+    
+    Controls whether dataset supports mutations (create/update/delete)
+    and what permissions are required.
+    """
+    read_only: bool = True  # Most datasets are read-only by default
+    allow_create: bool = False
+    allow_update: bool = False
+    allow_delete: bool = False
+    primary_key: Optional[str] = None  # Required for updates/deletes
+    required_capabilities: List[str] = field(default_factory=list)  # Security capabilities needed for writes
+
+
+@dataclass
 class Dataset:
     name: str
     source_type: str
@@ -191,6 +207,7 @@ class Dataset:
     cache_policy: Optional[CachePolicy] = None
     pagination: Optional[PaginationPolicy] = None
     streaming: Optional[StreamingPolicy] = None
+    access_policy: Optional[DatasetAccessPolicy] = None  # Controls read/write access
     metadata: Dict[str, Any] = field(default_factory=dict)
     lineage: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
@@ -217,5 +234,6 @@ __all__ = [
     "PaginationPolicy",
     "StreamingPolicy",
     "RefreshPolicy",
+    "DatasetAccessPolicy",
     "Dataset",
 ]

@@ -187,6 +187,12 @@ class DatasetSpec:
     transformations: List[Dict[str, Any]] = field(default_factory=list)
     cache_policy: Optional[Dict[str, Any]] = None
     refresh_policy: Optional[Dict[str, Any]] = None
+    
+    # Data binding & access control
+    access_policy: Optional[Dict[str, Any]] = None  # Read-only, allow CRUD
+    primary_key: Optional[str] = None  # Required for updates/deletes
+    realtime_enabled: bool = False  # Push updates via WebSocket/Redis
+    
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -261,6 +267,9 @@ class BackendIR:
     frames: List[FrameSpec] = field(default_factory=list)
     insights: List[InsightSpec] = field(default_factory=list)
     
+    # Data binding & realtime
+    update_channels: List[UpdateChannelSpec] = field(default_factory=list)
+    
     # State management
     memory: List[MemorySpec] = field(default_factory=list)
     
@@ -268,6 +277,7 @@ class BackendIR:
     database_config: Optional[Dict[str, Any]] = None
     auth_config: Optional[Dict[str, Any]] = None
     cors_config: Optional[Dict[str, Any]] = None
+    realtime_config: Optional[Dict[str, Any]] = None  # WebSocket/Redis configuration
     
     # Security configuration
     security_config: Optional[Dict[str, Any]] = None  # Global security settings
@@ -281,6 +291,75 @@ class BackendIR:
 
 
 # =============================================================================
+# Data Binding Specifications
+# =============================================================================
+
+@dataclass
+class DataBindingSpec:
+    """
+    Specification for dynamic data binding between UI components and datasets.
+    
+    Controls how data flows between backend datasets and frontend components,
+    including pagination, filtering, sorting, and realtime updates.
+    """
+    # Source configuration
+    dataset_name: str
+    endpoint_path: str  # Generated API endpoint path
+    
+    # Read behavior
+    page_size: int = 50
+    enable_sorting: bool = True
+    sortable_fields: List[str] = field(default_factory=list)  # Whitelist of sortable columns
+    enable_filtering: bool = True
+    filterable_fields: List[str] = field(default_factory=list)  # Whitelist of filterable columns
+    enable_search: bool = False
+    searchable_fields: List[str] = field(default_factory=list)
+    
+    # Write behavior
+    editable: bool = False
+    enable_create: bool = False
+    enable_update: bool = False
+    enable_delete: bool = False
+    create_endpoint: Optional[str] = None  # POST /api/datasets/{name}
+    update_endpoint: Optional[str] = None  # PATCH /api/datasets/{name}/{id}
+    delete_endpoint: Optional[str] = None  # DELETE /api/datasets/{name}/{id}
+    
+    # Realtime updates
+    subscribe_to_changes: bool = False
+    websocket_topic: Optional[str] = None  # e.g., "dataset:{name}:changes"
+    polling_interval: Optional[int] = None  # Fallback polling interval in seconds
+    
+    # Optimization
+    cache_ttl: Optional[int] = None  # Client-side cache TTL
+    optimistic_updates: bool = True
+    
+    # Field mapping
+    field_mapping: Dict[str, str] = field(default_factory=dict)  # component_field -> dataset_column
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class UpdateChannelSpec:
+    """
+    Specification for realtime update channels.
+    
+    Defines how dataset changes are broadcasted to subscribed clients.
+    """
+    name: str  # Channel/topic name
+    dataset_name: str
+    event_types: List[str] = field(default_factory=lambda: ["create", "update", "delete"])
+    transport: str = "websocket"  # "websocket" | "sse" | "polling"
+    requires_auth: bool = True
+    required_capabilities: List[str] = field(default_factory=list)
+    
+    # Redis pub/sub configuration (when realtime extra is available)
+    redis_channel: Optional[str] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
 # Frontend IR Specifications
 # =============================================================================
 
@@ -291,6 +370,10 @@ class ComponentSpec:
     type: str  # "text", "table", "chart", "form", etc.
     props: Dict[str, Any] = field(default_factory=dict)
     data_source: Optional[str] = None  # Reference to endpoint/dataset
+    
+    # Data binding configuration
+    binding: Optional[DataBindingSpec] = None
+    
     children: List[ComponentSpec] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
