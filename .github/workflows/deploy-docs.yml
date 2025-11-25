@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://ssebowadisan.github.io/namel3ss-programming-language
+      url: https://namel3ss-ai.github.io/namel3ss-programming-language
     
     steps:
       - name: Checkout code
@@ -58,4 +58,4 @@ jobs:
         run: |
           echo "🎉 namel3ss v0.5.1 deployed successfully!"
           echo "📦 PyPI: https://pypi.org/project/namel3ss/0.5.1/"
-          echo "📖 Docs: https://ssebowadisan.github.io/namel3ss-programming-language"
+          echo "📖 Docs: https://namel3ss-ai.github.io/namel3ss-programming-language"

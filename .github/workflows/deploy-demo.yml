@@ -41,5 +41,5 @@ jobs:
       - name: Deploy to GitHub Pages (when ready)
         run: |
           echo "Demo site deployment would happen here"
-          echo "Could deploy to: https://ssebowadisan.github.io/namel3ss-programming-language/"
+          echo "Could deploy to: https://namel3ss-ai.github.io/namel3ss-programming-language/"
           echo "Environment: ${{ github.event.inputs.environment }}"
