@@ -1,0 +1,61 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+jobs:
+  deploy-docs:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ssebowadisan.github.io/namel3ss-programming-language
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          
+      - name: Generate documentation
+        run: |
+          mkdir -p docs
+          echo "# namel3ss 0.5.1 Documentation" > docs/index.md
+          echo "" >> docs/index.md
+          echo "## Installation" >> docs/index.md
+          echo "\`\`\`bash" >> docs/index.md
+          echo "pip install namel3ss" >> docs/index.md
+          echo "\`\`\`" >> docs/index.md
+          echo "" >> docs/index.md
+          echo "## Quick Start" >> docs/index.md
+          echo "\`\`\`bash" >> docs/index.md
+          echo "namel3ss --version" >> docs/index.md
+          echo "namel3ss doctor" >> docs/index.md
+          echo "\`\`\`" >> docs/index.md
+          
+      - name: Test CLI
+        run: |
+          namel3ss --version
+          echo "✅ CLI working successfully"
+          
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          
+      - name: Success notification
+        run: |
+          echo "🎉 namel3ss v0.5.1 deployed successfully!"
+          echo "📦 PyPI: https://pypi.org/project/namel3ss/0.5.1/"
+          echo "📖 Docs: https://ssebowadisan.github.io/namel3ss-programming-language"
