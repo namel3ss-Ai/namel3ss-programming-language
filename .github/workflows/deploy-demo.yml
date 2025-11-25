@@ -1,0 +1,45 @@
+name: Deploy Demo Site
+
+# Only deploy on manual trigger for now
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'demo'
+        type: choice
+        options:
+          - demo
+          - staging
+
+jobs:
+  deploy-demo:
+    name: Deploy namel3ss Demo
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install namel3ss
+        run: |
+          pip install -e .
+          
+      - name: Build demo examples
+        run: |
+          # Build some example applications
+          cd examples/local-model-chat
+          namel3ss build
+          
+      - name: Deploy to GitHub Pages (when ready)
+        run: |
+          echo "Demo site deployment would happen here"
+          echo "Could deploy to: https://ssebowadisan.github.io/namel3ss-programming-language/"
+          echo "Environment: ${{ github.event.inputs.environment }}"
