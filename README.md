@@ -410,6 +410,12 @@ namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
 **Complete Guides:**
 - **[📖 Complete Documentation](NAMEL3SS_DOCUMENTATION.md)** - Comprehensive guide covering all language features, CLI commands, AI components, and deployment
 - **[🔧 API Reference](API_REFERENCE.md)** - Detailed Python API documentation for all classes and functions
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for development with namel3ss
+- **[🩺 Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues, syntax errors, JavaScript limitations, and solutions
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Solutions for common issues, syntax errors, and JavaScript limitations
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for namel3ss development
+- **[🚨 Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for development problems
+- **[🆘 Troubleshooting Guide](TROUBLESHOOTING.md)** - Solutions for common syntax, runtime, and development issues
 
 **Quick References:**
 - **[⚡ CLI Quick Reference](docs/archive/status-reports/CLI_QUICK_REFERENCE.md)** - All CLI commands with examples

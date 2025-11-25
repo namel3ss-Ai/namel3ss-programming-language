@@ -1,0 +1,372 @@
+# Working Chatbot Example
+# This example addresses the issues found in the user report
+
+# Environment variables needed
+environment:
+  OPENAI_API_KEY: "your-openai-api-key-here"
+  PORT: "8000"
+
+# Model configuration
+model chat_model:
+  provider: openai
+  name: "gpt-3.5-turbo"
+  temperature: 0.7
+  max_tokens: 1000
+
+# Memory for conversation history
+memory "conversation_history":
+  scope: conversation
+  kind: conversation
+  max_items: 50
+
+# Chain for processing chat messages
+chain "chat_response":
+  inputs:
+    message: text
+    history: conversation
+    
+  steps:
+    - step analyze_input:
+        model: chat_model
+        prompt: |
+          Analyze this user message for intent and topic.
+          Message: {{message}}
+          
+          Respond with a JSON object containing:
+          - intent: string (question, request, casual, etc.)
+          - topic: string
+          - needs_context: boolean
+        output: analysis
+        
+    - step generate_response:
+        model: chat_model
+        prompt: |
+          You are a helpful AI assistant. Generate a conversational response to the user's message.
+          
+          User message: {{message}}
+          Message analysis: {{analysis}}
+          Conversation history: {{history}}
+          
+          Guidelines:
+          - Be helpful and engaging
+          - Keep responses concise but informative
+          - Use the conversation history for context
+          - Maintain a friendly tone
+        output: response
+
+# API endpoints
+endpoint "/api/chat" {
+  method: post
+  
+  inputs:
+    message: text
+    
+  chain: chat_response
+  
+  using:
+    message: inputs.message
+    history: memory.conversation_history
+    
+  stores:
+    user_message: inputs.message
+    ai_response: chain.response
+    
+  memory_updates:
+    conversation_history: [
+      {role: "user", content: inputs.message},
+      {role: "assistant", content: chain.response}
+    ]
+    
+  returns:
+    response: chain.response
+    timestamp: now()
+}
+
+endpoint "/api/health" {
+  method: get
+  
+  returns:
+    status: "healthy"
+    version: "1.0.0"
+    timestamp: now()
+}
+
+# Frontend layout using simpler JavaScript (no ES6 features)
+layout: |
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Namel3ss Chatbot</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      
+      .chat-container {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        width: 100%;
+        max-width: 600px;
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      
+      .chat-header {
+        background: #667eea;
+        color: white;
+        padding: 20px;
+        text-align: center;
+      }
+      
+      .chat-messages {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      
+      .message {
+        max-width: 80%;
+        padding: 12px 16px;
+        border-radius: 12px;
+        word-wrap: break-word;
+      }
+      
+      .message.user {
+        align-self: flex-end;
+        background: #667eea;
+        color: white;
+      }
+      
+      .message.assistant {
+        align-self: flex-start;
+        background: #f1f3f4;
+        color: #333;
+      }
+      
+      .chat-input {
+        padding: 20px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        gap: 12px;
+      }
+      
+      .input-field {
+        flex: 1;
+        padding: 12px 16px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+      }
+      
+      .input-field:focus {
+        border-color: #667eea;
+      }
+      
+      .send-button {
+        padding: 12px 20px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        min-width: 80px;
+      }
+      
+      .send-button:hover {
+        background: #5a67d8;
+      }
+      
+      .send-button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      
+      .error-message {
+        background: #fee;
+        color: #c53030;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="chat-container">
+        <div class="chat-header">
+          <h1>Namel3ss AI Chatbot</h1>
+          <p>Powered by namel3ss programming language</p>
+        </div>
+        
+        <div class="chat-messages" ref="messagesContainer">
+          <div v-if="error" class="error-message">
+            {{ error }}
+          </div>
+          
+          <div 
+            v-for="message in messages" 
+            :key="message.id"
+            class="message"
+            :class="message.role"
+          >
+            {{ message.content }}
+          </div>
+          
+          <div v-if="isLoading" class="message assistant">
+            <em>Thinking...</em>
+          </div>
+        </div>
+        
+        <div class="chat-input">
+          <input
+            v-model="newMessage"
+            @keyup.enter="sendMessage"
+            @input="clearError"
+            class="input-field"
+            placeholder="Type your message..."
+            :disabled="isLoading"
+          />
+          <button 
+            @click="sendMessage"
+            :disabled="isLoading || !newMessage.trim()"
+            class="send-button"
+          >
+            {{ isLoading ? 'Sending...' : 'Send' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { createApp } = Vue;
+      
+      createApp({
+        data() {
+          return {
+            messages: [
+              {
+                id: 1,
+                role: 'assistant',
+                content: 'Hello! I am your AI assistant. How can I help you today?'
+              }
+            ],
+            newMessage: '',
+            isLoading: false,
+            error: null,
+            messageId: 2
+          };
+        },
+        
+        methods: {
+          async sendMessage() {
+            if (!this.newMessage.trim() || this.isLoading) {
+              return;
+            }
+            
+            // Add user message
+            const userMessage = {
+              id: this.messageId++,
+              role: 'user', 
+              content: this.newMessage.trim()
+            };
+            
+            this.messages.push(userMessage);
+            const messageText = this.newMessage;
+            this.newMessage = '';
+            this.isLoading = true;
+            this.error = null;
+            
+            // Scroll to bottom
+            this.$nextTick(() => {
+              this.scrollToBottom();
+            });
+            
+            try {
+              const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  message: messageText
+                })
+              });
+              
+              if (!response.ok) {
+                throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+              }
+              
+              const data = await response.json();
+              
+              // Add assistant message
+              this.messages.push({
+                id: this.messageId++,
+                role: 'assistant',
+                content: data.response
+              });
+              
+            } catch (error) {
+              console.error('Error:', error);
+              this.error = 'Error: ' + (error.message || 'Failed to send message');
+              
+              // Add error message to chat
+              this.messages.push({
+                id: this.messageId++,
+                role: 'assistant', 
+                content: 'Sorry, I encountered an error. Please try again.'
+              });
+            } finally {
+              this.isLoading = false;
+              this.$nextTick(() => {
+                this.scrollToBottom();
+              });
+            }
+          },
+          
+          clearError() {
+            this.error = null;
+          },
+          
+          scrollToBottom() {
+            const container = this.$refs.messagesContainer;
+            if (container) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        },
+        
+        mounted() {
+          this.scrollToBottom();
+        }
+      }).mount('#app');
+    </script>
+  </body>
+  </html>
