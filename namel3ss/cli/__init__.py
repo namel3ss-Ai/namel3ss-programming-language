@@ -16,28 +16,88 @@ from namel3ss.lang import LANGUAGE_VERSION as LANGUAGE_SPEC_VERSION
 from namel3ss.config import load_workspace_config
 from namel3ss.plugins import PluginManager
 
+# Import core commands that work with minimal dependencies
 from .commands import (
     cmd_build,
-    cmd_deploy,
-    cmd_doctor,
-    cmd_eval,
-    cmd_eval_suite,
-    cmd_format,
-    cmd_lint,
-    cmd_lsp,
     cmd_run,
-    cmd_test,
-    cmd_train,
-    cmd_typecheck,
-    add_debug_command,
-    add_stdlib_command,
-    add_packages_command,
-    add_modules_command,
-    add_security_command,
-    add_conformance_command,
-    add_local_deploy_command,
+    cmd_doctor,
+    _lazy_import_deploy,
+    _lazy_import_debug,
+    _lazy_import_local_deploy,
+    _lazy_import_ai_commands,
+    _lazy_import_dev_tools,
+    _lazy_import_enhanced_cli,
 )
-from namel3ss.sdk_sync.cli import add_sdk_sync_command
+
+# Import lazy loaders for optional commands
+from .lazy_imports import (
+    lazy_cmd_eval,
+    lazy_cmd_eval_suite,
+    lazy_cmd_train,
+    lazy_cmd_deploy,
+    lazy_cmd_test,
+    lazy_cmd_lint,
+    lazy_cmd_typecheck,
+    lazy_cmd_format,
+    lazy_cmd_lsp,
+)
+
+# Set up add_command functions through lazy imports
+try:
+    # Local deployment commands
+    _, add_local_deploy_command = _lazy_import_local_deploy()
+except:
+    def add_local_deploy_command(parser):
+        local_parser = parser.add_parser('local', help='Local model deployment (requires local-deploy extra)')
+        local_parser.set_defaults(func=lambda args: (print("Error: Local deployment requires the 'local-deploy' extra."), print("Install with: pip install namel3ss[local-deploy]"), sys.exit(1))[2])
+
+try:
+    # Debug commands
+    _, add_debug_command = _lazy_import_debug()
+except:
+    def add_debug_command(parser):
+        debug_parser = parser.add_parser('debug', help='Debug features (requires cli extra)')
+        debug_parser.set_defaults(func=lambda args: (print("Error: Debug features require the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+
+try:
+    # Enhanced CLI commands
+    (_, add_stdlib_command, _, add_packages_command, 
+     _, add_modules_command, add_security_command,
+     _, add_conformance_command) = _lazy_import_enhanced_cli()
+except:
+    def add_stdlib_command(parser):
+        stdlib_parser = parser.add_parser('stdlib', help='Standard library features (requires cli extra)')
+        stdlib_parser.set_defaults(func=lambda args: (print("Error: Standard library features require the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+    
+    def add_packages_command(parser):
+        packages_parser = parser.add_parser('packages', help='Package management (requires cli extra)')
+        packages_parser.set_defaults(func=lambda args: (print("Error: Package management requires the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+    
+    def add_modules_command(parser):
+        modules_parser = parser.add_parser('modules', help='Module introspection (requires cli extra)')
+        modules_parser.set_defaults(func=lambda args: (print("Error: Module introspection requires the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+    
+    def add_security_command(parser):
+        security_parser = parser.add_parser('security', help='Security validation (requires cli extra)')
+        security_parser.set_defaults(func=lambda args: (print("Error: Security validation requires the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+    
+    def add_conformance_command(parser):
+        conformance_parser = parser.add_parser('conformance', help='Language conformance testing (requires cli extra)')
+        conformance_parser.set_defaults(func=lambda args: (print("Error: Language conformance testing requires the 'cli' extra."), print("Install with: pip install namel3ss[cli]"), sys.exit(1))[2])
+
+# Try to import optional SDK sync (may not be available)
+try:
+    from namel3ss.sdk_sync.cli import add_sdk_sync_command
+except ImportError:
+    def add_sdk_sync_command(parser):
+        def sdk_sync_cmd(args):
+            print("Error: SDK sync requires additional dependencies.")
+            print("Install with: pip install 'namel3ss[dev]'")
+            import sys
+            sys.exit(1)
+        sdk_parser = parser.add_parser('sdk-sync', help="Generate typed SDK from N3 schemas (requires dev extra)")
+        sdk_parser.set_defaults(func=sdk_sync_cmd)
+
 from .context import CLIContext
 from .validation import normalize_run_command_args
 
@@ -343,7 +403,7 @@ def main(argv: Optional[list] = None) -> None:
         default='json',
         help='Output format (default: json)'
     )
-    eval_parser.set_defaults(func=cmd_eval)
+    eval_parser.set_defaults(func=lazy_cmd_eval)
     
     # Eval-suite subcommand
     eval_suite_parser = subparsers.add_parser(
@@ -376,7 +436,7 @@ def main(argv: Optional[list] = None) -> None:
         action='store_true',
         help='Include per-example metrics in output'
     )
-    eval_suite_parser.set_defaults(func=cmd_eval_suite)
+    eval_suite_parser.set_defaults(func=lazy_cmd_eval_suite)
     
     # Train subcommand
     train_parser = subparsers.add_parser(
@@ -435,7 +495,7 @@ def main(argv: Optional[list] = None) -> None:
         action='store_true',
         help='Emit compact JSON output (default pretty prints)'
     )
-    train_parser.set_defaults(func=cmd_train)
+    train_parser.set_defaults(func=lazy_cmd_train)
     
     # Deploy subcommand with subcommands for different deployment types
     deploy_parser = subparsers.add_parser(
@@ -458,7 +518,7 @@ def main(argv: Optional[list] = None) -> None:
         required=True,
         help='Name of the model to deploy (must exist in the DSL or model registry)'
     )
-    cloud_deploy_parser.set_defaults(func=cmd_deploy)
+    cloud_deploy_parser.set_defaults(func=lazy_cmd_deploy)
     
     # Add local deployment subcommands
     add_local_deploy_command(deploy_subparsers)
@@ -505,7 +565,7 @@ def main(argv: Optional[list] = None) -> None:
         dest='fail_fast',
         help='Stop on first test failure'
     )
-    test_parser.set_defaults(func=cmd_test)
+    test_parser.set_defaults(func=lazy_cmd_test)
     
     # Lint subcommand
     lint_parser = subparsers.add_parser(
@@ -527,7 +587,7 @@ def main(argv: Optional[list] = None) -> None:
         action='store_true',
         help='Force use of external linter instead of native semantic analysis'
     )
-    lint_parser.set_defaults(func=cmd_lint)
+    lint_parser.set_defaults(func=lazy_cmd_lint)
     
     # Typecheck subcommand
     typecheck_parser = subparsers.add_parser(
@@ -538,7 +598,7 @@ def main(argv: Optional[list] = None) -> None:
         '--command',
         help='Override the configured typecheck command'
     )
-    typecheck_parser.set_defaults(func=cmd_typecheck)
+    typecheck_parser.set_defaults(func=lazy_cmd_typecheck)
     
     # Format subcommand
     format_parser = subparsers.add_parser(
@@ -567,14 +627,14 @@ def main(argv: Optional[list] = None) -> None:
         default=True,
         help='Write formatting changes to files (default: true)'
     )
-    format_parser.set_defaults(func=cmd_format)
+    format_parser.set_defaults(func=lazy_cmd_format)
     
     # LSP subcommand
     lsp_parser = subparsers.add_parser(
         'lsp',
         help='Start the Namel3ss language server for editor integrations'
     )
-    lsp_parser.set_defaults(func=cmd_lsp)
+    lsp_parser.set_defaults(func=lazy_cmd_lsp)
     
     # SDK-Sync subcommand
     add_sdk_sync_command(subparsers)

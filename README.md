@@ -15,7 +15,7 @@ Namel3ss is designed from the ground up for AI-first development:
 - **Multi-Agent Orchestration**: Declarative agent graphs with routing, handoffs, and state management  
 - **Chain Workflows**: Compose templates, connectors, and Python hooks into deterministic pipelines
 - **RAG & Vector Search**: First-class dataset integration with semantic search and retrieval
-- **Local Model Deployment**: Production-grade support for vLLM, Ollama, and LocalAI with built-in deployment management
+- **Production Local Models**: Full deployment management for vLLM, Ollama, and LocalAI with CLI-based operations
 - **Logic Engine**: Constraint-based reasoning compiled into backend execution
 - **Observability Built-In**: Automatic tracing, metrics, and monitoring for all AI operations
 
@@ -393,6 +393,7 @@ Verify installation:
 
 ```bash
 namel3ss --help
+namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
 ```
 
 ### Feature → Extra Mapping
@@ -401,7 +402,7 @@ Quick reference for what each extra provides:
 
 | Feature | Extra | Packages Installed |
 |---------|-------|-------------------|
-| **Core** (always included) | _(none)_ | `fastapi`, `pydantic`, `uvicorn`, `httpx`, `pygls`, `jinja2` |
+| **Core** (always included) | _(none)_ | `pydantic`, `jinja2`, `pygls`, `packaging`, `psutil`, `pyyaml`, `rich`, `httpx`, `click` |
 | OpenAI (GPT models) | `[openai]` | `openai`, `tiktoken` |
 | Anthropic (Claude) | `[anthropic]` | `anthropic` |
 | Local models (all) | `[local-models]` | `vllm`, `ollama-python`, `docker` |
@@ -607,14 +608,17 @@ See `examples/local-model-chat/` for a complete working application demonstratin
 ### 1. Create your first AI application
 
 ```bash
-# Generate from example
-namel3ss generate examples/ai_demo.ai out
+# Create from template
+echo 'app "MyApp"' > my_app.ai
+echo 'page "home" { show text "Hello World" }' >> my_app.ai
 
-# Or create your own my_app.ai file
-namel3ss generate my_app.ai out
+# Build the application
+namel3ss build my_app.ai
 
 # For local model examples
-namel3ss generate examples/local-model-chat/app.ai out
+cp -r examples/local-model-chat .
+cd local-model-chat
+namel3ss build app.ai
 ```
 
 ### 2. Install dependencies and run
@@ -625,8 +629,10 @@ pip install -r requirements.txt
 
 # For local models, also install model engines
 pip install namel3ss[local-models]  # All engines
-# OR
+# OR specific engines:
 pip install namel3ss[ollama]        # Just Ollama
+pip install namel3ss[vllm]          # Just vLLM
+pip install namel3ss[localai]       # Just LocalAI
 
 uvicorn main:app --reload
 ```
