@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...database import get_session
+from database import get_session
 from ..helpers import rate_limit_dependency, router_dependencies
 from ..runtime import (
     available_training_backends,

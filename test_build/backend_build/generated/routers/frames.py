@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...database import get_session
+from database import get_session
 from .. import runtime
 from ..helpers import router_dependencies
 from ..schemas import FrameErrorResponse, FrameResponse, FrameSchemaPayload

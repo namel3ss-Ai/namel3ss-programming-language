@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover - FastAPI <0.65 fallback
     from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...database import get_session
+from database import get_session
 from .. import runtime
 from ..helpers import router_dependencies
 from ..schemas import ChartResponse, TableResponse

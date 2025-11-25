@@ -16,8 +16,8 @@ except ImportError:  # pragma: no cover - fallback for minimal stubs
             def __init__(self, content: str, media_type: str = "text/plain", status_code: int = 200) -> None:
                 super().__init__(content=content, media_type=media_type, status_code=status_code)
 
-from .generated import runtime
-from .generated.helpers import include_generated_routers
+from generated import runtime
+from generated.helpers import include_generated_routers
 
 _PRODUCTION_MODE = getattr(runtime, "is_production_mode", lambda: False)()
 
