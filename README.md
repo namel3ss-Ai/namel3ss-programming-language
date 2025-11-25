@@ -396,6 +396,24 @@ namel3ss --help
 namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
 ```
 
+## 📚 Documentation
+
+**Complete Guides:**
+- **[📖 Complete Documentation](NAMEL3SS_DOCUMENTATION.md)** - Comprehensive guide covering all language features, CLI commands, AI components, and deployment
+- **[🔧 API Reference](API_REFERENCE.md)** - Detailed Python API documentation for all classes and functions
+
+**Quick References:**
+- **[⚡ CLI Quick Reference](docs/archive/status-reports/CLI_QUICK_REFERENCE.md)** - All CLI commands with examples
+- **[🧠 AI Features Guide](docs/INDEX.md)** - AI-native constructs, prompts, chains, and agents
+- **[💾 Memory System](docs/MEMORY_SYSTEM.md)** - Persistent state and conversation management
+- **[🔍 RAG Guide](docs/RAG_GUIDE.md)** - Retrieval-Augmented Generation implementation
+- **[📊 Evaluation Framework](docs/EVAL_SUITES.md)** - Testing and metrics for AI applications
+
+**Examples:**
+- **[🛠️ Examples Directory](examples/)** - Complete working applications
+- **[📝 Language Syntax](docs/LANGUAGE_REFERENCE.md)** - Complete N3 syntax guide
+- **[🏗️ Architecture](docs/ARCHITECTURE.md)** - System design and internals
+
 ### Feature → Extra Mapping
 
 Quick reference for what each extra provides:
