@@ -42,7 +42,7 @@ class TestVLLMProvider:
             config=vllm_config
         )
     
-    def test_vllm_provider_initialization(self, vllm_provider, vllm_config):
+    def test_vllm_provider_initialization(self, vllm_provider):
         """Test VLLMProvider initialization."""
         assert vllm_provider.name == "test_vllm"
         assert vllm_provider.model == "microsoft/DialoGPT-medium"

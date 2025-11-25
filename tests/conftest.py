@@ -16,7 +16,10 @@ def pytest_pyfunc_call(pyfuncitem):
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(test_function(**pyfuncitem.funcargs))
+            # Filter funcargs to only include parameters the function expects
+            sig = inspect.signature(test_function)
+            filtered_args = {k: v for k, v in pyfuncitem.funcargs.items() if k in sig.parameters}
+            loop.run_until_complete(test_function(**filtered_args))
         finally:
             loop.close()
             asyncio.set_event_loop(None)

@@ -12,7 +12,7 @@ import pytest
 from namel3ss.codegen.backend import generate_backend
 from namel3ss.parser import Parser
 
-from tests.backend_test_utils import load_backend_module
+from tests.core.backend_test_utils import load_backend_module
 
 
 @pytest.fixture
