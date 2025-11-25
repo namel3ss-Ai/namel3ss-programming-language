@@ -47,6 +47,17 @@
 pip install namel3ss
 ```
 
+> **⚠️ Troubleshooting:** If `namel3ss` command is not found after installation:
+> ```bash
+> # Clear cache and reinstall
+> pip uninstall namel3ss -y
+> pip cache purge 
+> pip install namel3ss==0.5.1
+> 
+> # Verify installation
+> namel3ss --version  # Should show 0.5.1
+> ```
+
 This installs the core language parser and basic CLI with only 3 dependencies: `jinja2`, `packaging`, and `click`.
 
 ### Full Installation with All Features

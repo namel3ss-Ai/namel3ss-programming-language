@@ -262,6 +262,15 @@ The core installation includes only the essentials for parsing, code generation,
 pip install namel3ss
 ```
 
+> **⚠️ Important:** Ensure you get the latest version (0.5.1). If you encounter issues:
+> ```bash
+> pip uninstall namel3ss -y
+> pip cache purge
+> pip install namel3ss==0.5.1
+> ```
+> 
+> Verify installation: `namel3ss --version` should show `0.5.1`
+
 This minimal installation (~10MB) provides:
 - ✅ `.n3` file parsing and AST generation
 - ✅ FastAPI backend code generation  
