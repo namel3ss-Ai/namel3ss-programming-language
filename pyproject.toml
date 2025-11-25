@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "namel3ss"
-version = "0.5.0"
+version = "0.5.1"
 description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
@@ -28,12 +28,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    # Core language dependencies (parser, AST, IR, codegen)
-    "pydantic>=2.7,<3.0",       # Schema validation
+    # Minimal core dependencies (code generation only)
     "jinja2>=3.1,<4.0",         # Template engine for code generation
-    "pygls>=1.3,<2.0",          # Language server protocol support
-    # Note: FastAPI, uvicorn, httpx moved to namel3ss-runtime-http
-    # Generated backends list these in their requirements.txt
+    "packaging>=20.0",          # Version specification parsing
+    "click>=8.0.0",             # CLI framework and command parsing
+    # Note: All other features moved to optional extras
+    # Generated backends list their dependencies in requirements.txt
 ]
 
 [project.urls]
@@ -43,6 +43,21 @@ Documentation = "https://github.com/SsebowaDisan/namel3ss-programming-language#r
 Issues = "https://github.com/SsebowaDisan/namel3ss-programming-language/issues"
 
 [project.optional-dependencies]
+# Enhanced CLI features (rich output, debugging, LSP)
+cli = [
+    "rich>=13.0.0",             # Rich output formatting and tables
+    "psutil>=5.9.0",            # System monitoring for debug commands
+    "pygls>=1.3,<2.0",          # Language server protocol support
+    "PyYAML>=6.0",              # YAML parsing for conformance testing
+    "pydantic>=2.7,<3.0",       # Schema validation for CLI operations
+]
+
+# HTTP client for local model management
+local-deploy = [
+    "httpx>=0.24.0",            # HTTP client for local providers
+    "pydantic>=2.7,<3.0",       # Schema validation
+]
+
 # SQL database support (SQLAlchemy ORM + drivers)
 sql = [
     "sqlalchemy>=2.0,<3.0",
@@ -98,17 +113,25 @@ anthropic = [
 
 # Local model deployment support
 local-models = [
-    "vllm>=0.4.0,<1.0",            # vLLM inference engine
-    "ollama-python>=0.1.0,<1.0",   # Ollama Python client
-    "docker>=7.0,<8.0",            # Docker management for LocalAI
+    "httpx>=0.24.0",            # HTTP client for local providers
+    "pydantic>=2.7,<3.0",       # Schema validation
+    "vllm>=0.4.0,<1.0",         # vLLM inference engine
+    "ollama-python>=0.1.0,<1.0", # Ollama Python client
+    "docker>=7.0,<8.0",         # Docker management for LocalAI
 ]
 vllm = [
+    "httpx>=0.24.0",
+    "pydantic>=2.7,<3.0",
     "vllm>=0.4.0,<1.0",
 ]
 ollama = [
+    "httpx>=0.24.0",
+    "pydantic>=2.7,<3.0",
     "ollama-python>=0.1.0,<1.0",
 ]
 localai = [
+    "httpx>=0.24.0",
+    "pydantic>=2.7,<3.0",
     "docker>=7.0,<8.0",
 ]
 
@@ -134,6 +157,13 @@ dev = [
 
 # All optional features (kitchen sink)
 all = [
+    # Enhanced CLI
+    "rich>=13.0.0",
+    "psutil>=5.9.0",
+    "pygls>=1.3,<2.0",
+    "PyYAML>=6.0",
+    "pydantic>=2.7,<3.0",
+    "httpx>=0.24.0",
     # Databases
     "sqlalchemy>=2.0,<3.0",
     "asyncpg>=0.29,<0.30",
