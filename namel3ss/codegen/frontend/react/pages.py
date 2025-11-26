@@ -31,6 +31,21 @@ from namel3ss.ast.pages import (
     ShowDataTable,
     ShowStatSummary,
     ShowTimeline,
+    # Navigation & Chrome components
+    Sidebar,
+    Navbar,
+    Breadcrumbs,
+    CommandPalette,
+    # Feedback components
+    Modal,
+    Toast,
+    # AI Semantic components
+    ChatThread,
+    AgentPanel,
+    ToolCallView,
+    LogView,
+    EvaluationResult,
+    DiffView,
 )
 from namel3ss.codegen.frontend.preview import PreviewDataResolver
 from namel3ss.codegen.frontend.slugs import slugify_page_name, slugify_route
@@ -199,6 +214,18 @@ def collect_widgets(
         "timeline": 0,
         "avatar_group": 0,
         "data_chart": 0,
+        # Navigation & Chrome components
+        "sidebar": 0,
+        "navbar": 0,
+        "breadcrumbs": 0,
+        "command_palette": 0,
+        # AI Semantic components
+        "chat_thread": 0,
+        "agent_panel": 0,
+        "tool_call_view": 0,
+        "log_view": 0,
+        "evaluation_result": 0,
+        "diff_view": 0,
     }
 
     for statement in page.statements:
@@ -252,11 +279,85 @@ def collect_widgets(
         elif isinstance(statement, ShowForm):
             counters["form"] += 1
             widget_id = f"form_{counters['form']}"
+            
+            # Serialize form fields with full component information
+            form_fields = []
+            for field in statement.fields:
+                field_config = {
+                    "name": field.name,
+                    "component": field.component or "text_input",
+                    "label": field.label or field.name,
+                }
+                if field.placeholder:
+                    field_config["placeholder"] = field.placeholder
+                if field.help_text:
+                    field_config["help_text"] = field.help_text
+                if field.required:
+                    field_config["required"] = field.required
+                if field.default:
+                    field_config["default"] = str(field.default)
+                
+                # Validation
+                validation = {}
+                if field.min_length is not None:
+                    validation["min_length"] = field.min_length
+                if field.max_length is not None:
+                    validation["max_length"] = field.max_length
+                if field.pattern:
+                    validation["pattern"] = field.pattern
+                if field.min_value is not None:
+                    validation["min_value"] = field.min_value
+                if field.max_value is not None:
+                    validation["max_value"] = field.max_value
+                if field.step is not None:
+                    validation["step"] = field.step
+                if validation:
+                    field_config["validation"] = validation
+                
+                # Options for select/multiselect/radio
+                if field.options_binding:
+                    field_config["options_binding"] = field.options_binding
+                if field.options:
+                    field_config["options"] = field.options
+                
+                # Conditional rendering
+                if field.disabled:
+                    field_config["disabled"] = str(field.disabled)
+                if field.visible:
+                    field_config["visible"] = str(field.visible)
+                
+                # File upload
+                if field.component == "file_upload":
+                    if field.accept:
+                        field_config["accept"] = field.accept
+                    if field.max_file_size:
+                        field_config["max_file_size"] = field.max_file_size
+                    if field.upload_endpoint:
+                        field_config["upload_endpoint"] = field.upload_endpoint
+                    if field.multiple:
+                        field_config["multiple"] = field.multiple
+                
+                form_fields.append(field_config)
+            
+            # Get success message from on_submit_ops
             success_message: str | None = None
             for op in statement.on_submit_ops:
                 if isinstance(op, ToastOperation):
                     success_message = op.message
                     break
+            
+            form_spec = {
+                "title": statement.title,
+                "fields": form_fields,
+                "layout_mode": statement.layout_mode or "vertical",
+                "submit_action": statement.submit_action,
+                "validation_mode": statement.validation_mode or "on_blur",
+                "submit_button_text": statement.submit_button_text or "Submit",
+                "reset_button": statement.reset_button,
+                "success_message": statement.success_message or success_message,
+                "error_message": statement.error_message,
+            }
+            
             preview_map[widget_id] = {
                 "fields": [
                     {"name": field.name, "type": field.field_type}
@@ -267,12 +368,7 @@ def collect_widgets(
                 {
                     "id": widget_id,
                     "type": "form",
-                    "title": statement.title,
-                    "fields": [
-                        {"name": field.name, "type": field.field_type}
-                        for field in statement.fields
-                    ],
-                    "successMessage": success_message,
+                    **form_spec,
                 }
             )
         elif isinstance(statement, ShowCard):
@@ -683,6 +779,247 @@ def collect_widgets(
                 "layout": statement.layout,
             }
             widgets.append(widget_config)
+        elif isinstance(statement, Sidebar):
+            counters["sidebar"] += 1
+            widget_id = f"sidebar_{counters['sidebar']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "sidebar",
+                "items": [serialize_nav_item(item) for item in statement.items],
+                "sections": [serialize_nav_section(section) for section in statement.sections],
+                "collapsible": statement.collapsible,
+                "collapsed_by_default": statement.collapsed_by_default,
+                "width": statement.width,
+                "position": statement.position,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, Navbar):
+            counters["navbar"] += 1
+            widget_id = f"navbar_{counters['navbar']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "navbar",
+                "logo": statement.logo,
+                "title": statement.title,
+                "actions": [serialize_navbar_action(action) for action in statement.actions],
+                "position": statement.position,
+                "sticky": statement.sticky,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, Breadcrumbs):
+            counters["breadcrumbs"] += 1
+            widget_id = f"breadcrumbs_{counters['breadcrumbs']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "breadcrumbs",
+                "items": [serialize_breadcrumb_item(item) for item in statement.items],
+                "auto_derive": statement.auto_derive,
+                "separator": statement.separator,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, CommandPalette):
+            counters["command_palette"] += 1
+            widget_id = f"command_palette_{counters['command_palette']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "command_palette",
+                "shortcut": statement.shortcut,
+                "sources": [serialize_command_source(source) for source in statement.sources],
+                "placeholder": statement.placeholder,
+                "max_results": statement.max_results,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, Modal):
+            counters.setdefault("modal", 0)
+            counters["modal"] += 1
+            widget_id = f"modal_{counters['modal']}"
+            
+            # Recursively process nested content
+            nested_widgets = []
+            if statement.content:
+                for nested_stmt in statement.content:
+                    # For now, only support basic components in modal content
+                    if isinstance(nested_stmt, ShowText):
+                        nested_widgets.append({
+                            "type": "text",
+                            "text": nested_stmt.text,
+                            "styles": nested_stmt.styles or {},
+                        })
+                    # Can add more component types as needed
+            
+            widget_config = {
+                "id": widget_id,
+                "type": "modal",
+                "modal_id": statement.id,
+                "title": statement.title,
+                "description": statement.description,
+                "size": statement.size,
+                "dismissible": statement.dismissible,
+                "trigger": statement.trigger,
+                "actions": [serialize_modal_action(action) for action in statement.actions],
+                "content": nested_widgets,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, Toast):
+            counters.setdefault("toast", 0)
+            counters["toast"] += 1
+            widget_id = f"toast_{counters['toast']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "toast",
+                "toast_id": statement.id,
+                "title": statement.title,
+                "description": statement.description,
+                "variant": statement.variant,
+                "duration": statement.duration,
+                "action_label": statement.action_label,
+                "action": statement.action,
+                "position": statement.position,
+                "trigger": statement.trigger,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, ChatThread):
+            counters["chat_thread"] += 1
+            widget_id = f"chat_thread_{counters['chat_thread']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "chat_thread",
+                "thread_id": statement.id,
+                "messages_binding": statement.messages_binding,
+                "group_by": statement.group_by,
+                "show_timestamps": statement.show_timestamps,
+                "show_avatar": statement.show_avatar,
+                "reverse_order": statement.reverse_order,
+                "auto_scroll": statement.auto_scroll,
+                "max_height": statement.max_height,
+                "streaming_enabled": statement.streaming_enabled,
+                "streaming_source": statement.streaming_source,
+                "show_role_labels": statement.show_role_labels,
+                "show_token_count": statement.show_token_count,
+                "enable_copy": statement.enable_copy,
+                "enable_regenerate": statement.enable_regenerate,
+                "variant": statement.variant,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, AgentPanel):
+            counters["agent_panel"] += 1
+            widget_id = f"agent_panel_{counters['agent_panel']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "agent_panel",
+                "panel_id": statement.id,
+                "agent_binding": statement.agent_binding,
+                "metrics_binding": statement.metrics_binding,
+                "show_status": statement.show_status,
+                "show_metrics": statement.show_metrics,
+                "show_profile": statement.show_profile,
+                "show_limits": statement.show_limits,
+                "show_last_error": statement.show_last_error,
+                "show_tools": statement.show_tools,
+                "show_tokens": statement.show_tokens,
+                "show_cost": statement.show_cost,
+                "show_latency": statement.show_latency,
+                "show_model": statement.show_model,
+                "variant": statement.variant,
+                "compact": statement.compact,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, ToolCallView):
+            counters["tool_call_view"] += 1
+            widget_id = f"tool_call_view_{counters['tool_call_view']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "tool_call_view",
+                "view_id": statement.id,
+                "calls_binding": statement.calls_binding,
+                "show_inputs": statement.show_inputs,
+                "show_outputs": statement.show_outputs,
+                "show_timing": statement.show_timing,
+                "show_status": statement.show_status,
+                "show_raw_payload": statement.show_raw_payload,
+                "filter_tool_name": statement.filter_tool_name,
+                "filter_status": statement.filter_status,
+                "variant": statement.variant,
+                "expandable": statement.expandable,
+                "max_height": statement.max_height,
+                "enable_retry": statement.enable_retry,
+                "enable_copy": statement.enable_copy,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, LogView):
+            counters["log_view"] += 1
+            widget_id = f"log_view_{counters['log_view']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "log_view",
+                "view_id": statement.id,
+                "logs_binding": statement.logs_binding,
+                "level_filter": statement.level_filter,
+                "search_enabled": statement.search_enabled,
+                "search_placeholder": statement.search_placeholder,
+                "show_timestamp": statement.show_timestamp,
+                "show_level": statement.show_level,
+                "show_metadata": statement.show_metadata,
+                "show_source": statement.show_source,
+                "auto_scroll": statement.auto_scroll,
+                "auto_refresh": statement.auto_refresh,
+                "refresh_interval": statement.refresh_interval,
+                "max_entries": statement.max_entries,
+                "variant": statement.variant,
+                "max_height": statement.max_height,
+                "virtualized": statement.virtualized,
+                "enable_copy": statement.enable_copy,
+                "enable_download": statement.enable_download,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, EvaluationResult):
+            counters["evaluation_result"] += 1
+            widget_id = f"evaluation_result_{counters['evaluation_result']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "evaluation_result",
+                "result_id": statement.id,
+                "eval_run_binding": statement.eval_run_binding,
+                "show_summary": statement.show_summary,
+                "show_histograms": statement.show_histograms,
+                "show_error_table": statement.show_error_table,
+                "show_metadata": statement.show_metadata,
+                "metrics_to_show": statement.metrics_to_show,
+                "primary_metric": statement.primary_metric,
+                "filter_metric": statement.filter_metric,
+                "filter_min_score": statement.filter_min_score,
+                "filter_max_score": statement.filter_max_score,
+                "filter_status": statement.filter_status,
+                "show_error_distribution": statement.show_error_distribution,
+                "show_error_examples": statement.show_error_examples,
+                "max_error_examples": statement.max_error_examples,
+                "variant": statement.variant,
+                "comparison_run_binding": statement.comparison_run_binding,
+            }
+            widgets.append(widget_config)
+        elif isinstance(statement, DiffView):
+            counters["diff_view"] += 1
+            widget_id = f"diff_view_{counters['diff_view']}"
+            widget_config = {
+                "id": widget_id,
+                "type": "diff_view",
+                "view_id": statement.id,
+                "left_binding": statement.left_binding,
+                "right_binding": statement.right_binding,
+                "mode": statement.mode,
+                "content_type": statement.content_type,
+                "language": statement.language,
+                "ignore_whitespace": statement.ignore_whitespace,
+                "ignore_case": statement.ignore_case,
+                "context_lines": statement.context_lines,
+                "show_line_numbers": statement.show_line_numbers,
+                "highlight_inline_changes": statement.highlight_inline_changes,
+                "show_legend": statement.show_legend,
+                "max_height": statement.max_height,
+                "enable_copy": statement.enable_copy,
+                "enable_download": statement.enable_download,
+            }
+            widgets.append(widget_config)
 
     return widgets, preview_map
 
@@ -843,6 +1180,105 @@ def serialize_card_footer(footer: Any) -> Dict[str, Any]:
     return result
 
 
+# =============================================================================
+# Chrome Component Serialization
+# =============================================================================
+
+def serialize_nav_item(item: Any) -> Dict[str, Any]:
+    """Serialize NavItem to dict with recursive children."""
+    result = {
+        "id": item.id,
+        "label": item.label,
+    }
+    if hasattr(item, 'route') and item.route:
+        result['route'] = item.route
+    if hasattr(item, 'icon') and item.icon:
+        result['icon'] = item.icon
+    if hasattr(item, 'badge') and item.badge:
+        result['badge'] = item.badge
+    if hasattr(item, 'action') and item.action:
+        result['action'] = item.action
+    if hasattr(item, 'condition') and item.condition:
+        result['condition'] = item.condition
+    if hasattr(item, 'children') and item.children:
+        result['children'] = [serialize_nav_item(child) for child in item.children]
+    return result
+
+
+def serialize_nav_section(section: Any) -> Dict[str, Any]:
+    """Serialize NavSection to dict."""
+    result = {
+        "id": section.id,
+        "label": section.label,
+        "items": section.items,
+        "collapsible": section.collapsible,
+        "collapsed_by_default": section.collapsed_by_default,
+    }
+    return result
+
+
+def serialize_navbar_action(action: Any) -> Dict[str, Any]:
+    """Serialize NavbarAction to dict with menu items."""
+    result = {
+        "id": action.id,
+        "type": action.type,
+    }
+    if hasattr(action, 'label') and action.label:
+        result['label'] = action.label
+    if hasattr(action, 'icon') and action.icon:
+        result['icon'] = action.icon
+    if hasattr(action, 'action') and action.action:
+        result['action'] = action.action
+    if hasattr(action, 'menu_items') and action.menu_items:
+        result['menu_items'] = [serialize_nav_item(item) for item in action.menu_items]
+    if hasattr(action, 'condition') and action.condition:
+        result['condition'] = action.condition
+    return result
+
+
+def serialize_breadcrumb_item(item: Any) -> Dict[str, Any]:
+    """Serialize BreadcrumbItem to dict."""
+    result = {
+        "label": item.label,
+    }
+    if hasattr(item, 'route') and item.route:
+        result['route'] = item.route
+    return result
+
+
+def serialize_command_source(source: Any) -> Dict[str, Any]:
+    """Serialize CommandSource to dict."""
+    result = {
+        "type": source.type,
+    }
+    if hasattr(source, 'filter') and source.filter:
+        result['filter'] = source.filter
+    if hasattr(source, 'custom_items') and source.custom_items:
+        result['custom_items'] = source.custom_items
+    # API-backed source fields
+    if hasattr(source, 'id') and source.id:
+        result['id'] = source.id
+    if hasattr(source, 'endpoint') and source.endpoint:
+        result['endpoint'] = source.endpoint
+    if hasattr(source, 'label') and source.label:
+        result['label'] = source.label
+    return result
+
+
+def serialize_modal_action(action: Any) -> Dict[str, Any]:
+    """Serialize ModalAction to dict."""
+    result = {
+        "label": action.label,
+    }
+    if hasattr(action, 'action') and action.action:
+        result['action'] = action.action
+    if hasattr(action, 'variant') and action.variant:
+        result['variant'] = action.variant
+    if hasattr(action, 'close'):
+        result['close'] = action.close
+    return result
+
+
 def write_app_tsx(src_dir: Path, page_builds: List[ReactPage]) -> None:
     """
     Generate App.tsx with React Router configuration.
@@ -917,6 +1353,18 @@ def write_page_component(pages_dir: Path, build: ReactPage) -> None:
         import { TimelineWidget } from "../components/TimelineWidget";
         import { AvatarGroupWidget } from "../components/AvatarGroupWidget";
         import { DataChartWidget } from "../components/DataChartWidget";
+        import Sidebar from "../components/Sidebar";
+        import Navbar from "../components/Navbar";
+        import Breadcrumbs from "../components/Breadcrumbs";
+        import CommandPalette from "../components/CommandPalette";
+        import Modal from "../components/Modal";
+        import Toast from "../components/Toast";
+        import ChatThread from "../components/ChatThread";
+        import AgentPanel from "../components/AgentPanel";
+        import ToolCallView from "../components/ToolCallView";
+        import LogView from "../components/LogView";
+        import EvaluationResult from "../components/EvaluationResult";
+        import DiffView from "../components/DiffView";
         import { NAV_LINKS } from "../lib/navigation";
         import { PageDefinition, resolveWidgetData, usePageData } from "../lib/n3Client";
         import { useRealtimePage } from "../lib/realtime";
@@ -953,6 +1401,61 @@ def write_page_component(pages_dir: Path, build: ReactPage) -> None:
               return <AvatarGroupWidget key={widget.id} widget={widget} data={widgetData} />;
             case "data_chart":
               return <DataChartWidget key={widget.id} widget={widget} data={widgetData} />;
+            
+            // Navigation & Chrome components
+            case "sidebar":
+              return <Sidebar key={widget.id} {...widget} />;
+            case "navbar":
+              return <Navbar key={widget.id} {...widget} />;
+            case "breadcrumbs":
+              return <Breadcrumbs key={widget.id} {...widget} />;
+            case "command_palette":
+              return <CommandPalette key={widget.id} {...widget} />;
+            
+            // Feedback components
+            case "modal":
+              return (
+                <Modal
+                  key={widget.id}
+                  id={widget.modal_id}
+                  title={widget.title}
+                  description={widget.description}
+                  content={widget.content?.map((child: any) => renderWidget(child, data)) || []}
+                  actions={widget.actions}
+                  size={widget.size}
+                  dismissible={widget.dismissible}
+                  trigger={widget.trigger}
+                />
+              );
+            case "toast":
+              return (
+                <Toast
+                  key={widget.id}
+                  id={widget.toast_id}
+                  title={widget.title}
+                  description={widget.description}
+                  variant={widget.variant}
+                  duration={widget.duration}
+                  action_label={widget.action_label}
+                  action={widget.action}
+                  position={widget.position}
+                  trigger={widget.trigger}
+                />
+              );
+            
+            // AI Semantic components
+            case "chat_thread":
+              return <ChatThread key={widget.id} {...widget} data={widgetData} />;
+            case "agent_panel":
+              return <AgentPanel key={widget.id} {...widget} data={widgetData} />;
+            case "tool_call_view":
+              return <ToolCallView key={widget.id} {...widget} data={widgetData} />;
+            case "log_view":
+              return <LogView key={widget.id} {...widget} data={widgetData} />;
+            case "evaluation_result":
+              return <EvaluationResult key={widget.id} {...widget} data={widgetData} />;
+            case "diff_view":
+              return <DiffView key={widget.id} {...widget} data={widgetData} />;
             
             case "stack":
               return (

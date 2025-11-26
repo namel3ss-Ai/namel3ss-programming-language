@@ -31,14 +31,14 @@ from namel3ss.ast.pages import (
 def test_parse_show_data_table_basic():
     """Test parsing basic data table statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
     - name: text
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_table "Users" from dataset test_data:
     columns:
@@ -47,11 +47,12 @@ page test:
       - field: name
         header: "Name"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     page = app.pages[0]
-    statement = page.statements[0]
+    statement = page.body[0]
     
     assert isinstance(statement, ShowDataTable)
     assert statement.title == "Users"
@@ -66,14 +67,14 @@ page test:
 def test_parse_show_data_table_with_toolbar():
     """Test parsing data table with toolbar configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
     - name: text
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_table "Users" from dataset test_data:
     columns:
@@ -100,10 +101,11 @@ page test:
           action: bulk_delete
           icon: trash
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataTable)
     assert statement.toolbar is not None
@@ -119,13 +121,13 @@ page test:
 def test_parse_show_data_table_with_row_actions():
     """Test parsing data table with row actions."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_table "Items" from dataset test_data:
     columns:
@@ -144,10 +146,11 @@ page test:
         action: delete_item
         icon: trash
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataTable)
     assert len(statement.row_actions) == 3
@@ -158,13 +161,13 @@ page test:
 def test_parse_show_data_table_with_pagination():
     """Test parsing data table with pagination settings."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_table "Items" from dataset test_data:
     columns:
@@ -178,10 +181,11 @@ page test:
       title: "No data"
       message: "No records found"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataTable)
     assert statement.rows_per_page == 25
@@ -197,24 +201,25 @@ page test:
 def test_parse_show_data_list_basic():
     """Test parsing basic data list statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
     - name: text
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_list "Activities" from dataset test_data:
     item:
       title:
         field: name
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataList)
     assert statement.title == "Activities"
@@ -227,13 +232,13 @@ page test:
 def test_parse_show_data_list_with_avatar():
     """Test parsing data list with avatar configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_list "Users" from dataset test_data:
     item:
@@ -248,10 +253,11 @@ page test:
       subtitle:
         field: role
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataList)
     assert statement.item_config.avatar is not None
@@ -263,13 +269,13 @@ page test:
 def test_parse_show_data_list_with_metadata():
     """Test parsing data list with metadata."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_list "Events" from dataset test_data:
     item:
@@ -285,10 +291,11 @@ page test:
         - text: "{{ attendee_count }} attendees"
           icon: users
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataList)
     assert len(statement.item_config.metadata) == 3
@@ -299,13 +306,13 @@ page test:
 def test_parse_show_data_list_with_badge_and_actions():
     """Test parsing data list with badge and actions."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_list "Tasks" from dataset test_data:
     item:
@@ -326,10 +333,11 @@ page test:
           action: view_task
           icon: eye
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataList)
     assert statement.item_config.badge is not None
@@ -345,13 +353,13 @@ page test:
 def test_parse_show_stat_summary_basic():
     """Test parsing basic stat summary statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show stat_summary from dataset test_data:
     label: "Total Users"
@@ -359,10 +367,11 @@ page test:
       field: total_count
       format: number
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowStatSummary)
     assert statement.label == "Total Users"
@@ -373,13 +382,13 @@ page test:
 def test_parse_show_stat_summary_with_delta():
     """Test parsing stat summary with delta indicator."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show stat_summary from dataset test_data:
     title: "Revenue"
@@ -397,10 +406,11 @@ page test:
       field: trend_direction
       up_is_good: true
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowStatSummary)
     assert statement.title == "Revenue"
@@ -414,13 +424,13 @@ page test:
 def test_parse_show_stat_summary_with_sparkline():
     """Test parsing stat summary with sparkline."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show stat_summary from dataset test_data:
     label: "Page Views"
@@ -435,10 +445,11 @@ page test:
     
     comparison: "vs last month"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowStatSummary)
     assert statement.sparkline is not None
@@ -456,13 +467,13 @@ page test:
 def test_parse_show_timeline_basic():
     """Test parsing basic timeline statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show timeline "Activity Log" from dataset test_data:
     items:
@@ -470,10 +481,11 @@ page test:
         title:
           field: event_name
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowTimeline)
     assert statement.title == "Activity Log"
@@ -485,13 +497,13 @@ page test:
 def test_parse_show_timeline_with_icons_and_status():
     """Test parsing timeline with icons and status."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show timeline "System Events" from dataset test_data:
     items:
@@ -503,10 +515,11 @@ page test:
         description:
           field: event_details
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowTimeline)
     assert statement.items[0].icon == "check"
@@ -517,13 +530,13 @@ page test:
 def test_parse_show_timeline_with_grouping():
     """Test parsing timeline with date grouping."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show timeline "Changelog" from dataset test_data:
     group_by_date: true
@@ -538,10 +551,11 @@ page test:
       title: "No events"
       message: "No timeline events to display"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowTimeline)
     assert statement.group_by_date is True
@@ -556,22 +570,23 @@ page test:
 def test_parse_show_avatar_group_basic():
     """Test parsing basic avatar group statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show avatar_group "Team Members" from dataset test_data:
     items:
       - name_field: full_name
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowAvatarGroup)
     assert statement.title == "Team Members"
@@ -583,13 +598,13 @@ page test:
 def test_parse_show_avatar_group_with_images_and_status():
     """Test parsing avatar group with images and status."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show avatar_group "Online Users" from dataset test_data:
     items:
@@ -602,10 +617,11 @@ page test:
     size: lg
     show_status: true
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowAvatarGroup)
     assert statement.items[0].image_field == "avatar_url"
@@ -624,13 +640,13 @@ page test:
 def test_parse_show_data_chart_basic():
     """Test parsing basic data chart statement."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_chart "Sales Chart" from dataset test_data:
     chart:
@@ -641,10 +657,11 @@ page test:
           label: "Sales"
           color: "#3b82f6"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataChart)
     assert statement.title == "Sales Chart"
@@ -658,13 +675,13 @@ page test:
 def test_parse_show_data_chart_bar():
     """Test parsing bar chart configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_chart "Revenue by Product" from dataset test_data:
     chart:
@@ -683,10 +700,11 @@ page test:
           label: "Q2"
           color: "#3b82f6"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataChart)
     assert statement.chart_config.type == "bar"
@@ -699,13 +717,13 @@ page test:
 def test_parse_show_data_chart_pie():
     """Test parsing pie chart configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_chart "Market Share" from dataset test_data:
     chart:
@@ -718,10 +736,11 @@ page test:
       icon: chart
       title: "No data available"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataChart)
     assert statement.chart_config.type == "pie"
@@ -731,13 +750,13 @@ page test:
 def test_parse_show_data_chart_multi_series():
     """Test parsing chart with multiple series."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_chart "Performance Metrics" from dataset test_data:
     chart:
@@ -757,10 +776,11 @@ page test:
           label: "Disk"
           color: "#10b981"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
-    statement = app.pages[0].statements[0]
+    statement = app.pages[0].body[0]
     
     assert isinstance(statement, ShowDataChart)
     assert statement.chart_config.type == "area"
@@ -777,13 +797,13 @@ page test:
 def test_parse_data_table_missing_columns():
     """Test that data table requires columns."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_table "Items" from dataset test_data:
     toolbar:
@@ -798,13 +818,13 @@ page test:
 def test_parse_data_list_missing_item():
     """Test that data list requires item configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_list "Items" from dataset test_data:
     empty_state:
@@ -819,13 +839,13 @@ page test:
 def test_parse_stat_summary_missing_value():
     """Test that stat summary requires value configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show stat_summary from dataset test_data:
     label: "Total"
@@ -841,13 +861,13 @@ page test:
 def test_parse_data_chart_missing_series():
     """Test that data chart requires series configuration."""
     source = '''
-dataset test_data:
+app \"Test App\"
+
+dataset "test_data" from inline:
   fields:
     - id: int
 
-page test:
-  path: "/test"
-  title: "Test"
+page "Test" at "/test"
   
   show data_chart "Chart" from dataset test_data:
     chart:

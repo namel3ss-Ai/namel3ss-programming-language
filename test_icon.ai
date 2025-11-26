@@ -1,0 +1,22 @@
+app "Sample Application" connects to postgres "SAMPLE_DB".
+
+# This is a sample .ai file to test the icon display
+
+page "Dashboard" at "/":
+  # Test feedback components with the new icon
+  modal "welcome":
+    title: "Welcome to Namel3ss!"
+    description: "This .ai file should display the namel3ss icon"
+    size: md
+    actions:
+      action "Get Started" variant "primary" action "start"
+      action "Close" variant "ghost"
+  
+  toast "info":
+    title: "Icon Test"
+    description: "Check the file explorer to see the icon for this .ai file"
+    variant: info
+    duration: 3000
+  
+  # Sample content
+  show text "Testing the new .ai file extension with custom icon"

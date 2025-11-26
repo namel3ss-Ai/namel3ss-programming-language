@@ -1,0 +1,172 @@
+# Chrome Components Demo - Navigation & App Chrome Features
+# This example demonstrates Sidebar, Navbar, Breadcrumbs, and Command Palette
+
+app "Chrome Demo"
+
+# Dashboard page with full chrome
+page "Dashboard" at "/":
+    sidebar:
+        item "Dashboard" at "/" icon "📊"
+        item "Analytics" at "/analytics" icon "📈"
+        item "Reports" at "/reports" icon "📋":
+            item "Sales Report" at "/reports/sales"
+            item "Revenue Report" at "/reports/revenue"
+            item "Custom Report" at "/reports/custom"
+        
+        section "Settings":
+            item "Profile" at "/profile" icon "👤"
+            item "Security" at "/security" icon "🔒"
+            item "Preferences" at "/preferences" icon "⚙️"
+        
+        width: normal
+        position: left
+        collapsible: true
+    
+    navbar:
+        logo: "/assets/logo.png"
+        title: "Chrome Demo App"
+        action "Theme" icon "🎨" type "toggle"
+        action "Notifications" icon "🔔" type "button" badge {count: 3}
+        action "User" icon "👤" type "menu":
+            item "Profile" at "/profile"
+            item "Settings" at "/preferences"
+            item "Logout" action "logout"
+        position: top
+        sticky: true
+    
+    breadcrumbs:
+        item "Home" at "/"
+    
+    command palette:
+        shortcut: "Ctrl+K"
+        source "documents" from "/api/search/documents" label "Search Documents"
+        source "users" from "/api/search/users" label "Find Users"
+        placeholder: "Search or jump to..."
+        max results: 10
+    
+    show text "Welcome to the Dashboard!"
+    show text "This demo showcases all navigation and chrome components."
+
+# Analytics page
+page "Analytics" at "/analytics":
+    sidebar:
+        item "Dashboard" at "/" icon "📊"
+        item "Analytics" at "/analytics" icon "📈"
+        item "Reports" at "/reports" icon "📋":
+            item "Sales Report" at "/reports/sales"
+            item "Revenue Report" at "/reports/revenue"
+            item "Custom Report" at "/reports/custom"
+        
+        section "Settings":
+            item "Profile" at "/profile" icon "👤"
+            item "Security" at "/security" icon "🔒"
+            item "Preferences" at "/preferences" icon "⚙️"
+    
+    navbar:
+        logo: "/assets/logo.png"
+        title: "Chrome Demo App"
+        action "Theme" icon "🎨" type "toggle"
+        action "User" icon "👤" type "menu":
+            item "Profile" at "/profile"
+            item "Logout" action "logout"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Analytics"
+    
+    command palette:
+        shortcut: "Ctrl+K"
+        placeholder: "Search..."
+    
+    show text "Analytics Dashboard"
+    show text "View your data insights here."
+
+# Reports overview page
+page "Reports" at "/reports":
+    sidebar:
+        item "Dashboard" at "/" icon "📊"
+        item "Analytics" at "/analytics" icon "📈"
+        item "Reports" at "/reports" icon "📋":
+            item "Sales Report" at "/reports/sales"
+            item "Revenue Report" at "/reports/revenue"
+            item "Custom Report" at "/reports/custom"
+    
+    navbar:
+        title: "Reports"
+        action "Export" icon "📥" type "button"
+        action "Share" icon "🔗" type "button"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Reports"
+    
+    show text "Reports Overview"
+    show text "Select a report from the sidebar."
+
+# Sales report with auto-derived breadcrumbs
+page "Sales Report" at "/reports/sales":
+    sidebar:
+        item "Dashboard" at "/" icon "📊"
+        item "Reports" at "/reports" icon "📋":
+            item "Sales Report" at "/reports/sales"
+            item "Revenue Report" at "/reports/revenue"
+    
+    navbar:
+        title: "Sales Report"
+        action "Export" icon "📥" type "button"
+        action "Refresh" icon "🔄" type "button"
+    
+    breadcrumbs:
+        auto_derive: true
+        separator: "/"
+    
+    show text "Sales Report - Q4 2025"
+    show text "Detailed sales metrics and analysis."
+
+# Profile page
+page "Profile" at "/profile":
+    sidebar:
+        item "Dashboard" at "/" icon "📊"
+        
+        section "Settings":
+            item "Profile" at "/profile" icon "👤"
+            item "Security" at "/security" icon "🔒"
+            item "Preferences" at "/preferences" icon "⚙️"
+    
+    navbar:
+        title: "User Profile"
+        action "Edit" icon "✏️" type "button"
+        action "Save" icon "💾" type "button"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Profile"
+    
+    command palette:
+        shortcut: "Ctrl+K"
+        placeholder: "Quick actions..."
+    
+    show text "User Profile"
+    show text "Manage your account settings."
+
+# Security settings page
+page "Security" at "/security":
+    sidebar:
+        section "Settings":
+            item "Profile" at "/profile" icon "👤"
+            item "Security" at "/security" icon "🔒"
+            item "Preferences" at "/preferences" icon "⚙️"
+        
+        width: wide
+    
+    navbar:
+        title: "Security Settings"
+        action "2FA" icon "🔐" type "toggle"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Settings"
+        item "Security"
+    
+    show text "Security Settings"
+    show text "Configure your security preferences."

@@ -4,7 +4,7 @@
   "description": "AI-powered development assistant for Namel3ss programming language",
   "version": "1.0.0",
   "publisher": "namel3ss",
-  "icon": "images/logo.png",
+  "icon": "images/namel3ss_128_icon.png",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -33,8 +33,12 @@
       {
         "id": "namel3ss",
         "aliases": ["Namel3ss", "N3"],
-        "extensions": [".n3"],
-        "configuration": "./language-configuration.json"
+        "extensions": [".n3", ".ai"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/namel3ss_128_icon.svg",
+          "dark": "./images/namel3ss_128_icon.svg"
+        }
       }
     ],
     "grammars": [

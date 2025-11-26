@@ -1,0 +1,61 @@
+# Git attributes for Namel3ss language files
+# Ensures consistent handling across platforms and tools
+
+# Namel3ss language files - treat as text with specific language
+*.n3 text linguist-language=Namel3ss linguist-detectable=true
+*.ai text linguist-language=Namel3ss linguist-detectable=true
+
+# Python files
+*.py text linguist-language=Python
+
+# JavaScript/TypeScript files
+*.js text linguist-language=JavaScript
+*.ts text linguist-language=TypeScript
+*.jsx text linguist-language=JavaScript
+*.tsx text linguist-language=TypeScript
+
+# JSON files
+*.json text
+
+# YAML files
+*.yml text
+*.yaml text
+
+# Markdown files
+*.md text
+
+# Shell scripts
+*.sh text eol=lf
+
+# Python bytecode and cache
+*.pyc binary
+*.pyo binary
+__pycache__/ binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+
+# Archives
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+
+# Documentation
+*.pdf binary
+
+# Force LF line endings on checkout for these files
+*.n3 eol=lf
+*.ai eol=lf
+*.py eol=lf
+*.js eol=lf
+*.ts eol=lf
+*.json eol=lf
+*.yml eol=lf
+*.yaml eol=lf
+*.sh eol=lf

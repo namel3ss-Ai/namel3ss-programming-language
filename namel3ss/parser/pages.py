@@ -359,6 +359,36 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
             return self._parse_layout_tabs(line, parent_indent)
         if stripped.startswith('layout accordion'):
             return self._parse_layout_accordion(line, parent_indent)
+        
+        # Navigation & Chrome Components
+        if stripped.startswith('sidebar'):
+            return self._parse_sidebar(line, parent_indent)
+        if stripped.startswith('navbar'):
+            return self._parse_navbar(line, parent_indent)
+        if stripped.startswith('breadcrumbs'):
+            return self._parse_breadcrumbs(line, parent_indent)
+        if stripped.startswith('command palette'):
+            return self._parse_command_palette(line, parent_indent)
+        
+        # Feedback Components
+        if stripped.startswith('modal '):
+            return self.parse_modal(line)
+        if stripped.startswith('toast '):
+            return self.parse_toast(line)
+        
+        # AI Semantic Components
+        if stripped.startswith('chat_thread '):
+            return self.parse_chat_thread(line)
+        if stripped.startswith('agent_panel '):
+            return self.parse_agent_panel(line)
+        if stripped.startswith('tool_call_view '):
+            return self.parse_tool_call_view(line)
+        if stripped.startswith('log_view '):
+            return self.parse_log_view(line)
+        if stripped.startswith('evaluation_result '):
+            return self.parse_evaluation_result(line)
+        if stripped.startswith('diff_view '):
+            return self.parse_diff_view(line)
             
         # ML prediction
         if stripped.startswith('predict '):

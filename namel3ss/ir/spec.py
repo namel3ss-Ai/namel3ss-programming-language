@@ -504,6 +504,90 @@ class UpdateChannelSpec:
 
 
 # =============================================================================
+# Form IR Specifications
+# =============================================================================
+
+@dataclass
+class IRFormField:
+    """
+    Runtime-agnostic form field specification.
+    
+    Represents a single form field with validation, bindings, and
+    conditional rendering logic.
+    """
+    name: str
+    component: str  # Field type: text_input, select, textarea, checkbox, etc.
+    label: Optional[str] = None
+    placeholder: Optional[str] = None
+    help_text: Optional[str] = None
+    required: bool = False
+    
+    # Initial/default values (as expressions that runtime can evaluate)
+    default_value: Optional[str] = None  # Expression string
+    initial_value: Optional[str] = None  # Expression string
+    
+    # Validation rules
+    validation: Dict[str, Any] = field(default_factory=dict)  # Contains min_length, max_length, pattern, min_value, max_value, step
+    
+    # Options for select/multiselect/radio_group
+    options_binding: Optional[str] = None  # Bind to dataset or provider
+    static_options: List[Dict[str, Any]] = field(default_factory=list)  # Fallback static options
+    
+    # Conditional rendering (as expression strings)
+    disabled_expr: Optional[str] = None
+    visible_expr: Optional[str] = None
+    
+    # Component-specific configuration
+    component_config: Dict[str, Any] = field(default_factory=dict)  # multiple, accept, max_file_size, etc.
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRForm:
+    """
+    Runtime-agnostic form specification.
+    
+    Captures complete form definition with fields, actions, bindings,
+    and validation rules for any runtime to implement.
+    """
+    name: str  # Derived from title or context
+    title: str
+    fields: List[IRFormField]
+    
+    # Layout
+    layout_mode: str = "vertical"  # "vertical" | "horizontal" | "inline"
+    
+    # Action integration
+    submit_action: Optional[str] = None  # Action name/reference
+    submit_action_type: str = "custom"  # "custom" | "create" | "update" | "delete"
+    submit_endpoint: Optional[str] = None  # HTTP endpoint if applicable
+    
+    # Data bindings
+    initial_values_binding: Optional[str] = None  # Dataset/query reference
+    initial_values_expr: Optional[str] = None  # Expression for loading data
+    
+    # Form-level configuration
+    validation_mode: str = "on_blur"  # "on_blur" | "on_change" | "on_submit"
+    submit_button_text: str = "Submit"
+    reset_button: bool = False
+    
+    # User feedback
+    loading_text: Optional[str] = None
+    success_message: Optional[str] = None
+    error_message: Optional[str] = None
+    
+    # Validation schema (generated from fields)
+    validation_schema: Dict[str, Any] = field(default_factory=dict)
+    
+    # Security
+    requires_auth: bool = False
+    required_permission_level: Optional[str] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
 # Parallel and Distributed Execution IR Specifications
 # =============================================================================
 
@@ -1174,6 +1258,429 @@ class IRAccordionLayout:
     
     style: Dict[str, Any] = field(default_factory=dict)
     layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
+# NAVIGATION & APP CHROME IR SPECIFICATIONS
+# =============================================================================
+
+
+@dataclass
+class IRNavItem:
+    """IR specification for navigation item."""
+    id: str
+    label: str
+    route: Optional[str] = None
+    icon: Optional[str] = None
+    badge: Optional[Dict[str, Any]] = None
+    action: Optional[str] = None  # Action ID to trigger
+    condition: Optional[str] = None  # Conditional visibility expression
+    children: List['IRNavItem'] = field(default_factory=list)  # Nested navigation
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRNavSection:
+    """IR specification for navigation section grouping."""
+    id: str
+    label: str
+    items: List[str] = field(default_factory=list)  # Nav item IDs
+    collapsible: bool = False
+    collapsed_by_default: bool = False
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRSidebar:
+    """
+    IR specification for sidebar navigation.
+    
+    Runtime-agnostic representation of sidebar with:
+    - Hierarchical navigation items
+    - Section grouping
+    - Collapsible behavior
+    - Icon and badge support
+    """
+    items: List[IRNavItem] = field(default_factory=list)
+    sections: List[IRNavSection] = field(default_factory=list)
+    collapsible: bool = False
+    collapsed_by_default: bool = False
+    width: Optional[str] = None  # "narrow" | "normal" | "wide" | px/rem value
+    position: str = "left"  # "left" | "right"
+    
+    # Validate routes exist
+    validated_routes: List[str] = field(default_factory=list)  # Routes that were validated
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRNavbarAction:
+    """IR specification for navbar action button."""
+    id: str
+    label: Optional[str] = None
+    icon: Optional[str] = None
+    type: str = "button"  # "button" | "menu" | "toggle"
+    action: Optional[str] = None  # Action ID to trigger
+    menu_items: List[IRNavItem] = field(default_factory=list)  # For type="menu"
+    condition: Optional[str] = None  # Conditional visibility
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRNavbar:
+    """
+    IR specification for application navbar/topbar.
+    
+    Runtime-agnostic representation of top-level navigation with:
+    - Branding (logo, title)
+    - Global actions (user menu, theme toggle, etc.)
+    - Responsive behavior
+    """
+    logo: Optional[str] = None  # Asset reference
+    title: Optional[str] = None  # App title or expression
+    actions: List[IRNavbarAction] = field(default_factory=list)
+    position: str = "top"  # "top" | "bottom"
+    sticky: bool = True
+    
+    # Validate actions exist
+    validated_actions: List[str] = field(default_factory=list)  # Actions that were validated
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRBreadcrumbItem:
+    """IR specification for single breadcrumb item."""
+    label: str  # Can be expression
+    route: Optional[str] = None  # If None, renders as text
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRBreadcrumbs:
+    """
+    IR specification for breadcrumb navigation.
+    
+    Runtime-agnostic representation of breadcrumb trail with:
+    - Explicit items
+    - Auto-derivation from routing
+    """
+    items: List[IRBreadcrumbItem] = field(default_factory=list)
+    auto_derive: bool = False  # Auto-generate from route hierarchy
+    separator: str = "/"
+    
+    # For auto-derive, this is populated at IR build time
+    derived_from_route: Optional[str] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRCommandSource:
+    """IR specification for command palette source."""
+    type: str = "routes"  # "routes" | "actions" | "custom" | "api"
+    filter: Optional[str] = None  # Filter expression
+    custom_items: List[Dict[str, Any]] = field(default_factory=list)
+    # API-backed source fields
+    id: Optional[str] = None  # Unique identifier
+    endpoint: Optional[str] = None  # API endpoint URL
+    label: Optional[str] = None  # Display label
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRCommandPalette:
+    """
+    IR specification for command palette.
+    
+    Runtime-agnostic representation of power-user interface with:
+    - Keyboard shortcut activation
+    - Command search and filtering
+    - Integration with routes and actions registry
+    """
+    shortcut: str = "ctrl+k"  # Keyboard shortcut
+    sources: List[IRCommandSource] = field(default_factory=list)
+    placeholder: str = "Search commands..."
+    max_results: int = 10
+    
+    # Populated at IR build time from routes and actions
+    available_routes: List[Dict[str, str]] = field(default_factory=list)  # [{label, path}]
+    available_actions: List[Dict[str, str]] = field(default_factory=list)  # [{label, id}]
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# ============================================================
+# FEEDBACK COMPONENTS IR (Modal, Toast)
+# ============================================================
+
+
+@dataclass
+class IRModalAction:
+    """IR specification for modal action button."""
+    label: str
+    action: Optional[str] = None  # Action name to trigger
+    variant: str = "default"  # "default" | "primary" | "destructive" | "ghost" | "link"
+    close: bool = True  # Whether clicking closes modal
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRModal:
+    """
+    IR specification for modal dialog.
+    
+    Runtime-agnostic representation of modal overlay with:
+    - Configurable size and dismissibility
+    - Nested content (any statements)
+    - Action buttons with variants
+    - Trigger integration with actions
+    """
+    id: str  # Unique identifier
+    title: str
+    description: Optional[str] = None
+    content: List[Any] = field(default_factory=list)  # Nested IR components
+    actions: List[IRModalAction] = field(default_factory=list)
+    size: str = "md"  # "sm" | "md" | "lg" | "xl" | "full"
+    dismissible: bool = True
+    trigger: Optional[str] = None  # Action name that opens modal
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRToast:
+    """
+    IR specification for toast notification.
+    
+    Runtime-agnostic representation of temporary notification with:
+    - Variant styling (success, error, warning, info)
+    - Auto-dismiss timing
+    - Optional action button
+    - Flexible positioning
+    """
+    id: str  # Unique identifier
+    title: str
+    description: Optional[str] = None
+    variant: str = "default"  # "default" | "success" | "error" | "warning" | "info"
+    duration: int = 3000  # ms (0 = manual dismiss only)
+    action_label: Optional[str] = None
+    action: Optional[str] = None
+    position: str = "top-right"  # "top" | "top-right" | "top-left" | "bottom" | "bottom-right" | "bottom-left"
+    trigger: Optional[str] = None  # Action name that shows toast
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
+# AI Semantic Components IR
+# =============================================================================
+
+@dataclass
+class IRChatThread:
+    """
+    IR specification for multi-message AI conversation display.
+    
+    Runtime-agnostic representation capturing:
+    - Message list binding to real conversation data
+    - Grouping and display preferences
+    - Streaming configuration
+    - Interaction capabilities
+    """
+    id: str
+    messages_binding: str  # e.g., "conversation.messages", "agent.chat_history"
+    group_by: str = "role"  # "role" | "speaker" | "timestamp" | "none"
+    show_timestamps: bool = True
+    show_avatar: bool = True
+    reverse_order: bool = False
+    auto_scroll: bool = True
+    max_height: Optional[str] = None
+    # Streaming
+    streaming_enabled: bool = False
+    streaming_source: Optional[str] = None
+    # Display
+    show_role_labels: bool = True
+    show_token_count: bool = False
+    enable_copy: bool = True
+    enable_regenerate: bool = False
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRAgentPanel:
+    """
+    IR specification for agent state and metrics display.
+    
+    Runtime-agnostic representation of agent information including:
+    - Agent identification and status
+    - Performance metrics (tokens, cost, latency)
+    - Environment and configuration
+    - Tool availability
+    """
+    id: str
+    agent_binding: str  # e.g., "current_agent", "agent.researcher"
+    metrics_binding: Optional[str] = None
+    # Display flags
+    show_status: bool = True
+    show_metrics: bool = True
+    show_profile: bool = False
+    show_limits: bool = False
+    show_last_error: bool = False
+    show_tools: bool = False
+    # Metrics
+    show_tokens: bool = True
+    show_cost: bool = True
+    show_latency: bool = True
+    show_model: bool = True
+    # Layout
+    variant: str = "card"  # "card" | "inline" | "sidebar"
+    compact: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRToolCallView:
+    """
+    IR specification for tool invocation display.
+    
+    Runtime-agnostic representation of tool calls with:
+    - Input/output visibility
+    - Timing and status information
+    - Filtering capabilities
+    - Interaction features (retry, copy)
+    """
+    id: str
+    calls_binding: str  # e.g., "run.tool_calls", "agent.tools_used"
+    # Display
+    show_inputs: bool = True
+    show_outputs: bool = True
+    show_timing: bool = True
+    show_status: bool = True
+    show_raw_payload: bool = False
+    # Filtering
+    filter_tool_name: Optional[List[str]] = None
+    filter_status: Optional[List[str]] = None
+    # Layout
+    variant: str = "list"  # "list" | "table" | "timeline"
+    expandable: bool = True
+    max_height: Optional[str] = None
+    # Interaction
+    enable_retry: bool = False
+    enable_copy: bool = True
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRLogView:
+    """
+    IR specification for log/trace display.
+    
+    Runtime-agnostic representation of log viewing with:
+    - Log entry binding to real logging system
+    - Level and search filtering
+    - Auto-refresh and tailing
+    - Virtualization for performance
+    """
+    id: str
+    logs_binding: str  # e.g., "run.logs", "agent.traces", "app.logs"
+    # Filtering
+    level_filter: Optional[List[str]] = None
+    search_enabled: bool = True
+    search_placeholder: str = "Search logs..."
+    # Display
+    show_timestamp: bool = True
+    show_level: bool = True
+    show_metadata: bool = False
+    show_source: bool = False
+    # Behavior
+    auto_scroll: bool = True
+    auto_refresh: bool = False
+    refresh_interval: int = 5000
+    max_entries: int = 1000
+    # Layout
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    max_height: Optional[str] = None
+    virtualized: bool = True
+    # Interaction
+    enable_copy: bool = True
+    enable_download: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IREvaluationResult:
+    """
+    IR specification for evaluation results display.
+    
+    Runtime-agnostic representation of eval run analysis:
+    - Aggregate metrics and distributions
+    - Error analysis and examples
+    - Comparison capabilities
+    - Filtering and drill-down
+    """
+    id: str
+    eval_run_binding: str  # e.g., "eval.run_123", "latest_eval"
+    # Display
+    show_summary: bool = True
+    show_histograms: bool = True
+    show_error_table: bool = True
+    show_metadata: bool = False
+    # Metrics
+    metrics_to_show: Optional[List[str]] = None
+    primary_metric: Optional[str] = None
+    # Filtering
+    filter_metric: Optional[str] = None
+    filter_min_score: Optional[float] = None
+    filter_max_score: Optional[float] = None
+    filter_status: Optional[List[str]] = None
+    # Error analysis
+    show_error_distribution: bool = True
+    show_error_examples: bool = True
+    max_error_examples: int = 10
+    # Layout
+    variant: str = "dashboard"  # "dashboard" | "detailed" | "compact"
+    # Comparison
+    comparison_run_binding: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRDiffView:
+    """
+    IR specification for text/code diff display.
+    
+    Runtime-agnostic representation of side-by-side or unified diffs:
+    - Left/right content bindings
+    - Diff algorithm configuration
+    - Syntax highlighting for code
+    - Display and interaction options
+    """
+    id: str
+    left_binding: str  # e.g., "version.v1.output", "prompt.original"
+    right_binding: str  # e.g., "version.v2.output", "prompt.modified"
+    # Display
+    mode: str = "split"  # "unified" | "split"
+    content_type: str = "text"  # "text" | "code" | "markdown"
+    language: Optional[str] = None
+    # Diff options
+    ignore_whitespace: bool = False
+    ignore_case: bool = False
+    context_lines: int = 3
+    # Display options
+    show_line_numbers: bool = True
+    highlight_inline_changes: bool = True
+    show_legend: bool = True
+    # Layout
+    max_height: Optional[str] = None
+    # Interaction
+    enable_copy: bool = True
+    enable_download: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

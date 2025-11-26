@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Sublime Text file type definition for Namel3ss
+  Place this file in: Packages/User/Namel3ss.sublime-settings
+  Or in: Data/Packages/Namel3ss/Namel3ss.sublime-settings
+-->
+<plist version="1.0">
+<dict>
+    <key>name</key>
+    <string>Namel3ss</string>
+    
+    <key>scope</key>
+    <string>source.namel3ss</string>
+    
+    <key>file_extensions</key>
+    <array>
+        <string>n3</string>
+        <string>ai</string>
+    </array>
+    
+    <key>hidden_file_extensions</key>
+    <array/>
+    
+    <key>first_line_match</key>
+    <string>^#!.*\bnamel3ss\b</string>
+    
+    <key>fold_scopes</key>
+    <array>
+        <string>meta.block.namel3ss</string>
+        <string>meta.function.namel3ss</string>
+    </array>
+    
+    <key>increase_indent_pattern</key>
+    <string>^.*:\s*$</string>
+    
+    <key>decrease_indent_pattern</key>
+    <string>^\s*(else|elif|except|finally).*:\s*$</string>
+    
+    <key>bracket_indent_size</key>
+    <integer>2</integer>
+    
+    <key>word_separators</key>
+    <string>./\\()\"'-:,.;&lt;&gt;~!@#%^&amp;*|+=[]{}`~?</string>
+</dict>
+</plist>

@@ -1,0 +1,137 @@
+%YAML 1.2
+---
+# Sublime Text syntax definition for Namel3ss
+name: Namel3ss
+file_extensions:
+  - ai
+  - n3
+scope: source.namel3ss
+
+contexts:
+  main:
+    - include: comments
+    - include: keywords
+    - include: components
+    - include: ai-components
+    - include: properties
+    - include: strings
+    - include: numbers
+    - include: booleans
+    - include: operators
+    - include: bindings
+    - include: functions
+
+  comments:
+    - match: '#.*$'
+      scope: comment.line.number-sign.namel3ss
+    - match: '//.*$'
+      scope: comment.line.double-slash.namel3ss
+    - match: '/\*'
+      scope: punctuation.definition.comment.begin.namel3ss
+      push:
+        - meta_scope: comment.block.namel3ss
+        - match: '\*/'
+          scope: punctuation.definition.comment.end.namel3ss
+          pop: true
+
+  keywords:
+    - match: '\b(app|page|action|if|else|for|while|in|llm|prompt|memory|frame|dataset)\b'
+      scope: keyword.control.namel3ss
+    - match: '\b(function|return|import|from|as|with|model|tool|context)\b'
+      scope: keyword.control.namel3ss
+    - match: '\b(eval|train|test|validate|deploy|monitor|log|trace)\b'
+      scope: keyword.control.namel3ss
+
+  components:
+    - match: '\b(show_text|show_table|show_form|show_image|show_button|show_input|show_select|show_checkbox|show_radio)\b'
+      scope: entity.name.tag.component.namel3ss
+    - match: '\b(stack|grid|modal|toast|tabs|accordion|card)\b'
+      scope: entity.name.tag.component.namel3ss
+
+  ai-components:
+    - match: '\b(chat_thread|agent_panel|tool_call_view|log_view|evaluation_result|diff_view)\b'
+      scope: entity.name.tag.ai.namel3ss
+
+  properties:
+    - match: '\b(title|description|label|value|placeholder|width|height|padding|margin|background|color)\b'
+      scope: variable.parameter.property.namel3ss
+    - match: '\b(on_click|on_change|on_submit|validation|required|data|columns|rows|items)\b'
+      scope: variable.parameter.property.namel3ss
+    - match: '\b(source|destination|style|class|id|name|type|href|src|alt)\b'
+      scope: variable.parameter.property.namel3ss
+    - match: '\b(open|is_open|on_close|variant|position|duration)\b'
+      scope: variable.parameter.property.namel3ss
+    - match: '\b(messages_binding|agent_binding|tool_calls_binding|log_entries_binding|metric_binding|left_binding|right_binding)\b'
+      scope: variable.parameter.ai-property.namel3ss
+    - match: '\b(show_tokens|streaming_enabled|auto_scroll|show_metadata|show_input|show_status|show_memory|show_context)\b'
+      scope: variable.parameter.ai-property.namel3ss
+    - match: '\b(show_tool_output|show_timestamp|diff_mode|syntax_highlight|editable|line_numbers|word_wrap)\b'
+      scope: variable.parameter.ai-property.namel3ss
+
+  strings:
+    - match: '"""'
+      scope: punctuation.definition.string.begin.namel3ss
+      push:
+        - meta_scope: string.quoted.triple.namel3ss
+        - match: '"""'
+          scope: punctuation.definition.string.end.namel3ss
+          pop: true
+        - include: string-interpolation
+    - match: "'''"
+      scope: punctuation.definition.string.begin.namel3ss
+      push:
+        - meta_scope: string.quoted.triple.namel3ss
+        - match: "'''"
+          scope: punctuation.definition.string.end.namel3ss
+          pop: true
+        - include: string-interpolation
+    - match: '"'
+      scope: punctuation.definition.string.begin.namel3ss
+      push:
+        - meta_scope: string.quoted.double.namel3ss
+        - match: '"'
+          scope: punctuation.definition.string.end.namel3ss
+          pop: true
+        - include: string-interpolation
+        - match: '\\.'
+          scope: constant.character.escape.namel3ss
+    - match: "'"
+      scope: punctuation.definition.string.begin.namel3ss
+      push:
+        - meta_scope: string.quoted.single.namel3ss
+        - match: "'"
+          scope: punctuation.definition.string.end.namel3ss
+          pop: true
+        - include: string-interpolation
+        - match: '\\.'
+          scope: constant.character.escape.namel3ss
+
+  string-interpolation:
+    - match: '\{[^}]*\}'
+      scope: constant.other.placeholder.namel3ss
+
+  numbers:
+    - match: '\b\d+\.?\d*([eE][+-]?\d+)?\b'
+      scope: constant.numeric.namel3ss
+
+  booleans:
+    - match: '\b(true|false|True|False|null|None)\b'
+      scope: constant.language.namel3ss
+
+  operators:
+    - match: '[+\-*/%]'
+      scope: keyword.operator.arithmetic.namel3ss
+    - match: '(==|!=|<=|>=|<|>)'
+      scope: keyword.operator.comparison.namel3ss
+    - match: '(&&|\|\||and|or|not)'
+      scope: keyword.operator.logical.namel3ss
+    - match: '='
+      scope: keyword.operator.assignment.namel3ss
+
+  bindings:
+    - match: '\b\w+(\.\w+)+\b'
+      scope: variable.other.binding.namel3ss
+
+  functions:
+    - match: '\b\w+\s*(?=\()'
+      scope: entity.name.function.namel3ss

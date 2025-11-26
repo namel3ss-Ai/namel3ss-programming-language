@@ -24,16 +24,21 @@
           "n3"
         ],
         "extensions": [
-          ".n3"
+          ".n3",
+          ".ai"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "../vscode-extension/images/namel3ss_128_icon.svg",
+          "dark": "../vscode-extension/images/namel3ss_128_icon.svg"
+        }
       }
     ],
     "grammars": [
       {
         "language": "n3",
-        "scopeName": "source.n3",
-        "path": "./syntaxes/n3.tmGrammar.json"
+        "scopeName": "source.namel3ss",
+        "path": "./syntaxes/namel3ss.tmLanguage.json"
       }
     ],
     "commands": [

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file. The format 
 ## [Unreleased]
 
 ### Added
+- **Comprehensive Syntax Highlighting**: Full-featured syntax highlighting for `.ai` and `.n3` files across all major editors (VS Code, Vim, Neovim, Sublime Text) with color-coded keywords, components, properties, strings, numbers, operators, and comments—matching the developer experience of languages like Python.
+  - **VS Code**: TextMate grammar with 240+ lines covering 60+ keywords, all UI components, 6 AI semantic components, 40+ properties with dedicated scopes, string interpolation support `{variable.path}`, triple-quoted strings, scientific notation numbers, boolean literals, arithmetic/comparison/logical operators, dotted bindings, and 3 comment styles (# // /* */)
+  - **Vim**: Traditional syntax file with `syn keyword`, `syn match`, `syn region` for comprehensive coverage with highlight links to standard Vim groups (Keyword, String, Number, Comment, Function, Special, Operator)
+  - **Neovim**: Modern Treesitter-style highlights.scm with semantic token support using `@keyword`, `@string`, `@number`, `@function`, `@type.builtin`, `@attribute` captures
+  - **Sublime Text**: YAML-based .sublime-syntax with contexts and scopes matching TextMate conventions for theme compatibility
+  - **Color Scheme**: Keywords (blue/purple), UI components (yellow), AI components (orange), properties (cyan), strings (green/orange), numbers (teal), booleans (purple), comments (gray), operators (white), bindings (default)
+  - **Documentation**: Complete installation guide (SYNTAX_HIGHLIGHTING.md), quick reference (SYNTAX_REFERENCE.md), troubleshooting tips, theme customization, and testing instructions
+  - **Backward Compatible**: No breaking changes, works with existing `.ai` files immediately
+- **AI Semantic Components**: Six production-ready first-class components for AI-specific UI patterns:
+  - `chat_thread`: Conversation displays with message grouping by role, timestamps, avatars, real-time streaming, token counts, copy functionality, and auto-scrolling
+  - `agent_panel`: Agent status dashboards showing metrics (tokens, cost, latency), model info, tool availability, memory state, and execution context
+  - `tool_call_view`: Tool invocation displays with expandable input/output, timing data, status indicators, and copy support
+  - `log_view`: Structured log viewing with search, filtering, timestamps, and syntax highlighting for technical logs
+  - `evaluation_result`: Metrics display with value, delta, trend indicators, and comparison periods for showing evaluation results
+  - `diff_view`: Side-by-side or unified diff viewer with syntax highlighting, line numbers, word wrapping, and editability for comparing code/text
+  - Complete implementation: Parser (6 methods) → AST (lines 1283-1482) → IR (lines 1484-1679) → IR Builder (6 converters) → Codegen → React/TypeScript components (1,200+ lines TSX, 300+ lines CSS)
+  - 10/10 tests passing: 7 parsing tests, 1 IR generation test, 2 codegen tests
+  - Production example: `ai_components_demo.ai` with real bindings and streaming configuration
+- **Feedback Components (Modal Dialogs & Toast Notifications)**: Two production-ready first-class components for user feedback and interaction:
+  - `modal`: Dialog overlays with title, description, nested content (show text), multiple action buttons with variants (default, primary, destructive, ghost, link), size variants (sm/md/lg/xl/full), dismissible control, and trigger-based display.
+  - `toast`: Notification banners with title, description, 5 variants (default, success, error, warning, info) with icons, 6 positioning options (top, top-right, top-left, bottom, bottom-right, bottom-left), auto-dismiss duration (2000-5000ms or persistent with 0), optional action button, and trigger-based display.
+  - Complete implementation across entire stack: Parser → AST → IR → Codegen → React/TypeScript components with shadcn/ui integration
+  - 56 comprehensive tests (19 parser + 18 IR builder + 19 codegen) - all passing
+  - Full documentation: Comprehensive guide (6,500+ lines) covering syntax, properties, usage patterns (confirmation, form validation, multi-step, error handling), best practices with DO/DON'T lists, accessibility guidelines, mobile considerations, event integration, complete real-world examples (e-commerce checkout, user management dashboard), API reference tables, migration guide from browser alerts, and troubleshooting
+  - Marked as production-ready stable feature in documentation index
+  - Backward compatible with zero breaking changes
+  - Production example: 3-page application with 6 modals and 9 toasts demonstrating confirmation dialogs, success/error notifications, and complex interaction patterns
+- **Chrome Components (Navigation & App Chrome)**: Four production-ready first-class components for application navigation and layout:
+  - `sidebar`: Hierarchical navigation with multi-level nesting, icons, badges, collapsible sections, and route integration.
+  - `navbar`: Top navigation bar with logo, title, button actions, menu dropdowns, and custom action handlers.
+  - `breadcrumbs`: Context-aware breadcrumb navigation with manual or auto-derived trail from current route.
+  - `command palette`: Quick navigation/actions with keyboard shortcuts (Ctrl+K), fuzzy search, and multiple data sources (routes, actions, custom, API).
+  - Complete implementation across entire stack: Parser → AST → IR → Codegen → React/TypeScript components with shadcn/ui integration
+  - 41 comprehensive tests (12 parser + 12 IR builder + 17 codegen) - all passing
+  - Full documentation: Developer guide (428 lines), Migration guide (378 lines), with syntax reference, examples, and best practices
+  - Backward compatible with zero breaking changes
+  - Production example: 6-page dashboard with navigation, nested routes, and command palette
 - **Data Display Components**: Six production-ready first-class components for building professional dashboards:
   - `show data_table`: Professional data tables with sorting, filtering, pagination, toolbar, bulk actions, and row actions. Integrates Tanstack Table for advanced table functionality.
   - `show data_list`: Rich activity feeds with avatars, metadata, badges, and item actions for displaying lists of items with complex layouts.

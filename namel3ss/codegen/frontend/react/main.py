@@ -26,7 +26,9 @@ from .components import (
     write_form_widget,
     write_text_widget,
 )
+from .chrome_components import write_all_chrome_components
 from .declarative_components import write_all_declarative_components
+from .ai_components import write_all_ai_components
 from .hooks import write_realtime_hook
 from .client import write_client_lib
 from .dataset_client import write_dataset_client_lib
@@ -146,6 +148,8 @@ def generate_react_vite_site(
     write_form_widget(components_dir)
     write_text_widget(components_dir)
     write_all_declarative_components(components_dir)  # Card, List, etc.
+    write_all_chrome_components(components_dir)  # Sidebar, Navbar, Breadcrumbs, CommandPalette
+    write_all_ai_components(components_dir)  # ChatThread, AgentPanel, ToolCallView, LogView, EvaluationResult, DiffView
     
     # Generate bound components for data binding
     if backend_ir:

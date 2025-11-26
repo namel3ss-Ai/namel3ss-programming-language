@@ -136,6 +136,129 @@ def _render_component_endpoint(
     return []
 
 
+def _render_form_endpoint(
+    page: PageSpec, component: PageComponent, index: int
+) -> List[str]:
+    """Generate form submission endpoint with validation."""
+    payload = component.payload
+    slug = page.slug
+    base_path = f"/api/pages/{slug}"
+    form_id = payload.get("id", f"form_{index}")
+    
+    # Build validation schema from fields
+    fields = payload.get("fields", [])
+    validation_schema = {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+    
+    for field in fields:
+        field_name = field.get("name")
+        component_type = field.get("component", "text_input")
+        field_schema = {"type": _infer_json_type(component_type)}
+        
+        # Add validation constraints
+        validation = field.get("validation", {})
+        if validation.get("min_length"):
+            field_schema["minLength"] = validation["min_length"]
+        if validation.get("max_length"):
+            field_schema["maxLength"] = validation["max_length"]
+        if validation.get("pattern"):
+            field_schema["pattern"] = validation["pattern"]
+        if validation.get("min_value") is not None:
+            field_schema["minimum"] = validation["min_value"]
+        if validation.get("max_value") is not None:
+            field_schema["maximum"] = validation["max_value"]
+        
+        validation_schema["properties"][field_name] = field_schema
+        
+        if field.get("required"):
+            validation_schema["required"].append(field_name)
+    
+    schema_expr = _format_literal(validation_schema)
+    submit_action = payload.get("submit_action")
+    
+    lines = [
+        f"@router.post({base_path!r} + '/forms/{form_id}', response_model=Dict[str, Any], tags=['forms'])",
+        f"async def {slug}_form_{index}_submit(",
+        "    form_data: Dict[str, Any],",
+        "    session: AsyncSession = Depends(get_session)",
+        ") -> Dict[str, Any]:",
+        f"    # Server-side validation using JSON Schema",
+        f"    validation_schema = {schema_expr}",
+        "    ",
+        "    # Validate required fields",
+        "    for field in validation_schema.get('required', []):",
+        "        if field not in form_data or form_data[field] in (None, '', []):",
+        "            raise HTTPException(status_code=400, detail=f'{field} is required')",
+        "    ",
+        "    # Validate field constraints",
+        "    for field_name, field_schema in validation_schema.get('properties', {}).items():",
+        "        if field_name not in form_data:",
+        "            continue",
+        "        value = form_data[field_name]",
+        "        ",
+        "        # String validation",
+        "        if field_schema.get('type') == 'string' and isinstance(value, str):",
+        "            if 'minLength' in field_schema and len(value) < field_schema['minLength']:",
+        "                raise HTTPException(status_code=400, detail=f'{field_name} must be at least {field_schema[\"minLength\"]} characters')",
+        "            if 'maxLength' in field_schema and len(value) > field_schema['maxLength']:",
+        "                raise HTTPException(status_code=400, detail=f'{field_name} must be at most {field_schema[\"maxLength\"]} characters')",
+        "            if 'pattern' in field_schema:",
+        "                import re",
+        "                if not re.match(field_schema['pattern'], value):",
+        "                    raise HTTPException(status_code=400, detail=f'{field_name} has invalid format')",
+        "        ",
+        "        # Number validation",
+        "        if field_schema.get('type') in ('number', 'integer') and isinstance(value, (int, float)):",
+        "            if 'minimum' in field_schema and value < field_schema['minimum']:",
+        "                raise HTTPException(status_code=400, detail=f'{field_name} must be at least {field_schema[\"minimum\"]}')",
+        "            if 'maximum' in field_schema and value > field_schema['maximum']:",
+        "                raise HTTPException(status_code=400, detail=f'{field_name} must be at most {field_schema[\"maximum\"]}')",
+        "    ",
+        f"    # Execute submit action",
+        f"    context = runtime.build_context({page.slug!r})",
+        f"    context['form_data'] = form_data",
+        "    ",
+    ]
+    
+    if submit_action:
+        lines.extend([
+            f"    # Call action: {submit_action}",
+            f"    action_handler = runtime.ACTION_HANDLERS.get({submit_action!r})",
+            "    if action_handler:",
+            "        try:",
+            "            result = await action_handler(form_data, session, context)",
+            "            return {'success': True, 'message': 'Form submitted successfully', 'data': result}",
+            "        except Exception as e:",
+            "            runtime.logger.exception('Form action %s failed', {submit_action!r})",
+            "            raise HTTPException(status_code=500, detail=str(e))",
+            "    else:",
+            "        runtime.logger.warning('Action handler %s not found', {submit_action!r})",
+        ])
+    
+    lines.extend([
+        "    ",
+        "    # Default success response",
+        "    return {'success': True, 'message': 'Form submitted successfully', 'data': form_data}",
+    ])
+    
+    return lines
+
+
+def _infer_json_type(component: str) -> str:
+    """Infer JSON Schema type from component name."""
+    if component in ('checkbox', 'switch'):
+        return 'boolean'
+    elif component in ('slider', 'number_input'):
+        return 'number'
+    elif component == 'multiselect':
+        return 'array'
+    else:
+        return 'string'
+
+
 def _render_insight_endpoint(name: str) -> List[str]:
     return [
         f"@app.get('/api/insights/{name}', response_model=InsightResponse)",

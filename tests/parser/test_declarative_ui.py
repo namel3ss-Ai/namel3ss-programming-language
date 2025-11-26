@@ -10,28 +10,28 @@ from namel3ss.ast.pages import ShowCard, ShowList, EmptyStateConfig, CardItemCon
 def test_parse_show_card_basic():
     """Test parsing basic show card statement."""
     source = '''
-dataset test_data:
+app "Test App"
+
+dataset "test_data" from inline:
   fields:
     - id: int
     - title: text
 
-page test:
-  path: "/test"
-  title: "Test"
-  
+page "Test" at "/test":
   show card "Items" from dataset test_data:
     empty_state:
       icon: inbox
       title: "No items"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     assert len(app.pages) == 1
     page = app.pages[0]
     
-    assert len(page.statements) == 1
-    statement = page.statements[0]
+    assert len(page.body) == 1
+    statement = page.body[0]
     
     assert isinstance(statement, ShowCard)
     assert statement.title == "Items"
@@ -46,15 +46,14 @@ page test:
 def test_parse_show_card_with_item_config():
     """Test parsing show card with item configuration."""
     source = '''
-dataset test_data:
+app "Test App"
+
+dataset "test_data" from inline:
   fields:
     - id: int
     - status: text
 
-page test:
-  path: "/test"
-  title: "Test"
-  
+page "Test" at "/test":
   show card "Items" from dataset test_data:
     item:
       type: card
@@ -80,11 +79,12 @@ page test:
           action: view_item
           condition: "status == 'active'"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     page = app.pages[0]
-    statement = page.statements[0]
+    statement = page.body[0]
     
     assert isinstance(statement, ShowCard)
     assert statement.item_config is not None
@@ -121,25 +121,25 @@ page test:
 def test_parse_show_list_basic():
     """Test parsing basic show list statement."""
     source = '''
-dataset messages:
+app "Test App"
+
+dataset "messages" from inline:
   fields:
     - id: int
     - subject: text
 
-page test:
-  path: "/test"
-  title: "Test"
-  
+page "Test" at "/test":
   show list "Messages" from dataset messages:
     list_type: conversation
     enable_search: true
     columns: 1
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     page = app.pages[0]
-    statement = page.statements[0]
+    statement = page.body[0]
     
     assert isinstance(statement, ShowList)
     assert statement.title == "Messages"
@@ -153,26 +153,26 @@ page test:
 def test_parse_card_with_group_by_and_filter():
     """Test parsing card with group_by and filter_by options."""
     source = '''
-dataset items:
+app "Test App"
+
+dataset "items" from inline:
   fields:
     - id: int
     - category: text
     - status: text
 
-page test:
-  path: "/test"
-  title: "Test"
-  
+page "Test" at "/test":
   show card "Items" from dataset items:
     group_by: "category"
     filter_by: "status == 'active'"
     sort_by: "id desc"
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     page = app.pages[0]
-    statement = page.statements[0]
+    statement = page.body[0]
     
     assert isinstance(statement, ShowCard)
     assert statement.group_by == "category"
@@ -183,15 +183,14 @@ page test:
 def test_parse_card_footer():
     """Test parsing card with footer configuration."""
     source = '''
-dataset items:
+app "Test App"
+
+dataset "items" from inline:
   fields:
     - id: int
     - confirmation: text
 
-page test:
-  path: "/test"
-  title: "Test"
-  
+page "Test" at "/test":
   show card "Items" from dataset items:
     item:
       type: card
@@ -201,11 +200,12 @@ page test:
         condition: "confirmation != null"
         style: info
 '''
-    parser = Parser()
-    app = parser.parse(source)
+    parser = Parser(source)
+    module = parser.parse()
+    app = module.body[0]
     
     page = app.pages[0]
-    statement = page.statements[0]
+    statement = page.body[0]
     
     assert isinstance(statement, ShowCard)
     assert statement.item_config is not None

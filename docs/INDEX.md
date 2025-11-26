@@ -60,6 +60,10 @@ This documentation provides comprehensive coverage of the language, its features
 - **[Frontend Generation](FRONTEND_GENERATION.md)** - React/Vite app structure and client library
 - **[Component API](COMPONENT_API.md)** - Table, chart, form, and action components
 - **[Data Display Components](DATA_DISPLAY_COMPONENTS.md)** - Professional data tables, lists, charts, timelines, and KPI cards
+- **[Chrome Components Guide](CHROME_COMPONENTS_GUIDE.md)** - Navigation and app chrome (sidebar, navbar, breadcrumbs, command palette)
+- **[Chrome Migration Guide](CHROME_MIGRATION_GUIDE.md)** - Adding chrome to existing applications
+- **[Chrome Release Notes](CHROME_RELEASE_NOTES.md)** - Chrome components v1.0 release summary
+- **[Feedback Components Guide](FEEDBACK_COMPONENTS_GUIDE.md)** - Modal dialogs and toast notifications for user feedback
 
 #### Integration
 - **[Frontend-Backend Contract](INTEGRATION_CONTRACT.md)** - API schemas and communication patterns
@@ -103,6 +107,8 @@ This documentation provides comprehensive coverage of the language, its features
 - ✅ Backend generation (FastAPI)
 - ✅ Frontend generation (React/Vite)
 - ✅ Data display components (tables, charts, KPIs, timelines)
+- ✅ Chrome components (sidebar, navbar, breadcrumbs, command palette)
+- ✅ Feedback components (modals, toasts)
 
 ### Experimental Features
 - 🧪 Agents and graphs (syntax stable, runtime evolving)

@@ -1,0 +1,35 @@
+app "Forms Demo"
+
+page "Contact" at "/contact":
+  show form "Contact Us":
+    fields:
+      - name: name
+        component: text_input
+        label: "Your Name"
+        required: true
+        min_length: 2
+      - name: email
+        component: text_input
+        label: "Email Address"
+        required: true
+        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      - name: category
+        component: select
+        label: "Category"
+        options: ["General", "Support", "Sales"]
+      - name: priority
+        component: radio_group
+        label: "Priority"
+        options: ["Low", "Medium", "High"]
+      - name: message
+        component: textarea
+        label: "Message"
+        required: true
+        max_length: 500
+      - name: subscribe
+        component: checkbox
+        label: "Subscribe to newsletter"
+    layout: vertical
+    submit_button_text: "Send Message"
+    success_message: "Thank you! We'll get back to you soon."
+    error_message: "Please fix the errors before submitting."

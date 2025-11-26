@@ -41,7 +41,13 @@ router = APIRouter(dependencies=router_dependencies())
         lines: List[str] = []
         lines.extend(_render_page_endpoint(page))
         for index, component in enumerate(page.components):
-            endpoint_lines = _render_component_endpoint(page, component, index)
+            # Generate endpoints based on component type
+            if component.type == "form":
+                from .endpoint_generators import _render_form_endpoint
+                endpoint_lines = _render_form_endpoint(page, component, index)
+            else:
+                endpoint_lines = _render_component_endpoint(page, component, index)
+            
             if endpoint_lines:
                 lines.append("")
                 lines.extend(endpoint_lines)

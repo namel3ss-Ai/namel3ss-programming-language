@@ -193,16 +193,29 @@ def write_card_widget(components_dir: Path) -> None:
           const iconSizeClass = config.iconSize === 'large' ? 'text-4xl' : config.iconSize === 'small' ? 'text-xl' : 'text-2xl';
           
           return (
-            <div className="n3-empty-state" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+            <div 
+              className="n3-empty-state" 
+              role="status"
+              aria-label="No items to display"
+              style={{ textAlign: 'center', padding: '3rem 1rem' }}
+            >
               {config.icon && (
-                <div className={`empty-state-icon ${iconSizeClass}`} style={{ marginBottom: '1rem', opacity: 0.5 }}>
+                <div 
+                  className={`empty-state-icon ${iconSizeClass}`} 
+                  aria-hidden="true"
+                  style={{ marginBottom: '1rem', opacity: 0.5 }}
+                >
                   📅
                 </div>
               )}
               <h3 style={{ marginBottom: '0.5rem', fontWeight: 600 }}>{config.title}</h3>
               {config.message && <p style={{ color: 'var(--text-muted, #64748b)' }}>{config.message}</p>}
               {config.actionLabel && config.actionLink && (
-                <a href={config.actionLink} style={{ marginTop: '1rem', display: 'inline-block' }}>
+                <a 
+                  href={config.actionLink} 
+                  className="n3-empty-state-action"
+                  style={{ marginTop: '1rem', display: 'inline-block' }}
+                >
                   {config.actionLabel}
                 </a>
               )}
@@ -211,31 +224,80 @@ def write_card_widget(components_dir: Path) -> None:
         }
 
         function InfoGrid({ section, item }: { section: CardSection; item: any }) {
+          const minColumnWidth = section.columns === 1 ? '100%' : '200px';
+          const maxColumns = section.columns || 2;
+          
           const gridStyle: CSSProperties = {
             display: 'grid',
-            gridTemplateColumns: `repeat(${section.columns || 2}, 1fr)`,
-            gap: '1rem',
-            marginBottom: '1rem',
+            gridTemplateColumns: `repeat(auto-fit, minmax(${minColumnWidth}, 1fr))`,
+            maxWidth: maxColumns === 1 ? '100%' : undefined,
+            gap: 'var(--spacing-md, 1rem)',
+            marginBottom: 'var(--spacing-md, 1rem)',
           };
 
+          const sectionId = `info-grid-${Math.random().toString(36).substr(2, 9)}`;
+          const titleId = section.title ? `${sectionId}-title` : undefined;
+
           return (
-            <div className="info-grid" style={gridStyle}>
+            <section 
+              className="info-grid" 
+              aria-labelledby={titleId}
+              style={gridStyle}
+            >
+              {section.title && (
+                <h3 
+                  id={titleId}
+                  className="info-grid-title"
+                  style={{ 
+                    gridColumn: '1 / -1',
+                    fontSize: 'var(--font-size-md, 1rem)',
+                    fontWeight: 600,
+                    marginBottom: 'var(--spacing-sm, 0.5rem)'
+                  }}
+                >
+                  {section.title}
+                </h3>
+              )}
               {section.items?.map((gridItem, idx) => (
                 <div key={idx} className="info-grid-item">
                   {gridItem.label && (
-                    <div style={{ fontWeight: 500, marginBottom: '0.25rem', fontSize: '0.875rem' }}>
-                      {gridItem.icon && <span style={{ marginRight: '0.5rem' }}>📍</span>}
+                    <dt 
+                      className="info-grid-label"
+                      style={{ 
+                        fontWeight: 500, 
+                        marginBottom: 'var(--spacing-xs, 0.25rem)', 
+                        fontSize: 'var(--font-size-sm, 0.875rem)',
+                        color: 'var(--text-secondary, #64748b)'
+                      }}
+                    >
+                      {gridItem.icon && (
+                        <span 
+                          className="info-grid-icon" 
+                          aria-hidden="true"
+                          style={{ marginRight: 'var(--spacing-xs, 0.5rem)' }}
+                        >
+                          📍
+                        </span>
+                      )}
                       {gridItem.label}
-                    </div>
+                    </dt>
                   )}
                   {gridItem.values?.map((valueConfig, vidx) => (
-                    <div key={vidx} className={valueConfig.style || ''}>
+                    <dd 
+                      key={vidx} 
+                      className={`info-grid-value ${valueConfig.style || ''}`}
+                      style={{ 
+                        margin: 0,
+                        fontSize: 'var(--font-size-base, 1rem)',
+                        color: 'var(--text-primary, #0f172a)'
+                      }}
+                    >
                       {renderFieldValue(valueConfig, item)}
-                    </div>
+                    </dd>
                   ))}
                 </div>
               ))}
-            </div>
+            </section>
           );
         }
 
@@ -243,12 +305,24 @@ def write_card_widget(components_dir: Path) -> None:
           if (!evaluateCondition(section.condition, item)) return null;
           
           return (
-            <div className={`text-section ${section.style || ''}`} style={{ marginBottom: '1rem' }}>
+            <section 
+              className={`text-section ${section.style || ''}`} 
+              style={{ marginBottom: 'var(--spacing-md, 1rem)' }}
+            >
               {section.content?.label && (
-                <strong style={{ marginRight: '0.5rem' }}>{section.content.label}</strong>
+                <strong 
+                  className="text-section-label"
+                  style={{ marginRight: 'var(--spacing-sm, 0.5rem)' }}
+                >
+                  {section.content.label}
+                </strong>
               )}
-              {section.content?.text && <span>{renderTemplate(section.content.text, item)}</span>}
-            </div>
+              {section.content?.text && (
+                <span className="text-section-content">
+                  {renderTemplate(section.content.text, item)}
+                </span>
+              )}
+            </section>
           );
         }
 
@@ -258,41 +332,132 @@ def write_card_widget(components_dir: Path) -> None:
             .map(([className]) => className)
             .join(' ');
 
+          // Determine semantic type for proper HTML element and ARIA role
+          const cardType = config.type || 'card';
+          const isMessageBubble = cardType === 'message_bubble';
+          const isArticle = cardType === 'article_card';
+          const ariaRole = isMessageBubble ? 'article' : undefined;
+          
+          const cardId = `card-${Math.random().toString(36).substr(2, 9)}`;
+          const headerId = config.header?.title ? `${cardId}-header` : undefined;
+
           return (
-            <div className={`card-item ${config.type} ${config.style || ''} ${stateClasses}`} 
-                 style={{ 
-                   border: '1px solid #e2e8f0', 
-                   borderRadius: '0.5rem', 
-                   padding: '1rem', 
-                   marginBottom: '1rem',
-                   backgroundColor: 'white'
-                 }}>
+            <article 
+              className={`n3-card-item n3-card-${cardType} ${config.style || ''} ${config.roleClass || ''} ${stateClasses}`}
+              role={ariaRole}
+              aria-labelledby={headerId}
+              style={{ 
+                border: '1px solid var(--border-color, #e2e8f0)', 
+                borderRadius: 'var(--radius-md, 0.5rem)', 
+                padding: 'var(--spacing-lg, 1rem)', 
+                marginBottom: 'var(--spacing-lg, 1rem)',
+                backgroundColor: 'var(--surface, white)'
+              }}
+            >
               {/* Header */}
               {config.header && (
-                <div className="card-header" style={{ marginBottom: '1rem' }}>
-                  {config.header.title && <h4 style={{ margin: 0 }}>{renderTemplate(config.header.title, item)}</h4>}
+                <header 
+                  id={headerId}
+                  className="n3-card-header" 
+                  style={{ marginBottom: 'var(--spacing-md, 1rem)' }}
+                >
+                  {config.header.avatar && (
+                    <div 
+                      className="n3-card-avatar" 
+                      aria-hidden="true"
+                      style={{ 
+                        width: '40px', 
+                        height: '40px', 
+                        borderRadius: '50%',
+                        marginBottom: 'var(--spacing-sm, 0.5rem)'
+                      }}
+                    >
+                      {typeof config.header.avatar === 'string' ? (
+                        <img 
+                          src={config.header.avatar} 
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                        />
+                      ) : config.header.avatar.image_url ? (
+                        <img 
+                          src={config.header.avatar.image_url} 
+                          alt={config.header.avatar.alt_text || ''}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                        />
+                      ) : null}
+                    </div>
+                  )}
+                  
+                  {config.header.title && (
+                    <h3 
+                      className="n3-card-title"
+                      style={{ 
+                        margin: 0,
+                        fontSize: 'var(--font-size-lg, 1.125rem)',
+                        fontWeight: 600,
+                        color: 'var(--text-primary, #0f172a)'
+                      }}
+                    >
+                      {renderTemplate(config.header.title, item)}
+                    </h3>
+                  )}
+                  
+                  {config.header.subtitle && (
+                    <p 
+                      className="n3-card-subtitle"
+                      style={{ 
+                        margin: 'var(--spacing-xs, 0.25rem) 0 0',
+                        fontSize: 'var(--font-size-sm, 0.875rem)',
+                        color: 'var(--text-secondary, #64748b)'
+                      }}
+                    >
+                      {renderTemplate(config.header.subtitle, item)}
+                    </p>
+                  )}
+                  
                   {config.header.badges && config.header.badges.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div 
+                      className="n3-card-badges"
+                      role="list"
+                      aria-label="Status badges"
+                      style={{ 
+                        display: 'flex', 
+                        gap: 'var(--spacing-xs, 0.5rem)', 
+                        marginTop: 'var(--spacing-sm, 0.5rem)',
+                        flexWrap: 'wrap'
+                      }}
+                    >
                       {config.header.badges
                         .filter((badge) => evaluateCondition(badge.condition, item))
                         .map((badge, idx) => {
                           const badgeText = badge.text || (badge.field ? applyTransform(item[badge.field], badge.transform) : '');
                           return (
-                            <span key={idx} className={`badge ${badge.style || ''}`} 
-                                  style={{ 
-                                    padding: '0.25rem 0.75rem', 
-                                    borderRadius: '1rem', 
-                                    fontSize: '0.75rem',
-                                    backgroundColor: '#f1f5f9',
-                                    border: '1px solid #e2e8f0'
-                                  }}>
+                            <span 
+                              key={idx} 
+                              className={`n3-badge ${badge.style || ''}`}
+                              role="listitem"
+                              style={{ 
+                                padding: '0.25rem 0.75rem', 
+                                borderRadius: 'var(--radius-full, 1rem)', 
+                                fontSize: 'var(--font-size-xs, 0.75rem)',
+                                fontWeight: 500,
+                                backgroundColor: 'var(--surface-secondary, #f1f5f9)',
+                                border: '1px solid var(--border-color, #e2e8f0)',
+                                color: 'var(--text-primary, #0f172a)'
+                              }}
+                            >
+                              {badge.icon && (
+                                <span aria-hidden="true" style={{ marginRight: '0.25rem' }}>
+                                  {badge.icon}
+                                </span>
+                              )}
                               {badgeText}
                             </span>
                           );
                         })}
                     </div>
                   )}
-                </div>
+                </header>
               )}
 
               {/* Sections */}
@@ -310,61 +475,117 @@ def write_card_widget(components_dir: Path) -> None:
 
               {/* Actions */}
               {config.actions && config.actions.length > 0 && (
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <nav 
+                  className="n3-card-actions"
+                  aria-label="Card actions"
+                  style={{ 
+                    display: 'flex', 
+                    gap: 'var(--spacing-sm, 0.5rem)', 
+                    marginTop: 'var(--spacing-md, 1rem)',
+                    flexWrap: 'wrap'
+                  }}
+                >
                   {config.actions
                     .filter((action) => evaluateCondition(action.condition, item))
                     .map((action, idx) => (
-                      <button key={idx} className={`btn-${action.style || 'primary'}`}
-                              style={{ 
-                                padding: '0.5rem 1rem', 
-                                borderRadius: '0.25rem', 
-                                border: '1px solid #e2e8f0',
-                                background: action.style === 'secondary' ? 'white' : '#3b82f6',
-                                color: action.style === 'secondary' ? 'inherit' : 'white',
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => {
-                                if (action.link) {
-                                  window.location.href = renderTemplate(action.link, item);
-                                } else if (action.action) {
-                                  console.log('Action:', action.action, action.params ? renderTemplate(action.params, item) : '');
-                                }
-                              }}>
-                        {action.icon && <span style={{ marginRight: '0.5rem' }}>⚡</span>}
+                      <button 
+                        key={idx} 
+                        className={`n3-btn n3-btn-${action.style || 'primary'}`}
+                        aria-label={action.label}
+                        style={{ 
+                          padding: 'var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem)', 
+                          borderRadius: 'var(--radius-sm, 0.25rem)', 
+                          border: '1px solid var(--border-color, #e2e8f0)',
+                          background: action.style === 'secondary' ? 'var(--surface, white)' : 'var(--primary, #3b82f6)',
+                          color: action.style === 'secondary' ? 'var(--text-primary, #0f172a)' : 'white',
+                          cursor: 'pointer',
+                          fontSize: 'var(--font-size-sm, 0.875rem)',
+                          fontWeight: 500,
+                          transition: 'all 0.2s ease'
+                        }}
+                        onClick={() => {
+                          if (action.link) {
+                            window.location.href = renderTemplate(action.link, item);
+                          } else if (action.action) {
+                            console.log('Action:', action.action, action.params ? renderTemplate(action.params, item) : '');
+                          }
+                        }}
+                      >
+                        {action.icon && (
+                          <span aria-hidden="true" style={{ marginRight: 'var(--spacing-xs, 0.5rem)' }}>
+                            ⚡
+                          </span>
+                        )}
                         {action.label}
                       </button>
                     ))}
-                </div>
+                </nav>
               )}
 
               {/* Footer */}
               {config.footer && evaluateCondition(config.footer.condition, item) && (
-                <div className={`card-footer ${config.footer.style || ''}`} 
-                     style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '0.875rem' }}>
+                <footer 
+                  className={`n3-card-footer ${config.footer.style || ''}`} 
+                  style={{ 
+                    marginTop: 'var(--spacing-md, 1rem)', 
+                    paddingTop: 'var(--spacing-md, 1rem)', 
+                    borderTop: '1px solid var(--border-color, #e2e8f0)', 
+                    fontSize: 'var(--font-size-sm, 0.875rem)',
+                    color: 'var(--text-secondary, #64748b)'
+                  }}
+                >
                   {config.footer.text && renderTemplate(config.footer.text, item)}
-                </div>
+                </footer>
               )}
-            </div>
+            </article>
           );
         }
 
         export default function CardWidget({ widget, data }: CardWidgetProps) {
           const items = Array.isArray(data) ? data : [];
+          const widgetId = `widget-${widget.id}`;
+          const titleId = `${widgetId}-title`;
 
           return (
-            <section className="n3-widget n3-card-widget">
-              <h3 style={{ marginBottom: '1rem' }}>{widget.title}</h3>
+            <section 
+              className="n3-widget n3-card-widget" 
+              aria-labelledby={titleId}
+            >
+              <h2 
+                id={titleId}
+                className="n3-widget-title"
+                style={{ 
+                  marginBottom: 'var(--spacing-md, 1rem)',
+                  fontSize: 'var(--font-size-xl, 1.5rem)',
+                  fontWeight: 700,
+                  color: 'var(--text-primary, #0f172a)'
+                }}
+              >
+                {widget.title}
+              </h2>
               {items.length === 0 && widget.emptyState ? (
                 <EmptyState config={widget.emptyState} />
               ) : (
-                <div className="card-list">
+                <div className="n3-card-list" role="list">
                   {items.map((item, idx) => (
                     widget.itemConfig ? (
                       <CardItem key={idx} item={item} config={widget.itemConfig} />
                     ) : (
-                      <div key={idx} style={{ padding: '1rem', border: '1px solid #e2e8f0', marginBottom: '0.5rem' }}>
-                        {JSON.stringify(item)}
-                      </div>
+                      <article 
+                        key={idx} 
+                        className="n3-card-item n3-card-fallback"
+                        style={{ 
+                          padding: 'var(--spacing-md, 1rem)', 
+                          border: '1px solid var(--border-color, #e2e8f0)', 
+                          marginBottom: 'var(--spacing-sm, 0.5rem)',
+                          borderRadius: 'var(--radius-sm, 0.25rem)',
+                          backgroundColor: 'var(--surface, white)'
+                        }}
+                      >
+                        <pre style={{ margin: 0, fontSize: 'var(--font-size-sm, 0.875rem)' }}>
+                          {JSON.stringify(item, null, 2)}
+                        </pre>
+                      </article>
                     )
                   ))}
                 </div>

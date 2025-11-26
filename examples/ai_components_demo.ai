@@ -1,0 +1,78 @@
+# AI Semantic Components Demo
+# Demonstrates all 6 AI-specific UI components
+
+page "AI Components Showcase":
+  title: "AI Semantic Components Demo"
+  
+  # Chat Thread - Display conversation history
+  chat_thread "conversation_view":
+    messages_binding: "agent_run.conversation"
+    group_by: "role"
+    show_timestamps: true
+    show_avatar: true
+    auto_scroll: true
+    streaming_enabled: true
+    streaming_source: "agent_run.stream"
+    show_token_count: true
+    enable_copy: true
+    variant: "default"
+  
+  # Agent Panel - Show agent metrics and state
+  agent_panel "agent_status":
+    agent_binding: "agent_run.agent"
+    metrics_binding: "agent_run.metrics"
+    show_status: true
+    show_metrics: true
+    show_tokens: true
+    show_cost: true
+    show_latency: true
+    show_model: true
+    show_tools: true
+    variant: "card"
+    compact: false
+  
+  # Tool Call View - Display tool invocations
+  tool_call_view "tool_calls":
+    calls_binding: "agent_run.tool_calls"
+    show_inputs: true
+    show_outputs: true
+    show_timing: true
+    show_status: true
+    variant: "list"
+    expandable: true
+    enable_copy: true
+  
+  # Log View - Structured log viewing
+  log_view "system_logs":
+    logs_binding: "agent_run.logs"
+    search_enabled: true
+    search_placeholder: "Search logs..."
+    show_timestamp: true
+    show_level: true
+    auto_scroll: true
+    virtualized: true
+    enable_copy: true
+    enable_download: true
+  
+  # Evaluation Result - Show eval metrics
+  evaluation_result "eval_dashboard":
+    eval_run_binding: "evaluation.latest_run"
+    show_summary: true
+    show_histograms: true
+    show_error_table: true
+    primary_metric: "accuracy"
+    show_error_distribution: true
+    show_error_examples: true
+    max_error_examples: 10
+    variant: "dashboard"
+  
+  # Diff View - Compare outputs
+  diff_view "output_comparison":
+    left_binding: "evaluation.baseline_output"
+    right_binding: "evaluation.current_output"
+    mode: "split"
+    content_type: "text"
+    show_line_numbers: true
+    highlight_inline_changes: true
+    enable_copy: true
+    enable_download: true

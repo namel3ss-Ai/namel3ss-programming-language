@@ -224,7 +224,7 @@ def build_backend_state(app: "App") -> BackendState:
         
         sorted_env_keys = sorted(env_keys)
         
-        return BackendState(
+        state = BackendState(
             app=app_payload,
             datasets=datasets,
             frames=frames,
@@ -258,6 +258,11 @@ def build_backend_state(app: "App") -> BackendState:
             pages=pages,
             env_keys=sorted_env_keys,
         )
+        
+        # Store original app for IR builder access to AST
+        state._original_app = app
+        
+        return state
     finally:
         # Clean up frame analyzer
         set_frame_analyzer(None)

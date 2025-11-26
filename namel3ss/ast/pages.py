@@ -120,8 +120,44 @@ class ShowChart(Statement):
 
 @dataclass
 class FormField:
+    """Production-grade form field definition.
+    
+    Supports semantic field components (text_input, select, etc.) with
+    validation, bindings, and conditional rendering.
+    """
     name: str
-    field_type: str = "text"
+    component: str = "text_input"  # Field component type (text_input, select, textarea, etc.)
+    label: Optional[str] = None
+    placeholder: Optional[str] = None
+    help_text: Optional[str] = None
+    required: bool = False
+    default: Optional[Expression] = None
+    initial_value: Optional[Expression] = None
+    
+    # Validation rules
+    min_length: Optional[int] = None
+    max_length: Optional[int] = None
+    pattern: Optional[str] = None  # Regex pattern for text validation
+    min_value: Optional[float] = None  # For numeric/slider
+    max_value: Optional[float] = None
+    step: Optional[float] = None  # For numeric/slider/datetime
+    
+    # Options for select/multiselect/radio_group
+    options_binding: Optional[str] = None  # Bind to dataset or options provider
+    options: Optional[List[Dict[str, Any]]] = field(default_factory=list)  # Static options fallback
+    
+    # Conditional rendering
+    disabled: Optional[Expression] = None
+    visible: Optional[Expression] = None
+    
+    # Component-specific config
+    multiple: bool = False  # For select/file_upload
+    accept: Optional[str] = None  # MIME types for file_upload
+    max_file_size: Optional[int] = None  # Bytes for file_upload
+    upload_endpoint: Optional[str] = None  # Upload target for file_upload
+    
+    # Backward compatibility
+    field_type: Optional[str] = None  # Deprecated: use 'component' instead
 
 
 @dataclass
@@ -175,17 +211,39 @@ class RunPromptOperation(ActionOperation):
 
 @dataclass
 class ShowForm(Statement):
+    """Production-grade form component.
+    
+    Supports declarative form definitions with data bindings, validation,
+    and integration with the action system.
+    """
     title: str
     fields: List[FormField] = field(default_factory=list)
-    on_submit_ops: List['ActionOperationType'] = field(default_factory=list)
-    styles: Dict[str, str] = field(default_factory=dict)
-    layout: LayoutSpec = field(default_factory=LayoutSpec)
-    effects: Set[str] = field(default_factory=set)
     
-    # Data binding configuration
-    binding: Optional[DataBindingConfig] = None
-    bound_dataset: Optional[str] = None  # Dataset to load initial values from
+    # Layout configuration
+    layout_mode: str = "vertical"  # "vertical" | "horizontal" | "inline"
+    
+    # Action integration
+    submit_action: Optional[str] = None  # Reference to action name or expression
+    on_submit_ops: List['ActionOperationType'] = field(default_factory=list)  # Legacy operations
+    
+    # Data bindings
+    initial_values_binding: Optional[str] = None  # Bind to dataset/query for initial values
+    bound_dataset: Optional[str] = None  # Deprecated: use initial_values_binding
     bound_record_id: Optional[Expression] = None  # Specific record ID to load
+    
+    # Form-level configuration
+    validation_mode: str = "on_blur"  # "on_blur" | "on_change" | "on_submit"
+    submit_button_text: Optional[str] = None
+    reset_button: bool = False
+    loading_text: Optional[str] = None
+    success_message: Optional[str] = None
+    error_message: Optional[str] = None
+    
+    # Legacy/styling
+    styles: Dict[str, str] = field(default_factory=dict)
+    layout: Optional[LayoutSpec] = None  # Deprecated: use layout_mode
+    effects: Set[str] = field(default_factory=set)
+    binding: Optional[DataBindingConfig] = None
 
 
 @dataclass
@@ -297,7 +355,7 @@ class InfoGridItem:
     """Single item in an info grid section."""
     icon: Optional[str] = None
     label: Optional[str] = None
-    field: Optional[str] = None  # Single field
+    field_name: Optional[str] = None  # Single field (renamed to avoid shadowing dataclasses.field)
     values: List[FieldValueConfig] = field(default_factory=list)  # Multiple values
 
 
@@ -562,8 +620,8 @@ class ShowDataTable(Statement):
 @dataclass
 class ListItemConfig:
     """Configuration for individual list items."""
+    title: Union[str, Dict[str, Any]]  # Field name or template (required, must come first)
     avatar: Optional[Dict[str, Any]] = None  # Avatar binding or configuration
-    title: Union[str, Dict[str, Any]]  # Field name or template
     subtitle: Optional[Union[str, Dict[str, Any]]] = None
     metadata: Dict[str, Union[str, Dict[str, Any]]] = field(default_factory=dict)  # Key-value metadata
     actions: List[ConditionalAction] = field(default_factory=list)
@@ -772,9 +830,9 @@ class ShowAvatarGroup(Statement):
             max_visible: 5
             size: md
     """
-    title: Optional[str] = None
-    source_type: str
+    source_type: str  # Required fields first
     source: str
+    title: Optional[str] = None
     
     # Item configuration
     item: Optional[AvatarItem] = None
@@ -798,10 +856,9 @@ class ShowAvatarGroup(Statement):
 @dataclass
 class ChartConfig:
     """Enhanced chart configuration with multi-series support."""
-    variant: str = "line"  # "line" | "bar" | "pie" | "area" | "scatter" | "combo"
-    
-    # Data mapping
+    # Data mapping (required fields first)
     x_field: str
+    variant: str = "line"  # "line" | "bar" | "pie" | "area" | "scatter" | "combo"
     y_fields: List[str] = field(default_factory=list)  # Multiple metrics for multi-series
     group_by: Optional[str] = None  # For series grouping
     
@@ -1041,6 +1098,374 @@ class AccordionLayout(Statement):
     layout: Optional[LayoutMeta] = None
 
 
+# =============================================================================
+# NAVIGATION & APP CHROME COMPONENTS
+# =============================================================================
+
+
+@dataclass
+class NavItem:
+    """Navigation item for sidebar or navbar."""
+    id: str
+    label: str
+    route: Optional[str] = None
+    icon: Optional[str] = None
+    badge: Optional[BadgeConfig] = None
+    action: Optional[str] = None  # Action ID if this triggers an action instead of navigation
+    condition: Optional[str] = None  # Conditional visibility
+    children: List['NavItem'] = field(default_factory=list)  # For nested navigation
+
+
+@dataclass
+class NavSection:
+    """Section grouping in sidebar navigation."""
+    id: str
+    label: str
+    items: List[str] = field(default_factory=list)  # IDs of nav items
+    collapsible: bool = False
+    collapsed_by_default: bool = False
+
+
+@dataclass
+class NavbarAction:
+    """Action button in navbar (menu, toggle, button)."""
+    id: str
+    label: Optional[str] = None
+    icon: Optional[str] = None
+    type: Literal["button", "menu", "toggle"] = "button"
+    action: Optional[str] = None  # Action ID to trigger
+    menu_items: List[NavItem] = field(default_factory=list)  # For type="menu"
+    condition: Optional[str] = None  # Conditional visibility
+
+
+@dataclass
+class Sidebar(Statement):
+    """
+    App-level sidebar navigation.
+    
+    Provides primary navigation through app routes with support for:
+    - Hierarchical navigation items
+    - Section grouping
+    - Collapsible sidebar
+    - Icons and badges
+    - Conditional visibility
+    """
+    items: List[NavItem] = field(default_factory=list)
+    sections: List[NavSection] = field(default_factory=list)
+    collapsible: bool = False
+    collapsed_by_default: bool = False
+    width: Optional[str] = None  # "narrow" | "normal" | "wide" | specific px/rem
+    position: Literal["left", "right"] = "left"
+
+
+@dataclass
+class Navbar(Statement):
+    """
+    Top-level application navigation bar.
+    
+    Provides app branding and global actions like:
+    - User menu
+    - Theme toggle
+    - Notifications
+    - Search trigger
+    """
+    logo: Optional[str] = None  # Asset reference or text
+    title: Optional[str] = None  # App title or expression
+    actions: List[NavbarAction] = field(default_factory=list)
+    position: Literal["top", "bottom"] = "top"
+    sticky: bool = True
+
+
+@dataclass
+class BreadcrumbItem:
+    """Single breadcrumb item."""
+    label: str  # Can be expression like "{{page_title}}"
+    route: Optional[str] = None  # If None, renders as text (current page)
+
+
+@dataclass
+class Breadcrumbs(Statement):
+    """
+    Breadcrumb navigation showing page hierarchy.
+    
+    Supports both explicit items and auto-derivation from routing.
+    """
+    items: List[BreadcrumbItem] = field(default_factory=list)
+    auto_derive: bool = False  # Auto-generate from route hierarchy
+    separator: str = "/"  # Separator character between breadcrumbs
+
+
+@dataclass
+class CommandSource:
+    """Source configuration for command palette."""
+    type: Literal["routes", "actions", "custom", "api"] = "routes"
+    filter: Optional[str] = None  # Filter expression
+    custom_items: List[Dict[str, Any]] = field(default_factory=list)  # For type="custom"
+    # API-backed source fields
+    id: Optional[str] = None  # Unique identifier for the source
+    endpoint: Optional[str] = None  # API endpoint URL
+    label: Optional[str] = None  # Display label for the source
+
+
+@dataclass
+class CommandPalette(Statement):
+    """
+    Power-user command interface (Ctrl+K / Cmd+K).
+    
+    Provides quick access to:
+    - Navigation to any route
+    - Execution of registered actions
+    - Custom commands
+    """
+    shortcut: str = "ctrl+k"  # Keyboard shortcut to trigger
+    sources: List[CommandSource] = field(default_factory=list)
+    placeholder: str = "Search commands..."
+    max_results: int = 10
+
+
+# ============================================================
+# FEEDBACK COMPONENTS (Modal, Toast)
+# ============================================================
+
+
+@dataclass
+class ModalAction:
+    """Action button in a modal dialog."""
+    label: str
+    action: Optional[str] = None  # Action name to trigger
+    variant: Optional[Literal["default", "primary", "destructive", "ghost", "link"]] = "default"
+    close: bool = True  # Whether clicking closes modal
+
+
+@dataclass
+class Modal(Statement):
+    """
+    Modal dialog overlay for focused interactions.
+    
+    Use for:
+    - Confirmations (delete, submit)
+    - Forms requiring focus
+    - Complex multi-step workflows
+    - Critical information display
+    """
+    id: str  # Unique identifier for opening/closing
+    title: str
+    description: Optional[str] = None
+    content: List[Statement] = field(default_factory=list)  # Content inside modal
+    actions: List[ModalAction] = field(default_factory=list)  # Footer buttons
+    size: Literal["sm", "md", "lg", "xl", "full"] = "md"
+    dismissible: bool = True  # Can close with ESC or backdrop click
+    trigger: Optional[str] = None  # Action name that opens modal
+
+
+@dataclass
+class Toast(Statement):
+    """
+    Temporary notification message.
+    
+    Use for:
+    - Success confirmations ("Saved successfully")
+    - Error messages ("Failed to save")
+    - Info messages ("Processing...")
+    - Warning messages ("Unsaved changes")
+    """
+    id: str  # Unique identifier
+    title: str
+    description: Optional[str] = None
+    variant: Literal["default", "success", "error", "warning", "info"] = "default"
+    duration: int = 3000  # Auto-dismiss after ms (0 = manual dismiss only)
+    action_label: Optional[str] = None  # Optional action button
+    action: Optional[str] = None  # Action to trigger on button click
+    position: Literal["top", "top-right", "top-left", "bottom", "bottom-right", "bottom-left"] = "top-right"
+    trigger: Optional[str] = None  # Action name that shows toast
+
+
+# =============================================================================
+# AI Semantic Components
+# =============================================================================
+
+@dataclass
+class ChatThread(Statement):
+    """
+    Multi-message AI conversation display.
+    
+    Displays a conversation between user, assistant, system, and agent roles.
+    Supports streaming, auto-scroll, and message grouping.
+    
+    Binds to real conversation data from agents/runtime, never demo data.
+    """
+    id: str  # Unique identifier
+    messages_binding: str  # Binding to conversation/messages list (e.g., "conversation.messages", "agent.chat_history")
+    group_by: Literal["role", "speaker", "timestamp", "none"] = "role"
+    show_timestamps: bool = True
+    show_avatar: bool = True
+    reverse_order: bool = False  # True for newest-first
+    auto_scroll: bool = True  # Auto-scroll to latest message
+    max_height: Optional[str] = None  # CSS height value (e.g., "600px", "80vh")
+    # Streaming configuration
+    streaming_enabled: bool = False
+    streaming_source: Optional[str] = None  # Binding to streaming token source
+    # Display options
+    show_role_labels: bool = True
+    show_token_count: bool = False
+    enable_copy: bool = True  # Copy message content to clipboard
+    enable_regenerate: bool = False  # Regenerate response button
+    # Styling
+    variant: Literal["default", "compact", "detailed"] = "default"
+
+
+@dataclass
+class AgentPanel(Statement):
+    """
+    Display agent-level state and metrics.
+    
+    Shows current agent info, status, tokens, cost, latency, and environment.
+    Binds to real agent runtime state and metrics instrumentation.
+    """
+    id: str  # Unique identifier
+    agent_binding: str  # Binding to agent or graph node (e.g., "current_agent", "agent.researcher")
+    metrics_binding: Optional[str] = None  # Binding to metrics (e.g., "run.metrics", "agent.stats")
+    # Display configuration
+    show_status: bool = True
+    show_metrics: bool = True
+    show_profile: bool = False  # Show environment (dev/staging/prod)
+    show_limits: bool = False  # Show rate limits, quotas
+    show_last_error: bool = False
+    show_tools: bool = False  # Show available tools
+    # Metrics to display
+    show_tokens: bool = True  # prompt/completion/total tokens
+    show_cost: bool = True  # estimated cost
+    show_latency: bool = True  # response time
+    show_model: bool = True  # model name
+    # Layout
+    variant: Literal["card", "inline", "sidebar"] = "card"
+    compact: bool = False
+
+
+@dataclass
+class ToolCallView(Statement):
+    """
+    Display tool invocations and their details.
+    
+    Shows tool calls with inputs, outputs, timing, and status.
+    Binds to real tool invocation logs from runtime/logging system.
+    """
+    id: str  # Unique identifier
+    calls_binding: str  # Binding to tool invocation logs (e.g., "run.tool_calls", "agent.tools_used")
+    # Display configuration
+    show_inputs: bool = True
+    show_outputs: bool = True
+    show_timing: bool = True
+    show_status: bool = True
+    show_raw_payload: bool = False  # Show raw JSON
+    # Filtering
+    filter_tool_name: Optional[List[str]] = None  # Filter by tool names
+    filter_status: Optional[List[str]] = None  # Filter by status (success/failed/cancelled)
+    # Layout
+    variant: Literal["list", "table", "timeline"] = "list"
+    expandable: bool = True  # Collapsible tool call details
+    max_height: Optional[str] = None
+    # Interaction
+    enable_retry: bool = False  # Retry failed calls
+    enable_copy: bool = True  # Copy call details
+
+
+@dataclass
+class LogView(Statement):
+    """
+    Tail/inspect logs and traces for a run.
+    
+    Displays logs with levels, timestamps, messages, and metadata.
+    Binds to real logging data from runtime, supports large volumes.
+    """
+    id: str  # Unique identifier
+    logs_binding: str  # Binding to log entries (e.g., "run.logs", "agent.traces", "app.logs")
+    # Filtering
+    level_filter: Optional[List[str]] = None  # Filter by level (info/warn/error/debug)
+    search_enabled: bool = True  # Enable search box
+    search_placeholder: str = "Search logs..."
+    # Display configuration
+    show_timestamp: bool = True
+    show_level: bool = True
+    show_metadata: bool = False  # Show structured metadata (JSON)
+    show_source: bool = False  # Show log source/module
+    # Behavior
+    auto_scroll: bool = True  # Tail mode
+    auto_refresh: bool = False
+    refresh_interval: int = 5000  # ms
+    max_entries: int = 1000  # Limit displayed entries
+    # Layout
+    variant: Literal["default", "compact", "detailed"] = "default"
+    max_height: Optional[str] = None
+    virtualized: bool = True  # Use virtualization for large logs
+    # Interaction
+    enable_copy: bool = True
+    enable_download: bool = False  # Download logs as file
+
+
+@dataclass
+class EvaluationResult(Statement):
+    """
+    Display evaluation run metrics, histograms, and error analysis.
+    
+    Shows aggregate metrics, distributions, and error slices from eval runs.
+    Binds to real evaluation data from evaluation infrastructure.
+    """
+    id: str  # Unique identifier
+    eval_run_binding: str  # Binding to evaluation run (e.g., "eval.run_123", "latest_eval")
+    # Display configuration
+    show_summary: bool = True  # Aggregate metrics summary
+    show_histograms: bool = True  # Score distributions
+    show_error_table: bool = True  # Per-example errors
+    show_metadata: bool = False  # Run metadata (timestamp, config, etc.)
+    # Metrics configuration
+    metrics_to_show: Optional[List[str]] = None  # Specific metrics to display
+    primary_metric: Optional[str] = None  # Highlighted metric
+    # Filtering
+    filter_metric: Optional[str] = None  # Filter examples by metric
+    filter_min_score: Optional[float] = None
+    filter_max_score: Optional[float] = None
+    filter_status: Optional[List[str]] = None  # Filter by pass/fail
+    # Error analysis
+    show_error_distribution: bool = True
+    show_error_examples: bool = True
+    max_error_examples: int = 10
+    # Layout
+    variant: Literal["dashboard", "detailed", "compact"] = "dashboard"
+    # Comparison
+    comparison_run_binding: Optional[str] = None  # Compare with another run
+
+
+@dataclass
+class DiffView(Statement):
+    """
+    Compare model outputs, prompts, or documents side-by-side or inline.
+    
+    Renders diffs for text or code with syntax highlighting.
+    Uses library-backed diff algorithm, not naive string comparison.
+    """
+    id: str  # Unique identifier
+    left_binding: str  # Binding to "before" text/code (e.g., "version.v1.output", "prompt.original")
+    right_binding: str  # Binding to "after" text/code (e.g., "version.v2.output", "prompt.modified")
+    # Display configuration
+    mode: Literal["unified", "split"] = "split"
+    content_type: Literal["text", "code", "markdown"] = "text"
+    language: Optional[str] = None  # Programming language for syntax highlighting (e.g., "python", "javascript")
+    # Diff options
+    ignore_whitespace: bool = False
+    ignore_case: bool = False
+    context_lines: int = 3  # Lines of context around changes
+    # Display options
+    show_line_numbers: bool = True
+    highlight_inline_changes: bool = True  # Highlight word-level changes
+    show_legend: bool = True  # Show addition/deletion legend
+    # Layout
+    max_height: Optional[str] = None
+    # Interaction
+    enable_copy: bool = True
+    enable_download: bool = False  # Download diff as file
+
+
 ActionOperationType = Union[
     UpdateOperation,
     ToastOperation,
@@ -1068,6 +1493,22 @@ PageStatement = Union[
     SplitLayout,
     TabsLayout,
     AccordionLayout,
+    # Navigation & Chrome
+    Sidebar,
+    Navbar,
+    Breadcrumbs,
+    CommandPalette,
+    # Feedback Components
+    Modal,
+    Toast,
+    # AI Semantic Components
+    ChatThread,
+    AgentPanel,
+    ToolCallView,
+    LogView,
+    EvaluationResult,
+    DiffView,
+    # Control flow & Actions
     Action,
     IfBlock,
     ForLoop,
@@ -1123,6 +1564,27 @@ __all__ = [
     "AccordionLayout",
     "TabItem",
     "AccordionItem",
+    # Navigation & Chrome
+    "NavItem",
+    "NavSection",
+    "NavbarAction",
+    "Sidebar",
+    "Navbar",
+    "BreadcrumbItem",
+    "Breadcrumbs",
+    "CommandSource",
+    "CommandPalette",
+    # Feedback Components
+    "ModalAction",
+    "Modal",
+    "Toast",
+    # AI Semantic Components
+    "ChatThread",
+    "AgentPanel",
+    "ToolCallView",
+    "LogView",
+    "EvaluationResult",
+    "DiffView",
     # Control flow and actions
     "Action",
     "VariableAssignment",

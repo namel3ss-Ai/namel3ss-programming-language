@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from namel3ss.ast import (
     AccordionItem,
@@ -10,6 +10,8 @@ from namel3ss.ast import (
     ActionOperationType,
     AvatarItem,
     BadgeConfig,
+    BreadcrumbItem,
+    Breadcrumbs,
     CallPythonOperation,
     CardFooter,
     CardHeader,
@@ -17,6 +19,8 @@ from namel3ss.ast import (
     CardSection,
     ChartConfig,
     ColumnConfig,
+    CommandPalette,
+    CommandSource,
     ConditionalAction,
     ContextValue,
     EmptyStateConfig,
@@ -28,6 +32,13 @@ from namel3ss.ast import (
     LayoutMeta,
     LayoutSpec,
     ListItemConfig,
+    Modal,
+    ModalAction,
+    Navbar,
+    NavbarAction,
+    NavItem,
+    NavSection,
+    PageStatement,
     PredictStatement,
     ShowAvatarGroup,
     ShowCard,
@@ -41,12 +52,15 @@ from namel3ss.ast import (
     ShowTable,
     ShowText,
     ShowTimeline,
+    Sidebar,
     SparklineConfig,
     SplitLayout,
     StackLayout,
+    Statement,
     TabItem,
     TabsLayout,
     TimelineItem,
+    Toast,
     ToolbarConfig,
     VariableAssignment,
 )
@@ -414,11 +428,16 @@ class ComponentParserMixin(ActionParserMixin):
 
     def _parse_show_form(self, line: str, base_indent: int) -> ShowForm:
         """
-        Parse a form input component.
+        Parse a production-grade form component.
         
-        Syntax: show form "Title":
-        
-        Forms include field definitions and submit action handlers.
+        Syntax: 
+            show form "Title":
+                fields: [...]
+                layout: vertical|horizontal|inline
+                submit_action: action_name
+                initial_values_binding: dataset_name
+                
+        Supports semantic field components with validation, bindings, and conditional rendering.
         """
         match = re.match(r'show\s+form\s+"([^\"]+)"\s*:?', line.strip())
         if not match:
@@ -433,6 +452,18 @@ class ComponentParserMixin(ActionParserMixin):
         on_submit_ops: List[ActionOperationType] = []
         styles: Dict[str, str] = {}
         layout_spec = LayoutSpec()
+        layout_mode = "vertical"
+        submit_action = None
+        initial_values_binding = None
+        bound_dataset = None
+        bound_record_id = None
+        validation_mode = "on_blur"
+        submit_button_text = None
+        reset_button = False
+        loading_text = None
+        success_message = None
+        error_message = None
+        
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -444,16 +475,83 @@ class ComponentParserMixin(ActionParserMixin):
                 continue
             if indent <= base_indent:
                 break
+                
+            # Parse legacy inline fields (fields: name, email, message)
             if stripped.startswith('fields:'):
                 rest = stripped[len('fields:'):].strip()
-                field_parts = [p.strip() for p in rest.split(',') if p.strip()]
-                for fp in field_parts:
-                    if ':' in fp:
-                        fname, ftype = [part.strip() for part in fp.split(':', 1)]
-                        fields.append(FormField(name=fname, field_type=ftype))
-                    else:
-                        fields.append(FormField(name=fp))
+                if rest and ',' in rest:  # Inline comma-separated field list
+                    field_parts = [p.strip() for p in rest.split(',') if p.strip()]
+                    for fp in field_parts:
+                        if ':' in fp:
+                            fname, ftype = [part.strip() for part in fp.split(':', 1)]
+                            fields.append(FormField(name=fname, component=ftype, field_type=ftype))
+                        else:
+                            fields.append(FormField(name=fp))
+                    self._advance()
+                    continue
+                # Otherwise, it's declarative array syntax on following lines
+                else:
+                    self._advance()
+                    fields = self._parse_form_fields_block(indent)
+                    continue
+            # Parse layout mode
+            elif stripped.startswith('layout:'):
+                value = stripped[len('layout:'):].strip()
+                if value in ('vertical', 'horizontal', 'inline'):
+                    layout_mode = value
+                else:
+                    # Legacy layout block
+                    block_indent = indent
+                    self._advance()
+                    block = self._parse_kv_block(block_indent)
+                    layout_spec = self._build_layout_spec(block)
+                    continue
                 self._advance()
+                
+            # Parse submit action
+            elif stripped.startswith('submit_action:'):
+                submit_action = stripped[len('submit_action:'):].strip()
+                self._advance()
+                
+            # Parse initial values binding
+            elif stripped.startswith('initial_values_binding:'):
+                initial_values_binding = stripped[len('initial_values_binding:'):].strip()
+                self._advance()
+                
+            # Parse bound dataset (legacy)
+            elif stripped.startswith('bound_dataset:'):
+                bound_dataset = stripped[len('bound_dataset:'):].strip()
+                self._advance()
+                
+            # Parse validation mode
+            elif stripped.startswith('validation_mode:'):
+                validation_mode = stripped[len('validation_mode:'):].strip()
+                self._advance()
+                
+            # Parse submit button text
+            elif stripped.startswith('submit_button_text:'):
+                value = stripped[len('submit_button_text:'):].strip()
+                submit_button_text = value.strip('"\'')
+                self._advance()
+                
+            # Parse reset button
+            elif stripped.startswith('reset_button:'):
+                value = stripped[len('reset_button:'):].strip().lower()
+                reset_button = value in ('true', 'yes', '1')
+                self._advance()
+                
+            # Parse messages
+            elif stripped.startswith('loading_text:'):
+                loading_text = stripped[len('loading_text:'):].strip().strip('"\'')
+                self._advance()
+            elif stripped.startswith('success_message:'):
+                success_message = stripped[len('success_message:'):].strip().strip('"\'')
+                self._advance()
+            elif stripped.startswith('error_message:'):
+                error_message = stripped[len('error_message:'):].strip().strip('"\'')
+                self._advance()
+                
+            # Parse legacy on submit operations
             elif stripped.startswith('on submit:'):
                 op_base_indent = self._indent(nxt)
                 self._advance()
@@ -470,30 +568,245 @@ class ComponentParserMixin(ActionParserMixin):
                         break
                     op = self._parse_action_operation(sub_stripped)
                     on_submit_ops.append(op)
-            elif stripped.startswith('layout:'):
-                block_indent = indent
-                self._advance()
-                block = self._parse_kv_block(block_indent)
-                layout_spec = self._build_layout_spec(block)
+                    
+            # Parse other properties as styles
             else:
                 match_style = re.match(r'([\w\s]+):\s*(.+)', stripped)
-                if not match_style:
-                    raise self._error(
-                        "Expected form property ('fields:', 'on submit:' or style)",
-                        self.pos + 1,
-                        nxt,
-                        hint='Valid form properties: fields, on submit, layout, and style properties'
-                    )
-                key = match_style.group(1).strip()
-                value = match_style.group(2).strip()
-                styles[key] = value
+                if match_style:
+                    key = match_style.group(1).strip()
+                    value = match_style.group(2).strip()
+                    styles[key] = value
                 self._advance()
+                
         return ShowForm(
             title=title,
             fields=fields,
-            on_submit=on_submit_ops,
-            style=styles,
+            layout_mode=layout_mode,
+            submit_action=submit_action,
+            on_submit_ops=on_submit_ops,
+            initial_values_binding=initial_values_binding,
+            bound_dataset=bound_dataset,
+            bound_record_id=bound_record_id,
+            validation_mode=validation_mode,
+            submit_button_text=submit_button_text,
+            reset_button=reset_button,
+            loading_text=loading_text,
+            success_message=success_message,
+            error_message=error_message,
+            styles=styles,
             layout=layout_spec,
+        )
+    
+    def _parse_form_fields_block(self, parent_indent: int) -> List[FormField]:
+        """
+        Parse a fields block with declarative field definitions.
+        
+        Syntax:
+            fields:
+              - name: email
+                component: text_input
+                label: "Email Address"
+                required: true
+                placeholder: "you@example.com"
+              - name: role
+                component: select
+                options_binding: datasets.roles
+        """
+        fields = []
+        
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            indent = self._indent(line)
+            stripped = line.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= parent_indent:
+                break
+                
+            # Check for field start (either "- name:" or "{ name:")
+            if stripped.startswith('-') or stripped.startswith('{'):
+                field = self._parse_form_field_definition(indent)
+                if field:
+                    fields.append(field)
+            else:
+                break
+                
+        return fields
+    
+    def _parse_form_field_definition(self, field_indent: int) -> Optional[FormField]:
+        """Parse a single field definition from declarative syntax."""
+        line = self._peek()
+        if not line:
+            return None
+            
+        stripped = line.strip()
+        
+        # Handle inline object syntax: { name: "email", component: text_input, ... }
+        if stripped.startswith('{'):
+            self._advance()
+            field_dict = self._parse_inline_field_object(stripped)
+            return self._build_form_field_from_dict(field_dict)
+            
+        # Handle list syntax with properties on following lines
+        if stripped.startswith('-'):
+            # Remove the leading dash and check what follows
+            after_dash = stripped[1:].strip()
+            
+            # Check if it's an inline object after the dash: - { name: "x", ... }
+            if after_dash.startswith('{'):
+                self._advance()
+                field_dict = self._parse_inline_field_object(after_dash)
+                return self._build_form_field_from_dict(field_dict)
+            
+            field_dict = {}
+            
+            if after_dash:
+                # Parse property on same line as dash: "- name: email"
+                match = re.match(r'([a-z_][a-z0-9_]*):\s*(.+)', after_dash)
+                if match:
+                    key = match.group(1)
+                    value_str = match.group(2).strip()
+                    field_dict[key] = self._parse_field_property_value(key, value_str)
+            
+            self._advance()
+            # Parse additional properties on following lines
+            more_props = self._parse_field_properties_block(field_indent)
+            field_dict.update(more_props)
+            return self._build_form_field_from_dict(field_dict)
+            
+        return None
+    
+    def _parse_inline_field_object(self, line: str) -> Dict[str, Any]:
+        """Parse inline field object: { name: "email", component: text_input, required: true }"""
+        # Simple parser for inline object notation
+        field_dict = {}
+        content = line.strip('{}').strip()
+        
+        # Split by commas, but respect quoted strings
+        parts = []
+        current = ""
+        in_quotes = False
+        for char in content:
+            if char == '"' or char == "'":
+                in_quotes = not in_quotes
+            if char == ',' and not in_quotes:
+                parts.append(current.strip())
+                current = ""
+            else:
+                current += char
+        if current.strip():
+            parts.append(current.strip())
+            
+        for part in parts:
+            if ':' in part:
+                key, value = part.split(':', 1)
+                key = key.strip()
+                value = value.strip().strip('"\'')
+                
+                # Convert boolean strings
+                if value.lower() in ('true', 'false'):
+                    value = value.lower() == 'true'
+                # Convert numeric strings
+                elif value.isdigit():
+                    value = int(value)
+                elif value.replace('.', '', 1).isdigit():
+                    value = float(value)
+                    
+                field_dict[key] = value
+                
+        return field_dict
+    
+    def _parse_field_properties_block(self, field_indent: int) -> Dict[str, Any]:
+        """Parse field properties from a multi-line block."""
+        field_dict = {}
+        
+        while self.pos < len(self.lines):
+            line = self._peek()
+            if line is None:
+                break
+            indent = self._indent(line)
+            stripped = line.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= field_indent:
+                break
+                
+            # Parse key: value pair
+            match = re.match(r'([a-z_][a-z0-9_]*):\s*(.+)', stripped)
+            if match:
+                key = match.group(1)
+                value_str = match.group(2).strip()
+                
+                # Parse value based on type
+                value = self._parse_field_property_value(key, value_str)
+                field_dict[key] = value
+                self._advance()
+            else:
+                break
+                
+        return field_dict
+    
+    def _parse_field_property_value(self, key: str, value_str: str) -> Any:
+        """Parse and convert field property value to appropriate type."""
+        # Remove quotes
+        if (value_str.startswith('"') and value_str.endswith('"')) or \
+           (value_str.startswith("'") and value_str.endswith("'")):
+            return value_str[1:-1]
+            
+        # Boolean
+        if value_str.lower() in ('true', 'false'):
+            return value_str.lower() == 'true'
+            
+        # Integer
+        if value_str.isdigit():
+            return int(value_str)
+            
+        # Float
+        if value_str.replace('.', '', 1).isdigit() and value_str.count('.') == 1:
+            return float(value_str)
+            
+        # Expression (starts with variable or function call)
+        if key in ('default', 'initial_value', 'disabled', 'visible', 'bound_record_id'):
+            # Parse as expression (simplified - real implementation would use expression parser)
+            return value_str
+            
+        return value_str
+    
+    def _build_form_field_from_dict(self, field_dict: Dict[str, Any]) -> FormField:
+        """Build FormField instance from parsed dictionary."""
+        if 'name' not in field_dict:
+            raise ValueError("Field must have a 'name' property")
+            
+        return FormField(
+            name=field_dict.get('name'),
+            component=field_dict.get('component', 'text_input'),
+            label=field_dict.get('label'),
+            placeholder=field_dict.get('placeholder'),
+            help_text=field_dict.get('help_text'),
+            required=field_dict.get('required', False),
+            default=field_dict.get('default'),
+            initial_value=field_dict.get('initial_value'),
+            min_length=field_dict.get('min_length'),
+            max_length=field_dict.get('max_length'),
+            pattern=field_dict.get('pattern'),
+            min_value=field_dict.get('min_value'),
+            max_value=field_dict.get('max_value'),
+            step=field_dict.get('step'),
+            options_binding=field_dict.get('options_binding'),
+            options=field_dict.get('options', []),
+            disabled=field_dict.get('disabled'),
+            visible=field_dict.get('visible'),
+            multiple=field_dict.get('multiple', False),
+            accept=field_dict.get('accept'),
+            max_file_size=field_dict.get('max_file_size'),
+            upload_endpoint=field_dict.get('upload_endpoint'),
+            field_type=field_dict.get('field_type'),  # Backward compatibility
         )
 
     def _parse_show_card(self, line: str, base_indent: int) -> ShowCard:
@@ -1342,14 +1655,24 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= base_indent:
                 break
             
-            if stripped.startswith('- id:') or stripped.startswith('-id:'):
+            # Accept both "- id:" and "- field:" as column start
+            if stripped.startswith('- id:') or stripped.startswith('-id:') or stripped.startswith('- field:') or stripped.startswith('-field:'):
                 # Inline column definition
-                col_id = stripped.split(':', 1)[1].strip() if ':' in stripped else ""
+                col_id = ""
+                initial_field = None
+                
+                if stripped.startswith('- field:') or stripped.startswith('-field:'):
+                    # Extract field value as the initial field
+                    initial_field = stripped.split(':', 1)[1].strip() if ':' in stripped else ""
+                    col_id = initial_field  # Use field as ID initially
+                else:
+                    col_id = stripped.split(':', 1)[1].strip() if ':' in stripped else ""
+                
                 self._advance()
                 
                 # Parse column properties
                 label: str = col_id
-                field: Optional[str] = None
+                field: Optional[str] = initial_field  # Start with field from dash line if present
                 width: Optional[Union[str, int]] = None
                 align: str = "left"
                 sortable: bool = True
@@ -1369,8 +1692,9 @@ class ComponentParserMixin(ActionParserMixin):
                     if indent2 <= indent:
                         break
                     
-                    if stripped2.startswith('label:'):
-                        label = stripped2[len('label:'):].strip().strip('"')
+                    if stripped2.startswith('label:') or stripped2.startswith('header:'):
+                        key_len = len('header:') if stripped2.startswith('header:') else len('label:')
+                        label = stripped2[key_len:].strip().strip('"')
                         self._advance()
                     elif stripped2.startswith('field:'):
                         field = stripped2[len('field:'):].strip()
@@ -2156,6 +2480,7 @@ class ComponentParserMixin(ActionParserMixin):
         item_type: Optional[str] = None
         style: Optional[str] = None
         state_class: Optional[Dict[str, str]] = None
+        role_class: Optional[str] = None
         header: Optional[CardHeader] = None
         sections: Optional[List[CardSection]] = None
         actions: Optional[List[ConditionalAction]] = None
@@ -2182,6 +2507,9 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('state_class:'):
                 self._advance()
                 state_class = self._parse_kv_block(indent)
+            elif stripped.startswith('role_class:'):
+                role_class = stripped[len('role_class:'):].strip().strip('"')
+                self._advance()
             elif stripped.startswith('header:'):
                 self._advance()
                 header = self._parse_card_header(indent)
@@ -2206,6 +2534,7 @@ class ComponentParserMixin(ActionParserMixin):
             type=item_type,
             style=style,
             state_class=state_class,
+            role_class=role_class,
             header=header,
             sections=sections,
             actions=actions,
@@ -2216,7 +2545,7 @@ class ComponentParserMixin(ActionParserMixin):
         """Parse card header with title, subtitle, avatar, and badges."""
         title: Optional[str] = None
         subtitle: Optional[str] = None
-        avatar: Optional[str] = None
+        avatar: Optional[Dict[str, Any]] = None
         badges: Optional[List[BadgeConfig]] = None
         
         while self.pos < len(self.lines):
@@ -2238,8 +2567,18 @@ class ComponentParserMixin(ActionParserMixin):
                 subtitle = stripped[len('subtitle:'):].strip().strip('"')
                 self._advance()
             elif stripped.startswith('avatar:'):
-                avatar = stripped[len('avatar:'):].strip()
-                self._advance()
+                avatar_val = stripped[len('avatar:'):].strip()
+                if avatar_val:
+                    # Simple string value
+                    avatar = avatar_val
+                else:
+                    # Nested block
+                    self._advance()
+                    avatar = self._parse_kv_block(indent)
+                if not avatar_val:
+                    pass  # already advanced
+                else:
+                    self._advance()
             elif stripped.startswith('badges:'):
                 self._advance()
                 badges = self._parse_badge_list(indent)
@@ -2376,6 +2715,7 @@ class ComponentParserMixin(ActionParserMixin):
         section_type: Optional[str] = None
         condition: Optional[str] = None
         style: Optional[str] = None
+        title: Optional[str] = None
         icon: Optional[str] = None
         columns: Optional[int] = None
         items: Optional[List[Any]] = None
@@ -2413,6 +2753,9 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('style:'):
                 style = stripped[len('style:'):].strip()
                 self._advance()
+            elif stripped.startswith('title:'):
+                title = stripped[len('title:'):].strip().strip('"')
+                self._advance()
             elif stripped.startswith('icon:'):
                 icon = stripped[len('icon:'):].strip()
                 self._advance()
@@ -2435,6 +2778,7 @@ class ComponentParserMixin(ActionParserMixin):
             type=section_type,
             condition=condition,
             style=style,
+            title=title,
             icon=icon,
             columns=columns,
             items=items,
@@ -2513,7 +2857,7 @@ class ComponentParserMixin(ActionParserMixin):
         return InfoGridItem(
             icon=icon,
             label=label,
-            field=field,
+            field_name=field,
             values=values,
         )
 
@@ -2740,6 +3084,56 @@ class ComponentParserMixin(ActionParserMixin):
     # =========================================================================
     # Layout Primitives (Stack, Grid, Split, Tabs, Accordion)
     # =========================================================================
+    
+    def _parse_children_list(self, base_indent: int) -> List[PageStatement]:
+        """Parse a list of child page statements, handling dash-list syntax.
+        
+        Supports both:
+            children:
+              - show card "A"
+              - show card "B"
+        and:
+            children:
+              show card "A"
+              show card "B"
+        """
+        children: List[PageStatement] = []
+        
+        while self.pos < len(self.lines):
+            child_line = self._peek()
+            if child_line is None:
+                break
+            child_indent = self._indent(child_line)
+            child_stripped = child_line.strip()
+            
+            if child_indent <= base_indent or not child_stripped:
+                if not child_stripped:
+                    self._advance()
+                    continue
+                break
+            
+            # Handle dash-list items: "- show ..." or "- layout ..."
+            if child_stripped.startswith('- '):
+                # Remove the dash and parse the statement
+                statement_text = child_stripped[2:].strip()
+                # Temporarily replace the line without the dash for parsing
+                current_pos = self.pos
+                original_line = self.lines[current_pos]
+                self.lines[current_pos] = ' ' * child_indent + statement_text
+                try:
+                    child_stmt = self._parse_page_statement(child_indent)
+                    if child_stmt:
+                        children.append(child_stmt)
+                finally:
+                    # Restore original line (position may have advanced)
+                    self.lines[current_pos] = original_line
+            else:
+                # Regular statement without dash
+                child_stmt = self._parse_page_statement(child_indent)
+                if child_stmt:
+                    children.append(child_stmt)
+        
+        return children
 
     def _parse_layout_stack(self, line: str, base_indent: int) -> StackLayout:
         """
@@ -2817,21 +3211,8 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
             elif stripped.startswith('children:'):
                 self._advance()
-                # Parse child statements
-                while self.pos < len(self.lines):
-                    child_line = self._peek()
-                    if child_line is None:
-                        break
-                    child_indent = self._indent(child_line)
-                    if child_indent <= indent or not child_line.strip():
-                        if not child_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    # Recursive call to parse_page_statement
-                    child_stmt = self._parse_page_statement(child_indent)
-                    if child_stmt:
-                        children.append(child_stmt)
+                # Use helper method to parse children with dash-list support
+                children = self._parse_children_list(indent)
             elif stripped.startswith('style:'):
                 self._advance()
                 style = self._parse_kv_block(indent)
@@ -2920,19 +3301,8 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
             elif stripped.startswith('children:'):
                 self._advance()
-                while self.pos < len(self.lines):
-                    child_line = self._peek()
-                    if child_line is None:
-                        break
-                    child_indent = self._indent(child_line)
-                    if child_indent <= indent or not child_line.strip():
-                        if not child_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    child_stmt = self._parse_page_statement(child_indent)
-                    if child_stmt:
-                        children.append(child_stmt)
+                # Use helper method to parse children with dash-list support
+                children = self._parse_children_list(indent)
             elif stripped.startswith('style:'):
                 self._advance()
                 style = self._parse_kv_block(indent)
@@ -3022,34 +3392,12 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
             elif stripped.startswith('left:'):
                 self._advance()
-                while self.pos < len(self.lines):
-                    child_line = self._peek()
-                    if child_line is None:
-                        break
-                    child_indent = self._indent(child_line)
-                    if child_indent <= indent or not child_line.strip():
-                        if not child_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    child_stmt = self._parse_page_statement(child_indent)
-                    if child_stmt:
-                        left.append(child_stmt)
+                # Use helper method to parse left children with dash-list support
+                left = self._parse_children_list(indent)
             elif stripped.startswith('right:'):
                 self._advance()
-                while self.pos < len(self.lines):
-                    child_line = self._peek()
-                    if child_line is None:
-                        break
-                    child_indent = self._indent(child_line)
-                    if child_indent <= indent or not child_line.strip():
-                        if not child_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    child_stmt = self._parse_page_statement(child_indent)
-                    if child_stmt:
-                        right.append(child_stmt)
+                # Use helper method to parse right children with dash-list support
+                right = self._parse_children_list(indent)
             elif stripped.startswith('style:'):
                 self._advance()
                 style = self._parse_kv_block(indent)
@@ -3209,20 +3557,8 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
             elif stripped.startswith('content:'):
                 self._advance()
-                # Parse content statements
-                while self.pos < len(self.lines):
-                    content_line = self._peek()
-                    if content_line is None:
-                        break
-                    content_indent = self._indent(content_line)
-                    if content_indent <= indent or not content_line.strip():
-                        if not content_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    child_stmt = self._parse_page_statement(content_indent)
-                    if child_stmt:
-                        content.append(child_stmt)
+                # Use helper method to parse content with dash-list support
+                content = self._parse_children_list(indent)
             else:
                 break
         
@@ -3372,20 +3708,8 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
             elif stripped.startswith('content:'):
                 self._advance()
-                # Parse content statements
-                while self.pos < len(self.lines):
-                    content_line = self._peek()
-                    if content_line is None:
-                        break
-                    content_indent = self._indent(content_line)
-                    if content_indent <= indent or not content_line.strip():
-                        if not content_line.strip():
-                            self._advance()
-                            continue
-                        break
-                    child_stmt = self._parse_page_statement(content_indent)
-                    if child_stmt:
-                        content.append(child_stmt)
+                # Use helper method to parse content with dash-list support
+                content = self._parse_children_list(indent)
             else:
                 break
         
@@ -3476,3 +3800,1569 @@ class ComponentParserMixin(ActionParserMixin):
             emphasis=emphasis,
             extras=extras,
         )
+
+    # ==========================================================================
+    # NAVIGATION & APP CHROME PARSING METHODS
+    # ==========================================================================
+
+    def _parse_sidebar(self, line: str, base_indent: int) -> Sidebar:
+        """
+        Parse sidebar navigation component.
+        
+        Syntax: sidebar:
+            item "Home" at "/home" icon "home"
+            item "Dashboard" at "/dashboard" icon "chart"
+            section "Settings":
+                item "Profile" at "/profile"
+                item "Security" at "/security"
+            collapsible: true
+            width: normal
+            position: left
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Sidebar declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: sidebar:'
+            )
+        
+        items: List[NavItem] = []
+        sections: List[NavSection] = []
+        collapsible = False
+        collapsed_by_default = False
+        width: Optional[str] = None
+        position = "left"
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('item '):
+                item = self._parse_nav_item(stripped, indent)
+                items.append(item)
+            elif stripped.startswith('section '):
+                section = self._parse_nav_section(stripped, indent)
+                sections.append(section)
+            elif stripped.startswith('collapsible:'):
+                collapsible = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'collapsible',
+                    self.pos,
+                    nxt
+                )
+            elif stripped.startswith('collapsed by default:'):
+                collapsed_by_default = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'collapsed by default',
+                    self.pos,
+                    nxt
+                )
+            elif stripped.startswith('width:'):
+                width = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('position:'):
+                position = stripped.split(':', 1)[1].strip()
+            else:
+                raise self._error(
+                    f"Unknown sidebar property: {stripped.split(':')[0]}",
+                    self.pos,
+                    nxt,
+                    hint='Valid properties: item, section, collapsible, collapsed by default, width, position'
+                )
+        
+        return Sidebar(
+            items=items,
+            sections=sections,
+            collapsible=collapsible,
+            collapsed_by_default=collapsed_by_default,
+            width=width,
+            position=position
+        )
+
+    def _parse_nav_item(self, line: str, base_indent: int) -> NavItem:
+        """Parse a single navigation item."""
+        # item "Label" at "route" icon "icon-name" badge {count: 5} action "action-id"
+        match = re.match(
+            r'item\s+"([^"]+)"'  # label (required)
+            r'(?:\s+at\s+"([^"]+)")?'  # route (optional)
+            r'(?:\s+icon\s+"([^"]+)")?'  # icon (optional)
+            r'(?:\s+badge\s+(\{[^}]+\}))?'  # badge dict (optional)
+            r'(?:\s+action\s+"([^"]+)")?',  # action (optional)
+            line
+        )
+        if not match:
+            raise self._error(
+                'Invalid nav item syntax',
+                self.pos,
+                line,
+                hint='Syntax: item "Label" [at "route"] [icon "name"] [badge {...}] [action "id"]'
+            )
+        
+        label = match.group(1)
+        route = match.group(2)
+        icon = match.group(3)
+        badge_str = match.group(4)
+        action = match.group(5)
+        
+        badge: Optional[Dict[str, Any]] = None
+        if badge_str:
+            # Parse badge dict: {text: "value"} or {count: 5}
+            badge_str = badge_str.strip()
+            if badge_str.startswith('{') and badge_str.endswith('}'):
+                # Extract key:value from {key: value}
+                inner = badge_str[1:-1].strip()
+                if ':' in inner:
+                    key, val = inner.split(':', 1)
+                    key = key.strip()
+                    val = val.strip().strip('"')  # Remove quotes if present
+                    try:
+                        # Try to parse as number
+                        val = int(val)
+                    except ValueError:
+                        pass  # Keep as string
+                    badge = {key: val}
+                else:
+                    badge = {'text': inner}
+            else:
+                badge = {'text': badge_str}
+        
+        children: List[NavItem] = []
+        # Check for nested items
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            if indent <= base_indent:
+                break
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if stripped.startswith('item '):
+                self._advance()
+                child = self._parse_nav_item(stripped, indent)
+                children.append(child)
+            else:
+                break
+        
+        return NavItem(
+            id=label.lower().replace(' ', '_'),
+            label=label,
+            route=route,
+            icon=icon,
+            badge=badge,
+            action=action,
+            children=children
+        )
+
+    def _parse_nav_section(self, line: str, base_indent: int) -> NavSection:
+        """Parse a navigation section grouping."""
+        # section "Label":
+        match = re.match(r'section\s+"([^"]+)"\s*:', line)
+        if not match:
+            raise self._error(
+                'Invalid nav section syntax',
+                self.pos,
+                line,
+                hint='Syntax: section "Label":'
+            )
+        
+        label = match.group(1)
+        item_ids: List[str] = []
+        collapsible = False
+        collapsed_by_default = False
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('item '):
+                # For now, just extract the ID from the label
+                item_match = re.match(r'item\s+"([^"]+)"', stripped)
+                if item_match:
+                    item_label = item_match.group(1)
+                    item_ids.append(item_label.lower().replace(' ', '_'))
+            elif stripped.startswith('collapsible:'):
+                collapsible = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'collapsible',
+                    self.pos,
+                    nxt
+                )
+            elif stripped.startswith('collapsed by default:'):
+                collapsed_by_default = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'collapsed by default',
+                    self.pos,
+                    nxt
+                )
+        
+        return NavSection(
+            id=label.lower().replace(' ', '_'),
+            label=label,
+            items=item_ids,
+            collapsible=collapsible,
+            collapsed_by_default=collapsed_by_default
+        )
+
+    def _parse_navbar(self, line: str, base_indent: int) -> Navbar:
+        """
+        Parse navbar/topbar component.
+        
+        Syntax: navbar:
+            logo: "assets/logo.png"
+            title: "My App"
+            action "User Menu" icon "user" type "menu":
+                item "Profile" at "/profile"
+                item "Logout" action "logout"
+            position: top
+            sticky: true
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Navbar declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: navbar:'
+            )
+        
+        logo: Optional[str] = None
+        title: Optional[str] = None
+        actions: List[NavbarAction] = []
+        position = "top"
+        sticky = True
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('logo:'):
+                logo = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('title:'):
+                title = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('action '):
+                action = self._parse_navbar_action(stripped, indent)
+                actions.append(action)
+            elif stripped.startswith('position:'):
+                position = stripped.split(':', 1)[1].strip()
+            elif stripped.startswith('sticky:'):
+                sticky = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'sticky',
+                    self.pos,
+                    nxt
+                )
+            else:
+                raise self._error(
+                    f"Unknown navbar property: {stripped.split(':')[0]}",
+                    self.pos,
+                    nxt,
+                    hint='Valid properties: logo, title, action, position, sticky'
+                )
+        
+        return Navbar(
+            logo=logo,
+            title=title,
+            actions=actions,
+            position=position,
+            sticky=sticky
+        )
+
+    def _parse_navbar_action(self, line: str, base_indent: int) -> NavbarAction:
+        """Parse a navbar action button/menu."""
+        # action "Label" icon "icon-name" type "button"|"menu"|"toggle"[:]
+        match = re.match(r'action\s+"([^"]+)"(?:\s+icon\s+"([^"]+)")?(?:\s+type\s+"([^"]+)")?\s*:?', line)
+        if not match:
+            raise self._error(
+                'Invalid navbar action syntax',
+                self.pos,
+                line,
+                hint='Syntax: action "Label" [icon "name"] [type "button|menu|toggle"][:]'
+            )
+        
+        label = match.group(1)
+        icon = match.group(2)
+        action_type = match.group(3) or "button"
+        
+        menu_items: List[NavItem] = []
+        action_id: Optional[str] = None
+        
+        # Parse nested menu items or action reference
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('item '):
+                item = self._parse_nav_item(stripped, indent)
+                menu_items.append(item)
+            elif stripped.startswith('action:'):
+                action_id = stripped.split(':', 1)[1].strip()
+            else:
+                break
+        
+        return NavbarAction(
+            id=label.lower().replace(' ', '_'),
+            label=label,
+            icon=icon,
+            type=action_type,
+            action=action_id,
+            menu_items=menu_items
+        )
+
+    def _parse_breadcrumbs(self, line: str, base_indent: int) -> Breadcrumbs:
+        """
+        Parse breadcrumbs component.
+        
+        Syntax: breadcrumbs:
+            item "Home" at "/"
+            item "Dashboard" at "/dashboard"
+            item "Settings"
+            auto derive: true
+            separator: "/"
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Breadcrumbs declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: breadcrumbs:'
+            )
+        
+        items: List[BreadcrumbItem] = []
+        auto_derive = False
+        separator = "/"
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('item '):
+                item = self._parse_breadcrumb_item(stripped)
+                items.append(item)
+            elif stripped.startswith('auto derive:') or stripped.startswith('auto_derive:'):
+                auto_derive = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'auto_derive',
+                    self.pos,
+                    nxt
+                )
+            elif stripped.startswith('separator:'):
+                separator = stripped.split(':', 1)[1].strip().strip('"')
+            else:
+                raise self._error(
+                    f"Unknown breadcrumbs property: {stripped.split(':')[0]}",
+                    self.pos,
+                    nxt,
+                    hint='Valid properties: item, auto_derive (or auto derive), separator'
+                )
+        
+        return Breadcrumbs(
+            items=items,
+            auto_derive=auto_derive,
+            separator=separator
+        )
+
+    def _parse_breadcrumb_item(self, line: str) -> BreadcrumbItem:
+        """Parse a single breadcrumb item."""
+        # item "Label" [at "route"]
+        match = re.match(r'item\s+"([^"]+)"(?:\s+at\s+"([^"]+)")?', line)
+        if not match:
+            raise self._error(
+                'Invalid breadcrumb item syntax',
+                self.pos,
+                line,
+                hint='Syntax: item "Label" [at "route"]'
+            )
+        
+        label = match.group(1)
+        route = match.group(2)
+        
+        return BreadcrumbItem(label=label, route=route)
+
+    def _parse_command_palette(self, line: str, base_indent: int) -> CommandPalette:
+        """
+        Parse command palette component.
+        
+        Syntax: command palette:
+            shortcut: "ctrl+k"
+            source routes
+            source actions
+            source custom:
+                item "Command 1" action "cmd1"
+            placeholder: "Search commands..."
+            max results: 10
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Command palette declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: command palette:'
+            )
+        
+        shortcut = "ctrl+k"
+        sources: List[CommandSource] = []
+        placeholder = "Search commands..."
+        max_results = 10
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('shortcut:'):
+                shortcut = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('source '):
+                source = self._parse_command_source(stripped, indent)
+                sources.append(source)
+            elif stripped.startswith('placeholder:'):
+                placeholder = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('max results:'):
+                max_results = int(stripped.split(':', 1)[1].strip())
+            else:
+                raise self._error(
+                    f"Unknown command palette property: {stripped.split(':')[0]}",
+                    self.pos,
+                    nxt,
+                    hint='Valid properties: shortcut, source, placeholder, max results'
+                )
+        
+        return CommandPalette(
+            shortcut=shortcut,
+            sources=sources,
+            placeholder=placeholder,
+            max_results=max_results
+        )
+
+    def _parse_command_source(self, line: str, base_indent: int) -> CommandSource:
+        """Parse a command palette source."""
+        # source routes
+        # source actions
+        # source "id" from "endpoint" label "label"  (API-backed)
+        # source custom:
+        #     item "Command" action "cmd_id"
+        
+        # Try API-backed source first: source "id" from "endpoint" label "label"
+        api_match = re.match(r'source\s+"([^"]+)"\s+from\s+"([^"]+)"(?:\s+label\s+"([^"]+)")?', line)
+        if api_match:
+            source_id = api_match.group(1)
+            endpoint = api_match.group(2)
+            label = api_match.group(3) or source_id.capitalize()
+            
+            return CommandSource(
+                type='api',
+                id=source_id,
+                endpoint=endpoint,
+                label=label,
+                custom_items=[]
+            )
+        
+        # Try standard source types
+        match = re.match(r'source\s+(routes|actions|custom)\s*:?', line)
+        if not match:
+            raise self._error(
+                'Invalid command source syntax',
+                self.pos,
+                line,
+                hint='Syntax: source routes|actions|custom or source "id" from "endpoint" label "label"'
+            )
+        
+        source_type = match.group(1)
+        custom_items: List[Dict[str, Any]] = []
+        
+        if line.endswith(':'):
+            # Parse custom items
+            while self.pos < len(self.lines):
+                nxt = self._peek()
+                if nxt is None:
+                    break
+                indent = self._indent(nxt)
+                stripped = nxt.strip()
+                
+                if not stripped or stripped.startswith('#'):
+                    self._advance()
+                    continue
+                if indent <= base_indent:
+                    break
+                
+                self._advance()
+                
+                if stripped.startswith('item '):
+                    # item "Label" action "action_id"
+                    item_match = re.match(r'item\s+"([^"]+)"(?:\s+action\s+"([^"]+)")?', stripped)
+                    if item_match:
+                        custom_items.append({
+                            'label': item_match.group(1),
+                            'action': item_match.group(2)
+                        })
+                else:
+                    break
+        
+        return CommandSource(
+            type=source_type,
+            custom_items=custom_items
+        )
+
+    # ============================================================
+    # FEEDBACK COMPONENTS (Modal, Toast)
+    # ============================================================
+
+    def parse_modal(self, line: str) -> Modal:
+        """
+        Parse modal component.
+        
+        Syntax: modal "modal_id":
+                  title: "Confirm Delete"
+                  description: "Are you sure?"
+                  size: "md"
+                  dismissible: true
+                  trigger: "open_confirm"
+                  content:
+                    show text "Content goes here"
+                  actions:
+                    action "Cancel" variant "ghost"
+                    action "Delete" variant "destructive" action "delete_item"
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Modal declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: modal "modal_id":'
+            )
+        
+        # Extract modal ID (quoted or unquoted)
+        match = re.match(r'\s*modal\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Modal requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: modal "modal_id": or modal modal_id:'
+            )
+        
+        modal_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        title = ""
+        description = None
+        size = "md"
+        dismissible = True
+        trigger = None
+        content: List[Statement] = []
+        actions: List[ModalAction] = []
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('title:'):
+                title = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('description:'):
+                description = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('size:'):
+                size = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('dismissible:'):
+                dismissible = self._coerce_bool_with_context(
+                    stripped.split(':', 1)[1].strip(),
+                    'dismissible',
+                    self.pos,
+                    nxt
+                )
+            elif stripped.startswith('trigger:'):
+                trigger = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('content:'):
+                # Parse nested statements using helper
+                content = self._parse_children_list(indent)
+            elif stripped.startswith('actions:'):
+                # Parse modal actions
+                actions_indent = indent
+                while self.pos < len(self.lines):
+                    action_line = self._peek()
+                    if action_line is None:
+                        break
+                    action_indent = self._indent(action_line)
+                    action_stripped = action_line.strip()
+                    
+                    if not action_stripped or action_stripped.startswith('#'):
+                        self._advance()
+                        continue
+                    if action_indent <= actions_indent:
+                        break
+                    
+                    self._advance()
+                    
+                    if action_stripped.startswith('action '):
+                        action = self._parse_modal_action(action_stripped)
+                        actions.append(action)
+                    else:
+                        break
+            else:
+                raise self._error(
+                    f"Unknown modal property: {stripped.split(':')[0]}",
+                    self.pos - 1,
+                    stripped,
+                    hint='Valid properties: title, description, size, dismissible, trigger, content, actions'
+                )
+        
+        return Modal(
+            id=modal_id,
+            title=title,
+            description=description,
+            content=content,
+            actions=actions,
+            size=size,
+            dismissible=dismissible,
+            trigger=trigger
+        )
+    
+    def _parse_modal_action(self, line: str) -> ModalAction:
+        """Parse a modal action button."""
+        # action "Label" [variant "primary"] [action "action_id"] [close: false]
+        match = re.match(r'action\s+"([^"]+)"', line)
+        if not match:
+            raise self._error(
+                'Modal action requires a label',
+                self.pos - 1,
+                line,
+                hint='Syntax: action "Label" [variant "primary"] [action "action_id"]'
+            )
+        
+        label = match.group(1)
+        variant = "default"
+        action_name = None
+        close = True
+        
+        # Extract optional parameters after the label
+        # Use findall to get all matches, then filter
+        remaining_line = line[match.end():]
+        
+        # Extract variant
+        variant_match = re.search(r'variant\s+"([^"]+)"', remaining_line)
+        if variant_match:
+            variant = variant_match.group(1)
+        
+        # Extract action identifier (different from the 'action' keyword at start)
+        action_match = re.search(r'action\s+"([^"]+)"', remaining_line)
+        if action_match:
+            action_name = action_match.group(1)
+        
+        # Extract close flag
+        close_match = re.search(r'close:\s*(true|false)', remaining_line)
+        if close_match:
+            close = close_match.group(1) == 'true'
+        
+        return ModalAction(
+            label=label,
+            action=action_name,
+            variant=variant,
+            close=close
+        )
+
+    def parse_toast(self, line: str) -> Toast:
+        """
+        Parse toast notification component.
+        
+        Syntax: toast "toast_id":
+                  title: "Success"
+                  description: "Item saved successfully"
+                  variant: "success"
+                  duration: 3000
+                  position: "top-right"
+                  trigger: "show_success"
+                  action_label: "Undo"
+                  action: "undo_save"
+        """
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Toast declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: toast "toast_id":'
+            )
+        
+        # Extract toast ID (quoted or unquoted)
+        match = re.match(r'\s*toast\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Toast requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: toast "toast_id": or toast toast_id:'
+            )
+        
+        toast_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        title = ""
+        description = None
+        variant = "default"
+        duration = 3000
+        action_label = None
+        action_name = None
+        position = "top-right"
+        trigger = None
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('title:'):
+                title = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('description:'):
+                description = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('duration:'):
+                duration = int(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('action_label:'):
+                action_label = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('action:'):
+                action_name = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('position:'):
+                position = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('trigger:'):
+                trigger = stripped.split(':', 1)[1].strip().strip('"')
+            else:
+                raise self._error(
+                    f"Unknown toast property: {stripped.split(':')[0]}",
+                    self.pos - 1,
+                    stripped,
+                    hint='Valid properties: title, description, variant, duration, action_label, action, position, trigger'
+                )
+        
+        return Toast(
+            id=toast_id,
+            title=title,
+            description=description,
+            variant=variant,
+            duration=duration,
+            action_label=action_label,
+            action=action_name,
+            position=position,
+            trigger=trigger
+        )
+
+    # =============================================================================
+    # AI Semantic Component Parsers
+    # =============================================================================
+
+    def parse_chat_thread(self, line: str) -> 'ChatThread':
+        """
+        Parse chat thread component for AI conversations.
+        
+        Syntax: chat_thread "thread_id":
+                  messages_binding: "conversation.messages"
+                  group_by: "role"
+                  show_timestamps: true
+                  streaming_enabled: true
+                  streaming_source: "agent.stream"
+        """
+        from namel3ss.ast.pages import ChatThread
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Chat thread declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: chat_thread "thread_id":'
+            )
+        
+        # Extract thread ID
+        match = re.match(r'\s*chat_thread\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Chat thread requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: chat_thread "thread_id":'
+            )
+        
+        thread_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        messages_binding = ""
+        group_by = "role"
+        show_timestamps = True
+        show_avatar = True
+        reverse_order = False
+        auto_scroll = True
+        max_height = None
+        streaming_enabled = False
+        streaming_source = None
+        show_role_labels = True
+        show_token_count = False
+        enable_copy = True
+        enable_regenerate = False
+        variant = "default"
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('messages_binding:'):
+                messages_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('group_by:'):
+                group_by = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_timestamps:'):
+                show_timestamps = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_avatar:'):
+                show_avatar = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('reverse_order:'):
+                reverse_order = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('auto_scroll:'):
+                auto_scroll = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('max_height:'):
+                max_height = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('streaming_enabled:'):
+                streaming_enabled = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('streaming_source:'):
+                streaming_source = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_role_labels:'):
+                show_role_labels = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_token_count:'):
+                show_token_count = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_copy:'):
+                enable_copy = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_regenerate:'):
+                enable_regenerate = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+        
+        if not messages_binding:
+            raise self._error(
+                "Chat thread requires 'messages_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: messages_binding: \"conversation.messages\""
+            )
+        
+        return ChatThread(
+            id=thread_id,
+            messages_binding=messages_binding,
+            group_by=group_by,
+            show_timestamps=show_timestamps,
+            show_avatar=show_avatar,
+            reverse_order=reverse_order,
+            auto_scroll=auto_scroll,
+            max_height=max_height,
+            streaming_enabled=streaming_enabled,
+            streaming_source=streaming_source,
+            show_role_labels=show_role_labels,
+            show_token_count=show_token_count,
+            enable_copy=enable_copy,
+            enable_regenerate=enable_regenerate,
+            variant=variant
+        )
+
+    def parse_agent_panel(self, line: str) -> 'AgentPanel':
+        """
+        Parse agent panel component for displaying agent state and metrics.
+        
+        Syntax: agent_panel "panel_id":
+                  agent_binding: "current_agent"
+                  metrics_binding: "run.metrics"
+                  show_status: true
+                  show_tokens: true
+        """
+        from namel3ss.ast.pages import AgentPanel
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Agent panel declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: agent_panel "panel_id":'
+            )
+        
+        # Extract panel ID
+        match = re.match(r'\s*agent_panel\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Agent panel requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: agent_panel "panel_id":'
+            )
+        
+        panel_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        agent_binding = ""
+        metrics_binding = None
+        show_status = True
+        show_metrics = True
+        show_profile = False
+        show_limits = False
+        show_last_error = False
+        show_tools = False
+        show_tokens = True
+        show_cost = True
+        show_latency = True
+        show_model = True
+        variant = "card"
+        compact = False
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('agent_binding:'):
+                agent_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('metrics_binding:'):
+                metrics_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_status:'):
+                show_status = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_metrics:'):
+                show_metrics = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_profile:'):
+                show_profile = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_limits:'):
+                show_limits = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_last_error:'):
+                show_last_error = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_tools:'):
+                show_tools = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_tokens:'):
+                show_tokens = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_cost:'):
+                show_cost = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_latency:'):
+                show_latency = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_model:'):
+                show_model = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('compact:'):
+                compact = stripped.split(':', 1)[1].strip().lower() == 'true'
+        
+        if not agent_binding:
+            raise self._error(
+                "Agent panel requires 'agent_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: agent_binding: \"current_agent\""
+            )
+        
+        return AgentPanel(
+            id=panel_id,
+            agent_binding=agent_binding,
+            metrics_binding=metrics_binding,
+            show_status=show_status,
+            show_metrics=show_metrics,
+            show_profile=show_profile,
+            show_limits=show_limits,
+            show_last_error=show_last_error,
+            show_tools=show_tools,
+            show_tokens=show_tokens,
+            show_cost=show_cost,
+            show_latency=show_latency,
+            show_model=show_model,
+            variant=variant,
+            compact=compact
+        )
+
+    def parse_tool_call_view(self, line: str) -> 'ToolCallView':
+        """
+        Parse tool call view component for displaying tool invocations.
+        
+        Syntax: tool_call_view "view_id":
+                  calls_binding: "run.tool_calls"
+                  show_inputs: true
+                  show_outputs: true
+                  variant: "list"
+        """
+        from namel3ss.ast.pages import ToolCallView
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Tool call view declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: tool_call_view "view_id":'
+            )
+        
+        # Extract view ID
+        match = re.match(r'\s*tool_call_view\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Tool call view requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: tool_call_view "view_id":'
+            )
+        
+        view_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        calls_binding = ""
+        show_inputs = True
+        show_outputs = True
+        show_timing = True
+        show_status = True
+        show_raw_payload = False
+        filter_tool_name = None
+        filter_status = None
+        variant = "list"
+        expandable = True
+        max_height = None
+        enable_retry = False
+        enable_copy = True
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('calls_binding:'):
+                calls_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_inputs:'):
+                show_inputs = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_outputs:'):
+                show_outputs = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_timing:'):
+                show_timing = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_status:'):
+                show_status = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_raw_payload:'):
+                show_raw_payload = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('expandable:'):
+                expandable = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('max_height:'):
+                max_height = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('enable_retry:'):
+                enable_retry = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_copy:'):
+                enable_copy = stripped.split(':', 1)[1].strip().lower() == 'true'
+        
+        if not calls_binding:
+            raise self._error(
+                "Tool call view requires 'calls_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: calls_binding: \"run.tool_calls\""
+            )
+        
+        return ToolCallView(
+            id=view_id,
+            calls_binding=calls_binding,
+            show_inputs=show_inputs,
+            show_outputs=show_outputs,
+            show_timing=show_timing,
+            show_status=show_status,
+            show_raw_payload=show_raw_payload,
+            filter_tool_name=filter_tool_name,
+            filter_status=filter_status,
+            variant=variant,
+            expandable=expandable,
+            max_height=max_height,
+            enable_retry=enable_retry,
+            enable_copy=enable_copy
+        )
+
+    def parse_log_view(self, line: str) -> 'LogView':
+        """
+        Parse log view component for displaying logs and traces.
+        
+        Syntax: log_view "view_id":
+                  logs_binding: "run.logs"
+                  level_filter: ["info", "warn", "error"]
+                  search_enabled: true
+                  auto_scroll: true
+        """
+        from namel3ss.ast.pages import LogView
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Log view declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: log_view "view_id":'
+            )
+        
+        # Extract view ID
+        match = re.match(r'\s*log_view\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Log view requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: log_view "view_id":'
+            )
+        
+        view_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        logs_binding = ""
+        level_filter = None
+        search_enabled = True
+        search_placeholder = "Search logs..."
+        show_timestamp = True
+        show_level = True
+        show_metadata = False
+        show_source = False
+        auto_scroll = True
+        auto_refresh = False
+        refresh_interval = 5000
+        max_entries = 1000
+        variant = "default"
+        max_height = None
+        virtualized = True
+        enable_copy = True
+        enable_download = False
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('logs_binding:'):
+                logs_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('search_enabled:'):
+                search_enabled = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('search_placeholder:'):
+                search_placeholder = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_timestamp:'):
+                show_timestamp = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_level:'):
+                show_level = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_metadata:'):
+                show_metadata = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_source:'):
+                show_source = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('auto_scroll:'):
+                auto_scroll = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('auto_refresh:'):
+                auto_refresh = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('refresh_interval:'):
+                refresh_interval = int(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('max_entries:'):
+                max_entries = int(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('max_height:'):
+                max_height = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('virtualized:'):
+                virtualized = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_copy:'):
+                enable_copy = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_download:'):
+                enable_download = stripped.split(':', 1)[1].strip().lower() == 'true'
+        
+        if not logs_binding:
+            raise self._error(
+                "Log view requires 'logs_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: logs_binding: \"run.logs\""
+            )
+        
+        return LogView(
+            id=view_id,
+            logs_binding=logs_binding,
+            level_filter=level_filter,
+            search_enabled=search_enabled,
+            search_placeholder=search_placeholder,
+            show_timestamp=show_timestamp,
+            show_level=show_level,
+            show_metadata=show_metadata,
+            show_source=show_source,
+            auto_scroll=auto_scroll,
+            auto_refresh=auto_refresh,
+            refresh_interval=refresh_interval,
+            max_entries=max_entries,
+            variant=variant,
+            max_height=max_height,
+            virtualized=virtualized,
+            enable_copy=enable_copy,
+            enable_download=enable_download
+        )
+
+    def parse_evaluation_result(self, line: str) -> 'EvaluationResult':
+        """
+        Parse evaluation result component for displaying eval metrics.
+        
+        Syntax: evaluation_result "result_id":
+                  eval_run_binding: "eval.run_123"
+                  show_summary: true
+                  show_histograms: true
+                  primary_metric: "accuracy"
+        """
+        from namel3ss.ast.pages import EvaluationResult
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Evaluation result declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: evaluation_result "result_id":'
+            )
+        
+        # Extract result ID
+        match = re.match(r'\s*evaluation_result\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Evaluation result requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: evaluation_result "result_id":'
+            )
+        
+        result_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        eval_run_binding = ""
+        show_summary = True
+        show_histograms = True
+        show_error_table = True
+        show_metadata = False
+        metrics_to_show = None
+        primary_metric = None
+        filter_metric = None
+        filter_min_score = None
+        filter_max_score = None
+        filter_status = None
+        show_error_distribution = True
+        show_error_examples = True
+        max_error_examples = 10
+        variant = "dashboard"
+        comparison_run_binding = None
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('eval_run_binding:'):
+                eval_run_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('show_summary:'):
+                show_summary = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_histograms:'):
+                show_histograms = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_error_table:'):
+                show_error_table = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_metadata:'):
+                show_metadata = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('primary_metric:'):
+                primary_metric = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('filter_metric:'):
+                filter_metric = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('filter_min_score:'):
+                filter_min_score = float(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('filter_max_score:'):
+                filter_max_score = float(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('show_error_distribution:'):
+                show_error_distribution = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_error_examples:'):
+                show_error_examples = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('max_error_examples:'):
+                max_error_examples = int(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('variant:'):
+                variant = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('comparison_run_binding:'):
+                comparison_run_binding = stripped.split(':', 1)[1].strip().strip('"')
+        
+        if not eval_run_binding:
+            raise self._error(
+                "Evaluation result requires 'eval_run_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: eval_run_binding: \"eval.run_123\""
+            )
+        
+        return EvaluationResult(
+            id=result_id,
+            eval_run_binding=eval_run_binding,
+            show_summary=show_summary,
+            show_histograms=show_histograms,
+            show_error_table=show_error_table,
+            show_metadata=show_metadata,
+            metrics_to_show=metrics_to_show,
+            primary_metric=primary_metric,
+            filter_metric=filter_metric,
+            filter_min_score=filter_min_score,
+            filter_max_score=filter_max_score,
+            filter_status=filter_status,
+            show_error_distribution=show_error_distribution,
+            show_error_examples=show_error_examples,
+            max_error_examples=max_error_examples,
+            variant=variant,
+            comparison_run_binding=comparison_run_binding
+        )
+
+    def parse_diff_view(self, line: str) -> 'DiffView':
+        """
+        Parse diff view component for comparing text/code.
+        
+        Syntax: diff_view "view_id":
+                  left_binding: "version.v1.output"
+                  right_binding: "version.v2.output"
+                  mode: "split"
+                  content_type: "code"
+                  language: "python"
+        """
+        from namel3ss.ast.pages import DiffView
+        
+        if not line.strip().endswith(':'):
+            raise self._error(
+                "Diff view declaration must end with ':'",
+                self.pos,
+                line,
+                hint='Syntax: diff_view "view_id":'
+            )
+        
+        # Extract view ID
+        match = re.match(r'\s*diff_view\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*:', line)
+        if not match:
+            raise self._error(
+                'Diff view requires an ID',
+                self.pos,
+                line,
+                hint='Syntax: diff_view "view_id":'
+            )
+        
+        view_id = match.group(1) or match.group(2)
+        base_indent = self._indent(line)
+        
+        # Default values
+        left_binding = ""
+        right_binding = ""
+        mode = "split"
+        content_type = "text"
+        language = None
+        ignore_whitespace = False
+        ignore_case = False
+        context_lines = 3
+        show_line_numbers = True
+        highlight_inline_changes = True
+        show_legend = True
+        max_height = None
+        enable_copy = True
+        enable_download = False
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+            
+            self._advance()
+            
+            if stripped.startswith('left_binding:'):
+                left_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('right_binding:'):
+                right_binding = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('mode:'):
+                mode = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('content_type:'):
+                content_type = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('language:'):
+                language = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('ignore_whitespace:'):
+                ignore_whitespace = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('ignore_case:'):
+                ignore_case = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('context_lines:'):
+                context_lines = int(stripped.split(':', 1)[1].strip())
+            elif stripped.startswith('show_line_numbers:'):
+                show_line_numbers = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('highlight_inline_changes:'):
+                highlight_inline_changes = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('show_legend:'):
+                show_legend = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('max_height:'):
+                max_height = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('enable_copy:'):
+                enable_copy = stripped.split(':', 1)[1].strip().lower() == 'true'
+            elif stripped.startswith('enable_download:'):
+                enable_download = stripped.split(':', 1)[1].strip().lower() == 'true'
+        
+        if not left_binding:
+            raise self._error(
+                "Diff view requires 'left_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: left_binding: \"version.v1.output\""
+            )
+        
+        if not right_binding:
+            raise self._error(
+                "Diff view requires 'right_binding' property",
+                self.pos - 1,
+                line,
+                hint="Example: right_binding: \"version.v2.output\""
+            )
+        
+        return DiffView(
+            id=view_id,
+            left_binding=left_binding,
+            right_binding=right_binding,
+            mode=mode,
+            content_type=content_type,
+            language=language,
+            ignore_whitespace=ignore_whitespace,
+            ignore_case=ignore_case,
+            context_lines=context_lines,
+            show_line_numbers=show_line_numbers,
+            highlight_inline_changes=highlight_inline_changes,
+            show_legend=show_legend,
+            max_height=max_height,
+            enable_copy=enable_copy,
+            enable_download=enable_download
+        )
+
+

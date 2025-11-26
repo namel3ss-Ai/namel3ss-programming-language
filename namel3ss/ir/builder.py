@@ -41,6 +41,8 @@ from .spec import (
     CacheStrategy,
     DataBindingSpec,
     UpdateChannelSpec,
+    IRForm,
+    IRFormField,
     # Data display component IR specs
     IRDataTable,
     IRColumnConfig,
@@ -55,6 +57,20 @@ from .spec import (
     IRAvatarItem,
     IRDataChart,
     IRChartConfig,
+    # Navigation & Chrome IR specs
+    IRSidebar,
+    IRNavItem,
+    IRNavSection,
+    IRNavbar,
+    IRNavbarAction,
+    IRBreadcrumbs,
+    IRBreadcrumbItem,
+    IRCommandPalette,
+    IRCommandSource,
+    # Feedback IR specs
+    IRModal,
+    IRModalAction,
+    IRToast,
 )
 
 
@@ -308,9 +324,8 @@ def _extract_datasets_from_state(state) -> List[DatasetSpec]:
     dataset_ast_map = {}
     if original_app:
         # Build map of dataset name -> AST node
-        for item in getattr(original_app, "body", []):
-            if hasattr(item, "__class__") and item.__class__.__name__ == "Dataset":
-                dataset_ast_map[item.name] = item
+        for dataset in getattr(original_app, "datasets", []):
+            dataset_ast_map[dataset.name] = dataset
     
     for name, dataset_data in state.datasets.items():
         # Extract access policy from AST if available
@@ -469,9 +484,8 @@ def _extract_endpoints_from_state(state) -> List[EndpointIR]:
     original_app = state.__dict__.get("_original_app")
     dataset_ast_map = {}
     if original_app:
-        for item in getattr(original_app, "body", []):
-            if hasattr(item, "__class__") and item.__class__.__name__ == "Dataset":
-                dataset_ast_map[item.name] = item
+        for dataset in getattr(original_app, "datasets", []):
+            dataset_ast_map[dataset.name] = dataset
     
     for name, dataset_data in state.datasets.items():
         # GET endpoint for reading data (always available)
@@ -579,10 +593,10 @@ def _extract_components_from_page_ast(app, page_name: str, state) -> List[Compon
     components = []
     
     # Find the page in the app AST
-    for item in getattr(app, "body", []):
-        if hasattr(item, "__class__") and item.__class__.__name__ == "Page" and item.name == page_name:
+    for page in getattr(app, "pages", []):
+        if page.name == page_name:
             # Process page body statements
-            for stmt in getattr(item, "body", []):
+            for stmt in getattr(page, "body", []):
                 component = _statement_to_component_spec(stmt, state)
                 if component:
                     components.append(component)
@@ -625,6 +639,36 @@ def _statement_to_component_spec(stmt, state) -> Optional[ComponentSpec]:
         return _tabs_layout_to_component(stmt, state)
     elif stmt_type == "AccordionLayout":
         return _accordion_layout_to_component(stmt, state)
+    # Navigation & Chrome components
+    elif stmt_type == "Sidebar":
+        return _sidebar_to_component(stmt, state)
+    elif stmt_type == "Navbar":
+        return _navbar_to_component(stmt, state)
+    elif stmt_type == "Breadcrumbs":
+        return _breadcrumbs_to_component(stmt, state)
+    elif stmt_type == "CommandPalette":
+        return _command_palette_to_component(stmt, state)
+    # Feedback components
+    elif stmt_type == "Modal":
+        return _modal_to_component(stmt, state)
+    elif stmt_type == "Toast":
+        return _toast_to_component(stmt, state)
+    # AI Semantic components
+    elif stmt_type == "ChatThread":
+        return _chat_thread_to_component(stmt, state)
+    elif stmt_type == "AgentPanel":
+        return _agent_panel_to_component(stmt, state)
+    elif stmt_type == "ToolCallView":
+        return _tool_call_view_to_component(stmt, state)
+    elif stmt_type == "LogView":
+        return _log_view_to_component(stmt, state)
+    elif stmt_type == "EvaluationResult":
+        return _evaluation_result_to_component(stmt, state)
+    elif stmt_type == "DiffView":
+        return _diff_view_to_component(stmt, state)
+    # Basic display components
+    elif stmt_type == "ShowText":
+        return _show_text_to_component(stmt, state)
     # Add other statement types as needed
     
     return None
@@ -739,49 +783,229 @@ def _show_chart_to_component(stmt, state) -> ComponentSpec:
 
 
 def _show_form_to_component(stmt, state) -> ComponentSpec:
-    """Convert ShowForm AST node to ComponentSpec with binding"""
-    from namel3ss.ast.pages import DataBindingConfig
+    """Convert ShowForm AST node to ComponentSpec with IRForm specification"""
     
+    # Build IRForm from AST
+    ir_form = _build_ir_form_from_ast(stmt, state)
+    
+    # Build binding spec for data loading if needed
     binding_spec = None
-    if hasattr(stmt, "binding") and stmt.binding:
-        binding_config: DataBindingConfig = stmt.binding
-        
-        # For forms, bound_dataset specifies the dataset to load/save from
-        dataset_name = getattr(stmt, "bound_dataset", None)
-        if dataset_name:
-            binding_spec = DataBindingSpec(
-                dataset_name=dataset_name,
-                endpoint_path=f"/api/datasets/{dataset_name}",
-                page_size=1,  # Forms typically work with single records
-                enable_sorting=False,
-                sortable_fields=[],
-                enable_filtering=False,
-                filterable_fields=[],
-                enable_search=False,
-                searchable_fields=[],
-                editable=binding_config.editable,
-                enable_create=binding_config.enable_create,
-                enable_update=binding_config.enable_update,
-                enable_delete=binding_config.enable_delete,
-                create_endpoint=f"/api/datasets/{dataset_name}" if binding_config.enable_create else None,
-                update_endpoint=f"/api/datasets/{dataset_name}/{{id}}" if binding_config.enable_update else None,
-                delete_endpoint=f"/api/datasets/{dataset_name}/{{id}}" if binding_config.enable_delete else None,
-                optimistic_updates=binding_config.optimistic_updates,
-                field_mapping=binding_config.field_mapping,
-            )
+    if ir_form.initial_values_binding:
+        dataset_name = ir_form.initial_values_binding
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=1,  # Forms typically work with single records
+            enable_sorting=False,
+            sortable_fields=[],
+            enable_filtering=False,
+            filterable_fields=[],
+            enable_search=False,
+            searchable_fields=[],
+            editable=True,
+            enable_create=True,
+            enable_update=True,
+            enable_delete=False,
+        )
     
     return ComponentSpec(
         name=stmt.title,
         type="form",
         props={
-            "title": stmt.title,
-            "fields": [{"name": f.name, "type": f.field_type} for f in stmt.fields],
-            "on_submit_ops": stmt.on_submit_ops,
-            "styles": stmt.styles,
+            "form_spec": ir_form,  # Embed complete IRForm
         },
-        data_source=getattr(stmt, "bound_dataset", None),
+        data_source=ir_form.initial_values_binding,
         binding=binding_spec,
     )
+
+
+def _build_ir_form_from_ast(stmt, state) -> IRForm:
+    """Build IRForm specification from ShowForm AST node"""
+    
+    # Convert fields
+    ir_fields = []
+    for field in stmt.fields:
+        ir_field = _build_ir_form_field_from_ast(field)
+        ir_fields.append(ir_field)
+    
+    # Determine submit action details
+    submit_action = stmt.submit_action
+    submit_action_type = "custom"
+    submit_endpoint = None
+    
+    if submit_action:
+        # Parse action type from name/reference
+        if "create" in submit_action.lower():
+            submit_action_type = "create"
+        elif "update" in submit_action.lower():
+            submit_action_type = "update"
+        elif "delete" in submit_action.lower():
+            submit_action_type = "delete"
+            
+    # Build initial values binding
+    initial_values_binding = stmt.initial_values_binding or stmt.bound_dataset
+    
+    # Generate validation schema from fields
+    validation_schema = _build_validation_schema_from_fields(ir_fields)
+    
+    # Build IRForm
+    form_name = stmt.title.lower().replace(" ", "_")
+    
+    return IRForm(
+        name=form_name,
+        title=stmt.title,
+        fields=ir_fields,
+        layout_mode=stmt.layout_mode,
+        submit_action=submit_action,
+        submit_action_type=submit_action_type,
+        submit_endpoint=submit_endpoint,
+        initial_values_binding=initial_values_binding,
+        initial_values_expr=None,  # TODO: Parse from bound_record_id
+        validation_mode=stmt.validation_mode,
+        submit_button_text=stmt.submit_button_text or "Submit",
+        reset_button=stmt.reset_button,
+        loading_text=stmt.loading_text,
+        success_message=stmt.success_message,
+        error_message=stmt.error_message,
+        validation_schema=validation_schema,
+        metadata={
+            "legacy_on_submit_ops": stmt.on_submit_ops,
+            "styles": stmt.styles,
+        }
+    )
+
+
+def _build_ir_form_field_from_ast(field) -> IRFormField:
+    """Build IRFormField from FormField AST node"""
+    
+    # Build validation dict
+    validation = {}
+    if field.min_length is not None:
+        validation["min_length"] = field.min_length
+    if field.max_length is not None:
+        validation["max_length"] = field.max_length
+    if field.pattern:
+        validation["pattern"] = field.pattern
+    if field.min_value is not None:
+        validation["min_value"] = field.min_value
+    if field.max_value is not None:
+        validation["max_value"] = field.max_value
+    if field.step is not None:
+        validation["step"] = field.step
+    
+    # Build component config
+    component_config = {}
+    if field.multiple:
+        component_config["multiple"] = field.multiple
+    if field.accept:
+        component_config["accept"] = field.accept
+    if field.max_file_size:
+        component_config["max_file_size"] = field.max_file_size
+    if field.upload_endpoint:
+        component_config["upload_endpoint"] = field.upload_endpoint
+    
+    # Convert expressions to strings (only if they exist and are not boolean literals)
+    # For boolean literals, convert to string representation
+    default_value_str = str(field.default) if field.default is not None else None
+    initial_value_str = str(field.initial_value) if field.initial_value is not None else None
+    
+    # For disabled/visible, handle both boolean literals and expressions
+    disabled_expr_str = None
+    if field.disabled is not None:
+        if isinstance(field.disabled, bool):
+            disabled_expr_str = "True" if field.disabled else "False"
+        else:
+            disabled_expr_str = str(field.disabled)
+    
+    visible_expr_str = None
+    if field.visible is not None:
+        if isinstance(field.visible, bool):
+            visible_expr_str = "True" if field.visible else "False"
+        else:
+            visible_expr_str = str(field.visible)
+    
+    # Convert options - handle both AST ListNode and Python list
+    static_options = []
+    if field.options:
+        if isinstance(field.options, list):
+            # Already a Python list
+            static_options = field.options
+        else:
+            # AST node - convert to Python list by evaluating
+            import ast
+            try:
+                static_options = ast.literal_eval(str(field.options))
+            except (ValueError, SyntaxError):
+                # If eval fails, keep as string list
+                static_options = [str(field.options)]
+    
+    return IRFormField(
+        name=field.name,
+        component=field.component,
+        label=field.label,
+        placeholder=field.placeholder,
+        help_text=field.help_text,
+        required=field.required,
+        default_value=default_value_str,
+        initial_value=initial_value_str,
+        validation=validation,
+        options_binding=field.options_binding,
+        static_options=static_options,
+        disabled_expr=disabled_expr_str,
+        visible_expr=visible_expr_str,
+        component_config=component_config,
+        metadata={
+            "field_type": field.field_type,  # Backward compatibility
+        }
+    )
+
+
+def _build_validation_schema_from_fields(fields: List[IRFormField]) -> Dict[str, Any]:
+    """Generate JSON Schema-like validation schema from form fields"""
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+    
+    for field in fields:
+        field_schema = {"type": _infer_json_type_from_component(field.component)}
+        
+        # Add validation constraints
+        if field.validation.get("min_length"):
+            field_schema["minLength"] = field.validation["min_length"]
+        if field.validation.get("max_length"):
+            field_schema["maxLength"] = field.validation["max_length"]
+        if field.validation.get("pattern"):
+            field_schema["pattern"] = field.validation["pattern"]
+        if field.validation.get("min_value") is not None:
+            field_schema["minimum"] = field.validation["min_value"]
+        if field.validation.get("max_value") is not None:
+            field_schema["maximum"] = field.validation["max_value"]
+        
+        schema["properties"][field.name] = field_schema
+        
+        if field.required:
+            schema["required"].append(field.name)
+    
+    return schema
+
+
+def _infer_json_type_from_component(component: str) -> str:
+    """Infer JSON Schema type from field component type"""
+    if component in ("text_input", "textarea", "select", "radio_group", "date_picker", "datetime_picker"):
+        return "string"
+    elif component in ("checkbox", "switch"):
+        return "boolean"
+    elif component in ("slider",):
+        return "number"
+    elif component in ("multiselect",):
+        return "array"
+    elif component in ("file_upload",):
+        return "object"  # File metadata object
+    else:
+        return "string"  # Default
+
 
 
 def _extract_routes_from_state(state) -> List[RouteSpec]:
@@ -1531,6 +1755,622 @@ def _accordion_layout_to_component(stmt, state) -> ComponentSpec:
         },
         children=all_children,
         layout=layout_ir,
+    )
+
+
+# =============================================================================
+# Navigation & Chrome Component Converters
+# =============================================================================
+
+def _sidebar_to_component(stmt, state) -> ComponentSpec:
+    """Convert Sidebar AST node to ComponentSpec with route validation"""
+    # Convert nav items
+    nav_items_ir = []
+    for item in stmt.items:
+        nav_items_ir.append(_convert_nav_item(item, state))
+    
+    # Convert nav sections
+    nav_sections_ir = []
+    for section in stmt.sections:
+        section_ir = IRNavSection(
+            id=section.id,
+            label=section.label,
+            items=section.items,
+            collapsible=section.collapsible,
+            collapsed_by_default=section.collapsed_by_default,
+        )
+        nav_sections_ir.append(section_ir)
+    
+    # Validate routes exist in app
+    validated_routes = _validate_sidebar_routes(nav_items_ir, state)
+    
+    sidebar_ir = IRSidebar(
+        items=nav_items_ir,
+        sections=nav_sections_ir,
+        collapsible=stmt.collapsible,
+        collapsed_by_default=stmt.collapsed_by_default,
+        width=stmt.width,
+        position=stmt.position,
+        validated_routes=validated_routes,
+    )
+    
+    return ComponentSpec(
+        name="sidebar",
+        type="sidebar",
+        props={
+            "collapsible": stmt.collapsible,
+            "collapsed_by_default": stmt.collapsed_by_default,
+            "width": stmt.width,
+            "position": stmt.position,
+        },
+        metadata={"ir_spec": sidebar_ir},
+    )
+
+
+def _convert_nav_item(item, state) -> IRNavItem:
+    """Convert NavItem AST to IRNavItem with nested children"""
+    children_ir = []
+    for child in item.children:
+        children_ir.append(_convert_nav_item(child, state))
+    
+    return IRNavItem(
+        id=item.id,
+        label=item.label,
+        route=item.route,
+        icon=item.icon,
+        badge=item.badge,
+        action=item.action,
+        condition=item.condition,
+        children=children_ir,
+    )
+
+
+def _validate_sidebar_routes(nav_items: List[IRNavItem], state) -> List[str]:
+    """Validate that all routes in sidebar exist in app"""
+    valid_routes = []
+    
+    def collect_routes(item: IRNavItem):
+        if item.route:
+            # Check if route exists in state.pages
+            route_exists = any(
+                page.route == item.route
+                for page in state.pages
+            )
+            if route_exists:
+                valid_routes.append(item.route)
+        
+        for child in item.children:
+            collect_routes(child)
+    
+    for item in nav_items:
+        collect_routes(item)
+    
+    return valid_routes
+
+
+def _navbar_to_component(stmt, state) -> ComponentSpec:
+    """Convert Navbar AST node to ComponentSpec with action validation"""
+    # Convert navbar actions
+    actions_ir = []
+    for action in stmt.actions:
+        action_items_ir = []
+        for menu_item in action.menu_items:
+            action_items_ir.append(_convert_nav_item(menu_item, state))
+        
+        action_ir = IRNavbarAction(
+            id=action.id,
+            label=action.label,
+            icon=action.icon,
+            type=action.type,
+            action=action.action,
+            menu_items=action_items_ir,
+            condition=action.condition,
+        )
+        actions_ir.append(action_ir)
+    
+    # Validate actions exist in state (if action registry available)
+    validated_actions = _validate_navbar_actions(actions_ir, state)
+    
+    navbar_ir = IRNavbar(
+        logo=stmt.logo,
+        title=stmt.title,
+        actions=actions_ir,
+        position=stmt.position,
+        sticky=stmt.sticky,
+        validated_actions=validated_actions,
+    )
+    
+    return ComponentSpec(
+        name="navbar",
+        type="navbar",
+        props={
+            "logo": stmt.logo,
+            "title": stmt.title,
+            "position": stmt.position,
+            "sticky": stmt.sticky,
+        },
+        metadata={"ir_spec": navbar_ir},
+    )
+
+
+def _validate_navbar_actions(actions: List[IRNavbarAction], state) -> List[str]:
+    """Validate that all actions in navbar exist (placeholder for action registry)"""
+    valid_actions = []
+    
+    for action in actions:
+        if action.action:
+            # TODO: Validate against action registry when available
+            # For now, just collect action IDs
+            valid_actions.append(action.action)
+    
+    return valid_actions
+
+
+def _breadcrumbs_to_component(stmt, state) -> ComponentSpec:
+    """Convert Breadcrumbs AST node to ComponentSpec with auto-derivation"""
+    # Convert breadcrumb items
+    items_ir = []
+    for item in stmt.items:
+        item_ir = IRBreadcrumbItem(
+            label=item.label,
+            route=item.route,
+        )
+        items_ir.append(item_ir)
+    
+    # For auto-derive, determine current route (if available)
+    derived_from_route = None
+    if stmt.auto_derive:
+        # This will be populated at runtime based on current route
+        # For IR, we just flag it
+        derived_from_route = "__current_route__"
+    
+    breadcrumbs_ir = IRBreadcrumbs(
+        items=items_ir,
+        auto_derive=stmt.auto_derive,
+        separator=stmt.separator,
+        derived_from_route=derived_from_route,
+    )
+    
+    return ComponentSpec(
+        name="breadcrumbs",
+        type="breadcrumbs",
+        props={
+            "auto_derive": stmt.auto_derive,
+            "separator": stmt.separator,
+        },
+        metadata={"ir_spec": breadcrumbs_ir},
+    )
+
+
+def _command_palette_to_component(stmt, state) -> ComponentSpec:
+    """Convert CommandPalette AST node to ComponentSpec with sources populated"""
+    # Convert command sources
+    sources_ir = []
+    for source in stmt.sources:
+        source_ir = IRCommandSource(
+            type=source.type,
+            filter=source.filter,
+            custom_items=source.custom_items,
+            id=source.id,
+            endpoint=source.endpoint,
+            label=source.label,
+        )
+        sources_ir.append(source_ir)
+    
+    # Populate available routes from state
+    available_routes = []
+    for page in state.pages:
+        available_routes.append({
+            "label": page.name,
+            "path": page.route,
+        })
+    
+    # Populate available actions from state (placeholder)
+    available_actions = []
+    # TODO: Extract from action registry when available
+    
+    command_palette_ir = IRCommandPalette(
+        shortcut=stmt.shortcut,
+        sources=sources_ir,
+        placeholder=stmt.placeholder,
+        max_results=stmt.max_results,
+        available_routes=available_routes,
+        available_actions=available_actions,
+    )
+    
+    return ComponentSpec(
+        name="command_palette",
+        type="command_palette",
+        props={
+            "shortcut": stmt.shortcut,
+            "placeholder": stmt.placeholder,
+            "max_results": stmt.max_results,
+        },
+        metadata={"ir_spec": command_palette_ir},
+    )
+
+
+def _modal_to_component(stmt, state) -> ComponentSpec:
+    """Convert Modal AST node to ComponentSpec with nested content"""
+    from namel3ss.ir.spec import IRModal, IRModalAction
+    
+    # Convert modal actions
+    actions_ir = []
+    for action in stmt.actions:
+        actions_ir.append(
+            IRModalAction(
+                label=action.label,
+                action=action.action,
+                variant=action.variant or "default",
+                close=action.close,
+            )
+        )
+    
+    # Convert nested content statements
+    content_components = []
+    for content_stmt in stmt.content:
+        comp = _statement_to_component_spec(content_stmt, state)
+        if comp:
+            content_components.append(comp)
+    
+    modal_ir = IRModal(
+        id=stmt.id,
+        title=stmt.title,
+        description=stmt.description,
+        content=content_components,
+        actions=actions_ir,
+        size=stmt.size,
+        dismissible=stmt.dismissible,
+        trigger=stmt.trigger,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="modal",
+        props={
+            "id": stmt.id,
+            "title": stmt.title,
+            "description": stmt.description,
+            "size": stmt.size,
+            "dismissible": stmt.dismissible,
+            "trigger": stmt.trigger,
+        },
+        children=content_components,
+        metadata={"ir_spec": modal_ir},
+    )
+
+
+def _toast_to_component(stmt, state) -> ComponentSpec:
+    """Convert Toast AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRToast
+    
+    toast_ir = IRToast(
+        id=stmt.id,
+        title=stmt.title,
+        description=stmt.description,
+        variant=stmt.variant,
+        duration=stmt.duration,
+        action_label=stmt.action_label,
+        action=stmt.action,
+        position=stmt.position,
+        trigger=stmt.trigger,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="toast",
+        props={
+            "id": stmt.id,
+            "title": stmt.title,
+            "description": stmt.description,
+            "variant": stmt.variant,
+            "duration": stmt.duration,
+            "action_label": stmt.action_label,
+            "action": stmt.action,
+            "position": stmt.position,
+            "trigger": stmt.trigger,
+        },
+        metadata={"ir_spec": toast_ir},
+    )
+
+
+# =============================================================================
+# AI Semantic Component Converters
+# =============================================================================
+
+def _chat_thread_to_component(stmt, state) -> ComponentSpec:
+    """Convert ChatThread AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRChatThread
+    
+    chat_thread_ir = IRChatThread(
+        id=stmt.id,
+        messages_binding=stmt.messages_binding,
+        group_by=stmt.group_by,
+        show_timestamps=stmt.show_timestamps,
+        show_avatar=stmt.show_avatar,
+        reverse_order=stmt.reverse_order,
+        auto_scroll=stmt.auto_scroll,
+        max_height=stmt.max_height,
+        streaming_enabled=stmt.streaming_enabled,
+        streaming_source=stmt.streaming_source,
+        show_role_labels=stmt.show_role_labels,
+        show_token_count=stmt.show_token_count,
+        enable_copy=stmt.enable_copy,
+        enable_regenerate=stmt.enable_regenerate,
+        variant=stmt.variant,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="chat_thread",
+        props={
+            "id": stmt.id,
+            "messages_binding": stmt.messages_binding,
+            "group_by": stmt.group_by,
+            "show_timestamps": stmt.show_timestamps,
+            "show_avatar": stmt.show_avatar,
+            "reverse_order": stmt.reverse_order,
+            "auto_scroll": stmt.auto_scroll,
+            "max_height": stmt.max_height,
+            "streaming_enabled": stmt.streaming_enabled,
+            "streaming_source": stmt.streaming_source,
+            "show_role_labels": stmt.show_role_labels,
+            "show_token_count": stmt.show_token_count,
+            "enable_copy": stmt.enable_copy,
+            "enable_regenerate": stmt.enable_regenerate,
+            "variant": stmt.variant,
+        },
+        metadata={"ir_spec": chat_thread_ir},
+    )
+
+
+def _agent_panel_to_component(stmt, state) -> ComponentSpec:
+    """Convert AgentPanel AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRAgentPanel
+    
+    agent_panel_ir = IRAgentPanel(
+        id=stmt.id,
+        agent_binding=stmt.agent_binding,
+        metrics_binding=stmt.metrics_binding,
+        show_status=stmt.show_status,
+        show_metrics=stmt.show_metrics,
+        show_profile=stmt.show_profile,
+        show_limits=stmt.show_limits,
+        show_last_error=stmt.show_last_error,
+        show_tools=stmt.show_tools,
+        show_tokens=stmt.show_tokens,
+        show_cost=stmt.show_cost,
+        show_latency=stmt.show_latency,
+        show_model=stmt.show_model,
+        variant=stmt.variant,
+        compact=stmt.compact,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="agent_panel",
+        props={
+            "id": stmt.id,
+            "agent_binding": stmt.agent_binding,
+            "metrics_binding": stmt.metrics_binding,
+            "show_status": stmt.show_status,
+            "show_metrics": stmt.show_metrics,
+            "show_profile": stmt.show_profile,
+            "show_limits": stmt.show_limits,
+            "show_last_error": stmt.show_last_error,
+            "show_tools": stmt.show_tools,
+            "show_tokens": stmt.show_tokens,
+            "show_cost": stmt.show_cost,
+            "show_latency": stmt.show_latency,
+            "show_model": stmt.show_model,
+            "variant": stmt.variant,
+            "compact": stmt.compact,
+        },
+        metadata={"ir_spec": agent_panel_ir},
+    )
+
+
+def _tool_call_view_to_component(stmt, state) -> ComponentSpec:
+    """Convert ToolCallView AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRToolCallView
+    
+    tool_call_view_ir = IRToolCallView(
+        id=stmt.id,
+        calls_binding=stmt.calls_binding,
+        show_inputs=stmt.show_inputs,
+        show_outputs=stmt.show_outputs,
+        show_timing=stmt.show_timing,
+        show_status=stmt.show_status,
+        show_raw_payload=stmt.show_raw_payload,
+        filter_tool_name=stmt.filter_tool_name,
+        filter_status=stmt.filter_status,
+        variant=stmt.variant,
+        expandable=stmt.expandable,
+        max_height=stmt.max_height,
+        enable_retry=stmt.enable_retry,
+        enable_copy=stmt.enable_copy,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="tool_call_view",
+        props={
+            "id": stmt.id,
+            "calls_binding": stmt.calls_binding,
+            "show_inputs": stmt.show_inputs,
+            "show_outputs": stmt.show_outputs,
+            "show_timing": stmt.show_timing,
+            "show_status": stmt.show_status,
+            "show_raw_payload": stmt.show_raw_payload,
+            "filter_tool_name": stmt.filter_tool_name,
+            "filter_status": stmt.filter_status,
+            "variant": stmt.variant,
+            "expandable": stmt.expandable,
+            "max_height": stmt.max_height,
+            "enable_retry": stmt.enable_retry,
+            "enable_copy": stmt.enable_copy,
+        },
+        metadata={"ir_spec": tool_call_view_ir},
+    )
+
+
+def _log_view_to_component(stmt, state) -> ComponentSpec:
+    """Convert LogView AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRLogView
+    
+    log_view_ir = IRLogView(
+        id=stmt.id,
+        logs_binding=stmt.logs_binding,
+        level_filter=stmt.level_filter,
+        search_enabled=stmt.search_enabled,
+        search_placeholder=stmt.search_placeholder,
+        show_timestamp=stmt.show_timestamp,
+        show_level=stmt.show_level,
+        show_metadata=stmt.show_metadata,
+        show_source=stmt.show_source,
+        auto_scroll=stmt.auto_scroll,
+        auto_refresh=stmt.auto_refresh,
+        refresh_interval=stmt.refresh_interval,
+        max_entries=stmt.max_entries,
+        variant=stmt.variant,
+        max_height=stmt.max_height,
+        virtualized=stmt.virtualized,
+        enable_copy=stmt.enable_copy,
+        enable_download=stmt.enable_download,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="log_view",
+        props={
+            "id": stmt.id,
+            "logs_binding": stmt.logs_binding,
+            "level_filter": stmt.level_filter,
+            "search_enabled": stmt.search_enabled,
+            "search_placeholder": stmt.search_placeholder,
+            "show_timestamp": stmt.show_timestamp,
+            "show_level": stmt.show_level,
+            "show_metadata": stmt.show_metadata,
+            "show_source": stmt.show_source,
+            "auto_scroll": stmt.auto_scroll,
+            "auto_refresh": stmt.auto_refresh,
+            "refresh_interval": stmt.refresh_interval,
+            "max_entries": stmt.max_entries,
+            "variant": stmt.variant,
+            "max_height": stmt.max_height,
+            "virtualized": stmt.virtualized,
+            "enable_copy": stmt.enable_copy,
+            "enable_download": stmt.enable_download,
+        },
+        metadata={"ir_spec": log_view_ir},
+    )
+
+
+def _evaluation_result_to_component(stmt, state) -> ComponentSpec:
+    """Convert EvaluationResult AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IREvaluationResult
+    
+    evaluation_result_ir = IREvaluationResult(
+        id=stmt.id,
+        eval_run_binding=stmt.eval_run_binding,
+        show_summary=stmt.show_summary,
+        show_histograms=stmt.show_histograms,
+        show_error_table=stmt.show_error_table,
+        show_metadata=stmt.show_metadata,
+        metrics_to_show=stmt.metrics_to_show,
+        primary_metric=stmt.primary_metric,
+        filter_metric=stmt.filter_metric,
+        filter_min_score=stmt.filter_min_score,
+        filter_max_score=stmt.filter_max_score,
+        filter_status=stmt.filter_status,
+        show_error_distribution=stmt.show_error_distribution,
+        show_error_examples=stmt.show_error_examples,
+        max_error_examples=stmt.max_error_examples,
+        variant=stmt.variant,
+        comparison_run_binding=stmt.comparison_run_binding,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="evaluation_result",
+        props={
+            "id": stmt.id,
+            "eval_run_binding": stmt.eval_run_binding,
+            "show_summary": stmt.show_summary,
+            "show_histograms": stmt.show_histograms,
+            "show_error_table": stmt.show_error_table,
+            "show_metadata": stmt.show_metadata,
+            "metrics_to_show": stmt.metrics_to_show,
+            "primary_metric": stmt.primary_metric,
+            "filter_metric": stmt.filter_metric,
+            "filter_min_score": stmt.filter_min_score,
+            "filter_max_score": stmt.filter_max_score,
+            "filter_status": stmt.filter_status,
+            "show_error_distribution": stmt.show_error_distribution,
+            "show_error_examples": stmt.show_error_examples,
+            "max_error_examples": stmt.max_error_examples,
+            "variant": stmt.variant,
+            "comparison_run_binding": stmt.comparison_run_binding,
+        },
+        metadata={"ir_spec": evaluation_result_ir},
+    )
+
+
+def _diff_view_to_component(stmt, state) -> ComponentSpec:
+    """Convert DiffView AST node to ComponentSpec"""
+    from namel3ss.ir.spec import IRDiffView
+    
+    diff_view_ir = IRDiffView(
+        id=stmt.id,
+        left_binding=stmt.left_binding,
+        right_binding=stmt.right_binding,
+        mode=stmt.mode,
+        content_type=stmt.content_type,
+        language=stmt.language,
+        ignore_whitespace=stmt.ignore_whitespace,
+        ignore_case=stmt.ignore_case,
+        context_lines=stmt.context_lines,
+        show_line_numbers=stmt.show_line_numbers,
+        highlight_inline_changes=stmt.highlight_inline_changes,
+        show_legend=stmt.show_legend,
+        max_height=stmt.max_height,
+        enable_copy=stmt.enable_copy,
+        enable_download=stmt.enable_download,
+    )
+    
+    return ComponentSpec(
+        name=stmt.id,
+        type="diff_view",
+        props={
+            "id": stmt.id,
+            "left_binding": stmt.left_binding,
+            "right_binding": stmt.right_binding,
+            "mode": stmt.mode,
+            "content_type": stmt.content_type,
+            "language": stmt.language,
+            "ignore_whitespace": stmt.ignore_whitespace,
+            "ignore_case": stmt.ignore_case,
+            "context_lines": stmt.context_lines,
+            "show_line_numbers": stmt.show_line_numbers,
+            "highlight_inline_changes": stmt.highlight_inline_changes,
+            "show_legend": stmt.show_legend,
+            "max_height": stmt.max_height,
+            "enable_copy": stmt.enable_copy,
+            "enable_download": stmt.enable_download,
+        },
+        metadata={"ir_spec": diff_view_ir},
+    )
+
+
+def _show_text_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowText AST node to ComponentSpec"""
+    return ComponentSpec(
+        name=f"text_{id(stmt)}",
+        type="text",
+        props={
+            "text": stmt.text,
+            "styles": getattr(stmt, "styles", {}) or {},
+        },
     )
 
 

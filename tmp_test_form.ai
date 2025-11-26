@@ -1,0 +1,14 @@
+app "Test Forms"
+
+page "Contact" at "/contact":
+  show form "Contact Us":
+    fields:
+      - name: email
+        component: text_input
+        label: "Email Address"
+        required: true
+      - name: message
+        component: textarea
+        label: "Message"
+    layout: vertical
+    submit_action: send_message

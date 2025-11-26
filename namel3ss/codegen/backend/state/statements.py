@@ -79,17 +79,83 @@ def _encode_statement(
         return PageComponent(type="chart", payload={k: v for k, v in payload.items() if v not in (None, [], {})})
 
     if isinstance(statement, ShowForm):
-        fields_payload = [{"name": field.name, "type": field.field_type} for field in statement.fields]
+        # Serialize fields with full validation and component information
+        fields_payload = []
+        for field in statement.fields:
+            field_data = {
+                "name": field.name,
+                "component": field.component or "text_input",
+                "label": field.label or field.name,
+                "type": field.field_type,  # Backward compatibility
+            }
+            if field.placeholder:
+                field_data["placeholder"] = field.placeholder
+            if field.help_text:
+                field_data["help_text"] = field.help_text
+            if field.required:
+                field_data["required"] = field.required
+            if field.default:
+                field_data["default"] = str(field.default)
+            
+            # Validation
+            validation = {}
+            if field.min_length is not None:
+                validation["min_length"] = field.min_length
+            if field.max_length is not None:
+                validation["max_length"] = field.max_length
+            if field.pattern:
+                validation["pattern"] = field.pattern
+            if field.min_value is not None:
+                validation["min_value"] = field.min_value
+            if field.max_value is not None:
+                validation["max_value"] = field.max_value
+            if field.step is not None:
+                validation["step"] = field.step
+            if validation:
+                field_data["validation"] = validation
+            
+            # Options for select/multiselect/radio
+            if field.options_binding:
+                field_data["options_binding"] = field.options_binding
+            if field.options:
+                field_data["options"] = field.options
+            
+            # Conditional rendering
+            if field.disabled:
+                field_data["disabled"] = str(field.disabled)
+            if field.visible:
+                field_data["visible"] = str(field.visible)
+            
+            # File upload
+            if field.component == "file_upload":
+                if field.accept:
+                    field_data["accept"] = field.accept
+                if field.max_file_size:
+                    field_data["max_file_size"] = field.max_file_size
+                if field.upload_endpoint:
+                    field_data["upload_endpoint"] = field.upload_endpoint
+                if field.multiple:
+                    field_data["multiple"] = field.multiple
+            
+            fields_payload.append(field_data)
+        
         operations = [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.on_submit_ops]
         payload: Dict[str, Any] = {
             "title": statement.title,
             "fields": fields_payload,
             "operations": operations,
+            "layout_mode": statement.layout_mode or "vertical",
+            "submit_action": statement.submit_action,
+            "validation_mode": statement.validation_mode or "on_blur",
+            "submit_button_text": statement.submit_button_text or "Submit",
+            "reset_button": statement.reset_button,
+            "success_message": statement.success_message,
+            "error_message": statement.error_message,
             "styles": dict(statement.styles or {}),
             "layout": _encode_layout_spec(statement.layout) if statement.layout else {},
             "effects": sorted(statement.effects) if statement.effects else [],
         }
-        return PageComponent(type="form", payload={k: v for k, v in payload.items() if v not in (None, [], {})})
+        return PageComponent(type="form", payload={k: v for k, v in payload.items() if v not in (None, [], {}, False)})
     
     if isinstance(statement, Action):
         operations = [_encode_action_operation(op, env_keys, prompt_lookup) for op in statement.operations]

@@ -1,0 +1,234 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Namel3ss",
+  "scopeName": "source.namel3ss",
+  "fileTypes": ["ai", "n3"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#page-declaration" },
+    { "include": "#component-declarations" },
+    { "include": "#ai-components" },
+    { "include": "#properties" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#booleans" },
+    { "include": "#operators" },
+    { "include": "#bindings" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.namel3ss",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.line.double-slash.namel3ss",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.namel3ss",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": {
+            "0": { "name": "punctuation.definition.comment.namel3ss" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.namel3ss",
+          "match": "\\b(app|page|action|if|else|elif|for|while|break|continue|return|import|from|as)\\b"
+        },
+        {
+          "name": "keyword.other.namel3ss",
+          "match": "\\b(llm|prompt|memory|frame|dataset|predict|log|toast)\\b"
+        },
+        {
+          "name": "storage.type.namel3ss",
+          "match": "\\b(string|int|float|bool|list|dict|any)\\b"
+        }
+      ]
+    },
+    "page-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(page)\\s+(\"[^\"]+\"|'[^']+')",
+          "captures": {
+            "1": { "name": "keyword.control.namel3ss" },
+            "2": { "name": "entity.name.type.page.namel3ss string.quoted.namel3ss" }
+          }
+        }
+      ]
+    },
+    "component-declarations": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.component.namel3ss",
+          "match": "\\b(show_text|show_table|show_chart|show_form|show_card|show_list|show_data_table|show_data_list|show_stat_summary|show_timeline|show_avatar_group|show_data_chart)\\b"
+        },
+        {
+          "name": "entity.name.tag.layout.namel3ss",
+          "match": "\\b(stack|grid|split|tabs|accordion|card|list)\\b"
+        },
+        {
+          "name": "entity.name.tag.chrome.namel3ss",
+          "match": "\\b(sidebar|navbar|breadcrumbs|command_palette)\\b"
+        },
+        {
+          "name": "entity.name.tag.feedback.namel3ss",
+          "match": "\\b(modal|toast)\\b"
+        }
+      ]
+    },
+    "ai-components": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.ai.namel3ss",
+          "match": "\\b(chat_thread|agent_panel|tool_call_view|log_view|evaluation_result|diff_view)\\b"
+        }
+      ]
+    },
+    "properties": {
+      "patterns": [
+        {
+          "match": "^\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)",
+          "captures": {
+            "1": { "name": "variable.parameter.namel3ss" },
+            "2": { "name": "punctuation.separator.key-value.namel3ss" }
+          }
+        },
+        {
+          "name": "constant.language.namel3ss",
+          "match": "\\b(title|description|name|label|type|required|default|placeholder|help_text|variant|size|position|duration|trigger|binding|source|columns|rows|layout|direction|gap|align|justify|wrap|mode|language|content_type)\\b"
+        },
+        {
+          "name": "variable.parameter.ai.namel3ss",
+          "match": "\\b(messages_binding|agent_binding|metrics_binding|calls_binding|logs_binding|eval_run_binding|left_binding|right_binding|streaming_enabled|streaming_source|show_timestamps|show_avatar|show_tokens|show_cost|show_latency|show_model|show_status|show_metrics|show_inputs|show_outputs|show_timing|show_summary|show_histograms|show_error_table|show_line_numbers|auto_scroll|virtualized|expandable|primary_metric|max_entries|max_error_examples|enable_copy|enable_download|enable_retry|search_enabled|level_filter|filter_status|comparison_run_binding)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.namel3ss",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.namel3ss",
+              "match": "\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F]{4})"
+            },
+            {
+              "include": "#interpolation"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.namel3ss",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.namel3ss",
+              "match": "\\\\(['\\\\/bfnrt]|u[0-9a-fA-F]{4})"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.triple.namel3ss",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation": {
+      "patterns": [
+        {
+          "name": "meta.embedded.expression.namel3ss",
+          "begin": "\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "name": "variable.other.interpolation.namel3ss",
+              "match": "[a-zA-Z_][a-zA-Z0-9_\\.]*"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.namel3ss",
+          "match": "\\b\\d+\\.\\d+([eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.namel3ss",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.namel3ss",
+          "match": "\\b(true|false|True|False|null|None)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.namel3ss",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.namel3ss",
+          "match": "\\b(and|or|not|in|is)\\b"
+        },
+        {
+          "name": "keyword.operator.assignment.namel3ss",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.namel3ss",
+          "match": "\\+|-|\\*|/|%|\\*\\*|//"
+        },
+        {
+          "name": "punctuation.separator.namel3ss",
+          "match": "[:,\\.]"
+        }
+      ]
+    },
+    "bindings": {
+      "patterns": [
+        {
+          "name": "variable.other.binding.namel3ss",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\.[a-zA-Z_][a-zA-Z0-9_\\.]*\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.function.namel3ss",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b(?=\\s*\\()"
+        },
+        {
+          "name": "variable.other.namel3ss",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

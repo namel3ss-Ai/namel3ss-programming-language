@@ -16,8 +16,9 @@ from namel3ss.ast import (
 def test_parse_stack_layout_basic():
     """Test parsing basic stack layout."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout stack:
     direction: vertical
@@ -29,7 +30,8 @@ page test_page:
       - show card "Data" from dataset items
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
     assert len(app.body) == 1
     page = app.body[0]
@@ -49,8 +51,9 @@ page test_page:
 def test_parse_stack_layout_horizontal_with_numeric_gap():
     """Test horizontal stack with numeric gap."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout stack:
     direction: horizontal
@@ -61,9 +64,10 @@ page test_page:
       - show card "Card 2" from dataset data2
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    stack = app.body[0].body[0]
+    stack = app.pages[0].body[0]
     assert isinstance(stack, StackLayout)
     assert stack.direction == "horizontal"
     assert stack.gap == 24
@@ -73,8 +77,9 @@ page test_page:
 def test_parse_grid_layout_basic():
     """Test parsing basic grid layout."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout grid:
     columns: 3
@@ -86,9 +91,10 @@ page test_page:
       - show chart "Growth" from dataset metrics
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    grid = app.body[0].body[0]
+    grid = app.pages[0].body[0]
     assert isinstance(grid, GridLayout)
     assert grid.columns == 3
     assert grid.gap == "large"
@@ -99,8 +105,9 @@ page test_page:
 def test_parse_grid_layout_with_min_column_width():
     """Test grid with min column width."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout grid:
     columns: auto
@@ -110,9 +117,10 @@ page test_page:
       - show card "Card" from dataset data
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    grid = app.body[0].body[0]
+    grid = app.pages[0].body[0]
     assert isinstance(grid, GridLayout)
     assert grid.columns == "auto"
     assert grid.min_column_width == "300px"
@@ -121,8 +129,9 @@ page test_page:
 def test_parse_split_layout():
     """Test parsing split layout."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout split:
     ratio: 0.3
@@ -134,9 +143,10 @@ page test_page:
       - show card "Details" from dataset order_details
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    split = app.body[0].body[0]
+    split = app.pages[0].body[0]
     assert isinstance(split, SplitLayout)
     assert split.ratio == 0.3
     assert split.resizable is True
@@ -150,8 +160,9 @@ page test_page:
 def test_parse_tabs_layout():
     """Test parsing tabs layout."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout tabs:
     default_tab: overview
@@ -171,9 +182,10 @@ page test_page:
           - show card "Data" from dataset items
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    tabs = app.body[0].body[0]
+    tabs = app.pages[0].body[0]
     assert isinstance(tabs, TabsLayout)
     assert tabs.default_tab == "overview"
     assert tabs.persist_state is True
@@ -197,8 +209,9 @@ page test_page:
 def test_parse_accordion_layout():
     """Test parsing accordion layout."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout accordion:
     multiple: true
@@ -219,9 +232,10 @@ page test_page:
           - show card "Preferences" from dataset preferences
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    accordion = app.body[0].body[0]
+    accordion = app.pages[0].body[0]
     assert isinstance(accordion, AccordionLayout)
     assert accordion.multiple is True
     assert len(accordion.items) == 2
@@ -245,8 +259,9 @@ page test_page:
 def test_parse_nested_layouts():
     """Test parsing nested layout primitives."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout stack:
     direction: vertical
@@ -266,9 +281,10 @@ page test_page:
             - show card "Right" from dataset right_data
 """
     parser = Parser(source)
-    app = parser.parse()
+    module = parser.parse()
+    app = module.body[0]
     
-    stack = app.body[0].body[0]
+    stack = app.pages[0].body[0]
     assert isinstance(stack, StackLayout)
     assert len(stack.children) == 2
     
@@ -287,8 +303,9 @@ page test_page:
 def test_parse_tabs_validation_error():
     """Test that tabs layout validates default_tab."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout tabs:
     default_tab: nonexistent
@@ -309,8 +326,9 @@ page test_page:
 def test_parse_stack_invalid_direction():
     """Test that stack validates direction values."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout stack:
     direction: diagonal
@@ -328,8 +346,9 @@ page test_page:
 def test_parse_split_invalid_ratio():
     """Test that split validates ratio range."""
     source = """
-page test_page:
-  path: "/test"
+app "Test App"
+
+page "test_page" at "/test"
   
   layout split:
     ratio: 1.5
