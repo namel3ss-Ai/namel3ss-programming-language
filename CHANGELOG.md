@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
-- Nothing yet.
+### Added
+- **Data Display Components**: Six production-ready first-class components for building professional dashboards:
+  - `show data_table`: Professional data tables with sorting, filtering, pagination, toolbar, bulk actions, and row actions. Integrates Tanstack Table for advanced table functionality.
+  - `show data_list`: Rich activity feeds with avatars, metadata, badges, and item actions for displaying lists of items with complex layouts.
+  - `show stat_summary`: KPI cards with value display, delta indicators, trend arrows, Recharts sparklines, and comparison periods.
+  - `show timeline`: Chronological event displays with icons, status colors, date grouping, and detailed event descriptions.
+  - `show avatar_group`: User/entity displays with profile images, status indicators (online/offline/busy), tooltips, and overflow handling.
+  - `show data_chart`: Multi-series data visualizations with Recharts supporting line, bar, pie, area, and scatter chart types with legend, grid, and axes configuration.
+  - Complete implementation across entire stack: Parser → AST → IR → Codegen → React/TypeScript components
+  - ~6,450 lines of production-quality code with comprehensive test coverage
+  - Full documentation with syntax reference, examples, and integration patterns
+  - Production example dashboard with real SQL queries (no demo data)
 
 ## [0.5.0] - 2025-11-25
 

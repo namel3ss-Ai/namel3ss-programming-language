@@ -26,6 +26,7 @@ from .components import (
     write_form_widget,
     write_text_widget,
 )
+from .declarative_components import write_all_declarative_components
 from .hooks import write_realtime_hook
 from .client import write_client_lib
 from .dataset_client import write_dataset_client_lib
@@ -144,6 +145,7 @@ def generate_react_vite_site(
     write_table_widget(components_dir)
     write_form_widget(components_dir)
     write_text_widget(components_dir)
+    write_all_declarative_components(components_dir)  # Card, List, etc.
     
     # Generate bound components for data binding
     if backend_ir:

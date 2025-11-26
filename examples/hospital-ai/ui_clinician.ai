@@ -1,0 +1,964 @@
+# =============================================================================
+# CLINICIAN DASHBOARD PAGES
+# UI for medical staff to access all AI tools and patient management
+# =============================================================================
+
+# =============================================================================
+# LOGIN PAGE
+# =============================================================================
+
+page login:
+  path: "/login"
+  public: true
+  title: "Hospital Support AI - Login"
+  
+  ui:
+    type: form
+    layout: centered
+    max_width: 400px
+    
+    theme:
+      primary: "#2563eb"
+      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+      
+    form:
+      title: "Hospital Support AI"
+      subtitle: "Secure Login"
+      
+      fields:
+        - name: username
+          type: text
+          label: "Username"
+          placeholder: "Enter your username"
+          required: true
+          autofocus: true
+          
+        - name: password
+          type: password
+          label: "Password"
+          placeholder: "Enter your password"
+          required: true
+          
+        - name: role
+          type: select
+          label: "Login As"
+          required: true
+          options:
+            - value: "clinician"
+              label: "Clinician / Medical Staff"
+            - value: "patient"
+              label: "Patient"
+            - value: "admin"
+              label: "Administrator"
+          default: "clinician"
+          
+      submit:
+        text: "Sign In"
+        endpoint: "/api/auth/login"
+        method: POST
+        
+      on_success:
+        action: redirect
+        rules:
+          - if: "role == 'clinician'"
+            goto: "/clinician/dashboard"
+          - if: "role == 'patient'"
+            goto: "/patient/dashboard"
+          - if: "role == 'admin'"
+            goto: "/admin/dashboard"
+            
+      on_error:
+        message: "Invalid credentials. Please try again."
+
+# =============================================================================
+# CLINICIAN DASHBOARD - MAIN PAGE
+# =============================================================================
+
+page clinician_dashboard:
+  path: "/clinician/dashboard"
+  requires_role: clinician
+  title: "Clinician Dashboard"
+  
+  ui:
+    type: dashboard
+    
+    theme:
+      primary: "#2563eb"
+      secondary: "#10b981"
+      
+    layout:
+      sidebar: true
+      header: true
+      
+    header:
+      title: "Hospital Support AI"
+      subtitle: "Clinician Dashboard"
+      
+      actions:
+        - label: "Profile"
+          icon: "user"
+          link: "/clinician/profile"
+        - label: "Logout"
+          icon: "logout"
+          action: logout
+          
+    sidebar:
+      navigation:
+        - label: "Dashboard"
+          icon: "home"
+          link: "/clinician/dashboard"
+          active: true
+          
+        - label: "Triage Assistant"
+          icon: "medical"
+          link: "/clinician/triage"
+          badge: "AI"
+          
+        - label: "Medication Lookup"
+          icon: "pill"
+          link: "/clinician/medications"
+          badge: "AI"
+          
+        - label: "Care Workflows"
+          icon: "pathway"
+          link: "/clinician/workflows"
+          badge: "AI"
+          
+        - label: "Appointments"
+          icon: "calendar"
+          link: "/clinician/appointments"
+          
+        - label: "Patient Messages"
+          icon: "message"
+          link: "/clinician/messages"
+          
+        - separator: true
+          
+        - label: "Guidelines"
+          icon: "book"
+          link: "/clinician/guidelines"
+          
+        - label: "Analytics"
+          icon: "chart"
+          link: "/clinician/analytics"
+          
+    content:
+      sections:
+        # Quick stats
+        - type: stats_cards
+          columns: 4
+          cards:
+            - title: "Patients Today"
+              value: "{{ stats.patients_today }}"
+              icon: "users"
+              color: "blue"
+              trend: "+12%"
+              
+            - title: "Triage Assessments"
+              value: "{{ stats.triage_count }}"
+              icon: "clipboard"
+              color: "green"
+              
+            - title: "Appointments"
+              value: "{{ stats.appointments_today }}"
+              icon: "calendar"
+              color: "purple"
+              
+            - title: "Messages"
+              value: "{{ stats.unread_messages }}"
+              icon: "message"
+              color: "orange"
+              badge: "new"
+              
+        # Quick actions
+        - type: action_cards
+          title: "Quick Actions"
+          columns: 3
+          cards:
+            - title: "New Triage"
+              description: "Start patient triage assessment"
+              icon: "plus-medical"
+              color: "red"
+              action:
+                type: navigate
+                to: "/clinician/triage/new"
+              badge: "AI Powered"
+              
+            - title: "Medication Check"
+              description: "Look up drug information"
+              icon: "pill"
+              color: "blue"
+              action:
+                type: navigate
+                to: "/clinician/medications"
+              badge: "AI Powered"
+              
+            - title: "Book Appointment"
+              description: "Schedule patient visit"
+              icon: "calendar-plus"
+              color: "green"
+              action:
+                type: navigate
+                to: "/clinician/appointments/new"
+                
+        # Recent activity
+        - type: table
+          title: "Recent Triage Assessments"
+          endpoint: "/api/clinician/recent-triages"
+          columns:
+            - field: "timestamp"
+              label: "Time"
+              format: "relative"
+              width: "120px"
+              
+            - field: "patient_name"
+              label: "Patient"
+              
+            - field: "triage_level"
+              label: "Level"
+              render: "badge"
+              color_map:
+                emergency: "red"
+                urgent: "orange"
+                semi_urgent: "yellow"
+                non_urgent: "green"
+                
+            - field: "chief_complaint"
+              label: "Chief Complaint"
+              
+            - field: "actions"
+              label: "Actions"
+              render: "actions"
+              buttons:
+                - label: "View"
+                  icon: "eye"
+                  action: "view_details"
+                  
+          pagination: true
+          per_page: 10
+          
+        # Urgent items
+        - type: alert_list
+          title: "Urgent Items"
+          endpoint: "/api/clinician/urgent-items"
+          empty_message: "No urgent items"
+          
+  data_sources:
+    stats:
+      endpoint: "/api/clinician/dashboard-stats"
+      refresh: 30  # seconds
+
+# =============================================================================
+# TRIAGE ASSISTANT PAGE
+# =============================================================================
+
+page triage_assistant:
+  path: "/clinician/triage"
+  requires_role: clinician
+  title: "Triage Assistant"
+  
+  ui:
+    type: form_with_results
+    layout: split  # Form on left, results on right
+    
+    theme:
+      primary: "#dc2626"
+      accent: "#ef4444"
+      
+    header:
+      title: "AI-Powered Triage Assistant"
+      subtitle: "Evidence-based triage recommendations"
+      icon: "medical-cross"
+      
+      warning:
+        text: "This tool provides triage assistance only. Clinical judgment is always required."
+        type: "info"
+        dismissible: false
+        
+    form:
+      title: "Patient Assessment"
+      
+      sections:
+        # Patient Information
+        - section: "Patient Information"
+          collapsible: false
+          fields:
+            - name: patient_id
+              type: text
+              label: "Patient ID / MRN"
+              required: true
+              placeholder: "Enter patient ID"
+              validation: "alphanumeric"
+              
+            - name: patient_age
+              type: number
+              label: "Age (years)"
+              required: true
+              min: 0
+              max: 120
+              
+            - name: patient_sex
+              type: radio
+              label: "Sex"
+              required: true
+              options:
+                - value: "male"
+                  label: "Male"
+                - value: "female"
+                  label: "Female"
+                - value: "other"
+                  label: "Other"
+                  
+        # Chief Complaint
+        - section: "Chief Complaint & Symptoms"
+          collapsible: false
+          fields:
+            - name: symptoms
+              type: multiselect
+              label: "Primary Symptoms"
+              required: true
+              searchable: true
+              create_new: true
+              options:
+                - "Chest pain"
+                - "Shortness of breath"
+                - "Abdominal pain"
+                - "Headache"
+                - "Fever"
+                - "Nausea/Vomiting"
+                - "Dizziness"
+                - "Altered mental status"
+                - "Trauma/Injury"
+                - "Bleeding"
+              placeholder: "Select or type symptoms"
+              
+            - name: symptom_duration
+              type: select
+              label: "Duration"
+              required: true
+              options:
+                - "< 1 hour"
+                - "1-6 hours"
+                - "6-24 hours"
+                - "1-3 days"
+                - "3-7 days"
+                - "> 1 week"
+                
+            - name: symptom_severity
+              type: radio
+              label: "Severity"
+              required: true
+              options:
+                - value: "mild"
+                  label: "Mild"
+                  description: "Tolerable, minimal distress"
+                - value: "moderate"
+                  label: "Moderate"
+                  description: "Uncomfortable, some distress"
+                - value: "severe"
+                  label: "Severe"
+                  description: "Intolerable, significant distress"
+                  
+            - name: pain_level
+              type: slider
+              label: "Pain Level (0-10)"
+              min: 0
+              max: 10
+              step: 1
+              default: 5
+              show_value: true
+              
+        # Vital Signs
+        - section: "Vital Signs"
+          collapsible: true
+          collapsed: false
+          fields:
+            - name: temperature
+              type: number
+              label: "Temperature (°F)"
+              placeholder: "98.6"
+              min: 90
+              max: 110
+              step: 0.1
+              indicator: |
+                {{ value < 95 ? 'critical-low' : 
+                   value < 97 ? 'low' : 
+                   value < 100.4 ? 'normal' : 
+                   value < 103 ? 'elevated' : 'critical-high' }}
+                   
+            - name: heart_rate
+              type: number
+              label: "Heart Rate (bpm)"
+              placeholder: "70"
+              min: 30
+              max: 200
+              indicator: |
+                {{ value < 50 ? 'bradycardia' : 
+                   value < 100 ? 'normal' : 
+                   value < 120 ? 'elevated' : 'tachycardia' }}
+                   
+            - name: blood_pressure
+              type: text
+              label: "Blood Pressure (mmHg)"
+              placeholder: "120/80"
+              pattern: "\\d{2,3}/\\d{2,3}"
+              
+            - name: respiratory_rate
+              type: number
+              label: "Respiratory Rate (/min)"
+              placeholder: "16"
+              min: 5
+              max: 60
+              
+            - name: oxygen_saturation
+              type: number
+              label: "O₂ Saturation (%)"
+              placeholder: "98"
+              min: 70
+              max: 100
+              indicator: |
+                {{ value < 90 ? 'critical' : 
+                   value < 94 ? 'low' : 'normal' }}
+                   
+        # Medical History
+        - section: "Medical History"
+          collapsible: true
+          collapsed: true
+          fields:
+            - name: current_medications
+              type: tags
+              label: "Current Medications"
+              placeholder: "Add medication and press Enter"
+              searchable: true
+              
+            - name: allergies
+              type: tags
+              label: "Known Allergies"
+              placeholder: "Add allergy and press Enter"
+              highlight_color: "red"
+              
+            - name: chronic_conditions
+              type: multiselect
+              label: "Chronic Conditions"
+              searchable: true
+              create_new: true
+              options:
+                - "Hypertension"
+                - "Diabetes"
+                - "Asthma"
+                - "COPD"
+                - "Heart disease"
+                - "Chronic kidney disease"
+                - "Cancer"
+                - "Immunocompromised"
+                
+            - name: recent_procedures
+              type: textarea
+              label: "Recent Procedures/Surgeries"
+              placeholder: "List any recent medical procedures"
+              rows: 2
+              
+            - name: additional_notes
+              type: textarea
+              label: "Additional Clinical Notes"
+              placeholder: "Any additional relevant information"
+              rows: 3
+              
+      submit:
+        text: "Generate Triage Recommendation"
+        icon: "sparkles"
+        size: "large"
+        loading_text: "Analyzing..."
+        agent: triage_agent
+        
+    results_panel:
+      title: "Triage Recommendation"
+      
+      sections:
+        # Triage Level - Prominent display
+        - type: alert_banner
+          field: "triage_level"
+          size: "large"
+          render: |
+            <div class="triage-result">
+              <div class="triage-badge {{ triage_level }}">
+                {{ triage_level | upper }}
+              </div>
+              <div class="acuity">ESI Level {{ acuity_score }}</div>
+              <div class="disposition">{{ disposition }}</div>
+            </div>
+          color_map:
+            emergency: "red"
+            urgent: "orange"
+            semi_urgent: "yellow"
+            non_urgent: "green"
+            
+        # Red Flags Warning
+        - type: warning_box
+          condition: "red_flags.length > 0"
+          severity: "danger"
+          title: "⚠️ RED FLAG SYMPTOMS DETECTED"
+          content: |
+            {% for flag in red_flags %}
+            - {{ flag }}
+            {% endfor %}
+            
+        # Recommended Actions
+        - type: action_list
+          title: "Recommended Actions"
+          field: "recommended_actions"
+          render_item: |
+            <div class="action-item">
+              <span class="priority-badge {{ priority }}">{{ priority }}</span>
+              <span class="action-text">{{ action }}</span>
+              <span class="timeframe">{{ timeframe }}</span>
+            </div>
+            
+        # Clinical Rationale
+        - type: text_display
+          title: "Clinical Rationale"
+          field: "rationale"
+          style: "prose"
+          
+        # Differential Considerations
+        - type: list_display
+          title: "Differential Considerations"
+          field: "differential_considerations"
+          icon: "lightbulb"
+          
+        # Guidelines Used
+        - type: collapsible_section
+          title: "Medical Guidelines Referenced"
+          icon: "book"
+          default_collapsed: true
+          content:
+            field: "guideline_citations"
+            render_item: |
+              <div class="citation">
+                <strong>{{ source }}</strong>
+                <p>{{ excerpt }}</p>
+              </div>
+              
+        # Confidence & Review
+        - type: info_box
+          content: |
+            <strong>Confidence Level:</strong> {{ confidence | upper }}
+            {% if requires_physician_review %}
+            <div class="alert">⚠️ Physician review recommended</div>
+            {% endif %}
+            
+      actions:
+        - label: "Accept & Document"
+          icon: "check"
+          color: "green"
+          action:
+            type: "save_to_record"
+            confirm: true
+            
+        - label: "Modify Assessment"
+          icon: "edit"
+          color: "blue"
+          action:
+            type: "edit_form"
+            
+        - label: "Print Report"
+          icon: "printer"
+          color: "gray"
+          action:
+            type: "print"
+            
+        - label: "Start New"
+          icon: "refresh"
+          color: "gray"
+          action:
+            type: "reset_form"
+
+# =============================================================================
+# MEDICATION LOOKUP PAGE
+# =============================================================================
+
+page medication_lookup:
+  path: "/clinician/medications"
+  requires_role: clinician
+  title: "Medication Lookup & Safety Check"
+  
+  ui:
+    type: search_and_detail
+    
+    theme:
+      primary: "#2563eb"
+      accent: "#3b82f6"
+      
+    header:
+      title: "AI-Powered Medication Advisor"
+      subtitle: "Drug information, interactions, and safety checks"
+      icon: "pill"
+      
+      warning:
+        text: "For informational purposes. Always verify with primary sources and apply clinical judgment."
+        type: "info"
+        
+    search_panel:
+      title: "Medication Search"
+      
+      form:
+        fields:
+          - name: query_type
+            type: tabs
+            options:
+              - value: "drug_info"
+                label: "Drug Information"
+                icon: "info"
+              - value: "interaction_check"
+                label: "Interaction Check"
+                icon: "alert-triangle"
+              - value: "dosing"
+                label: "Dosing Guidance"
+                icon: "calculator"
+              - value: "contraindications"
+                label: "Contraindications"
+                icon: "x-circle"
+                
+          - name: medication_name
+            type: autocomplete
+            label: "Medication Name"
+            placeholder: "Search for drug (generic or brand name)"
+            required: true
+            data_source: "/api/drugs/autocomplete"
+            min_chars: 2
+            
+          - name: patient_age
+            type: number
+            label: "Patient Age"
+            required: true
+            min: 0
+            max: 120
+            
+          - name: patient_weight
+            type: number
+            label: "Patient Weight (kg)"
+            placeholder: "Optional"
+            min: 1
+            max: 300
+            
+          - name: patient_sex
+            type: select
+            label: "Patient Sex"
+            required: true
+            options:
+              - "Male"
+              - "Female"
+              - "Other"
+              
+          - name: indication
+            type: text
+            label: "Indication / Reason"
+            placeholder: "Why is this medication being considered?"
+            
+          - name: pregnancy_status
+            type: select
+            label: "Pregnancy Status"
+            condition: "patient_sex == 'Female' && patient_age >= 12 && patient_age <= 55"
+            options:
+              - value: "not_pregnant"
+                label: "Not Pregnant"
+              - value: "pregnant_trimester_1"
+                label: "Pregnant - 1st Trimester"
+              - value: "pregnant_trimester_2"
+                label: "Pregnant - 2nd Trimester"
+              - value: "pregnant_trimester_3"
+                label: "Pregnant - 3rd Trimester"
+              - value: "breastfeeding"
+                label: "Breastfeeding"
+                
+          - name: renal_function
+            type: select
+            label: "Renal Function"
+            options:
+              - "Normal"
+              - "Mild Impairment"
+              - "Moderate Impairment"
+              - "Severe Impairment"
+              - "Dialysis"
+            default: "Normal"
+            
+          - name: hepatic_function
+            type: select
+            label: "Hepatic Function"
+            options:
+              - "Normal"
+              - "Mild Impairment (Child-Pugh A)"
+              - "Moderate Impairment (Child-Pugh B)"
+              - "Severe Impairment (Child-Pugh C)"
+            default: "Normal"
+            
+          - name: current_medications
+            type: tags
+            label: "Current Medications"
+            placeholder: "Add medications for interaction check"
+            searchable: true
+            data_source: "/api/drugs/autocomplete"
+            
+          - name: allergies
+            type: tags
+            label: "Known Drug Allergies"
+            placeholder: "Add allergies"
+            highlight_color: "red"
+            
+          - name: chronic_conditions
+            type: multiselect
+            label: "Chronic Conditions"
+            searchable: true
+            options:
+              - "Hypertension"
+              - "Diabetes Mellitus"
+              - "Heart Failure"
+              - "Coronary Artery Disease"
+              - "Atrial Fibrillation"
+              - "Chronic Kidney Disease"
+              - "Chronic Liver Disease"
+              - "Asthma"
+              - "COPD"
+              - "Seizure Disorder"
+              - "Depression"
+              - "Anxiety"
+              - "Cancer"
+              - "HIV/AIDS"
+              - "Transplant Recipient"
+              
+      submit:
+        text: "Analyze Medication"
+        icon: "search"
+        loading_text: "Analyzing..."
+        agent: recommendation_agent
+        
+    detail_panel:
+      title: "Medication Analysis"
+      
+      sections:
+        # Drug Header
+        - type: drug_header
+          fields:
+            generic_name: "{{ medication.generic_name }}"
+            brand_names: "{{ medication.brand_names | join(', ') }}"
+            drug_class: "{{ medication.drug_class }}"
+            
+        # Safety Alert Banner
+        - type: alert_banner
+          condition: "safety_score in ['high_risk', 'contraindicated']"
+          severity: |
+            {{ safety_score == 'contraindicated' ? 'danger' : 'warning' }}
+          content: |
+            {% if safety_score == 'contraindicated' %}
+            ⛔ <strong>CONTRAINDICATED</strong> for this patient
+            {% else %}
+            ⚠️ <strong>HIGH RISK</strong> - Use with extreme caution
+            {% endif %}
+            
+        # Black Box Warning
+        - type: warning_box
+          condition: "warnings.black_box_warnings.length > 0"
+          severity: "danger"
+          title: "⚠️ BLACK BOX WARNING"
+          content: |
+            {% for warning in warnings.black_box_warnings %}
+            - {{ warning }}
+            {% endfor %}
+            
+        # Tabs for different information sections
+        - type: tabs
+          tabs:
+            # Indications Tab
+            - tab: "Indications"
+              icon: "check-circle"
+              content:
+                - type: list_section
+                  title: "FDA-Approved Uses"
+                  field: "indications.approved_uses"
+                  icon: "check"
+                  
+                - type: list_section
+                  title: "Off-Label Uses"
+                  field: "indications.off_label_uses"
+                  icon: "info"
+                  condition: "indications.off_label_uses.length > 0"
+                  
+            # Contraindications Tab
+            - tab: "Contraindications"
+              icon: "x-circle"
+              badge: |
+                {{ contraindications.absolute.length + contraindications.relative.length }}
+              content:
+                - type: danger_list
+                  title: "Absolute Contraindications"
+                  field: "contraindications.absolute"
+                  empty_text: "None"
+                  
+                - type: warning_list
+                  title: "Relative Contraindications"
+                  field: "contraindications.relative"
+                  empty_text: "None"
+                  
+            # Dosing Tab
+            - tab: "Dosing"
+              icon: "calculator"
+              content:
+                - type: dosing_card
+                  sections:
+                    - title: "Adult Dose"
+                      content: "{{ dosing.adult_dose }}"
+                      
+                    - title: "Pediatric Dose"
+                      content: "{{ dosing.pediatric_dose }}"
+                      condition: "patient_age < 18"
+                      
+                    - title: "Geriatric Adjustments"
+                      content: "{{ dosing.geriatric_adjustments }}"
+                      condition: "patient_age >= 65"
+                      alert: "info"
+                      
+                    - title: "Renal Adjustment"
+                      content: "{{ dosing.renal_adjustment }}"
+                      condition: "renal_function != 'Normal'"
+                      alert: "warning"
+                      
+                    - title: "Hepatic Adjustment"
+                      content: "{{ dosing.hepatic_adjustment }}"
+                      condition: "hepatic_function != 'Normal'"
+                      alert: "warning"
+                      
+            # Interactions Tab
+            - tab: "Interactions"
+              icon: "alert-triangle"
+              badge: "{{ interactions.interacting_drugs.length }}"
+              badge_color: |
+                {{ interactions.severity == 'critical' ? 'red' : 
+                   interactions.severity == 'major' ? 'orange' : 'yellow' }}
+              content:
+                - type: interaction_severity
+                  field: "interactions.severity"
+                  render: |
+                    <div class="severity-badge {{ severity }}">
+                      {{ severity | upper }} INTERACTION
+                    </div>
+                    
+                - type: interaction_list
+                  title: "Interacting Drugs"
+                  data: |
+                    {% for i in range(interactions.interacting_drugs.length) %}
+                    {
+                      "drug": "{{ interactions.interacting_drugs[i] }}",
+                      "description": "{{ interactions.interaction_descriptions[i] }}",
+                      "management": "{{ interactions.management_recommendations[i] }}"
+                    }
+                    {% endfor %}
+                  render_item: |
+                    <div class="interaction-item">
+                      <h4>{{ drug }}</h4>
+                      <p><strong>Effect:</strong> {{ description }}</p>
+                      <p class="management"><strong>Management:</strong> {{ management }}</p>
+                    </div>
+                    
+            # Adverse Effects Tab
+            - tab: "Adverse Effects"
+              icon: "alert-circle"
+              content:
+                - type: adverse_effects_table
+                  columns:
+                    - field: "effect"
+                      label: "Effect"
+                    - field: "frequency"
+                      label: "Frequency"
+                    - field: "severity"
+                      label: "Severity"
+                  data:
+                    common:
+                      field: "adverse_effects.common"
+                      severity: "mild-moderate"
+                    serious:
+                      field: "adverse_effects.serious"
+                      severity: "severe"
+                      highlight: true
+                      
+            # Monitoring Tab
+            - tab: "Monitoring"
+              icon: "activity"
+              content:
+                - type: monitoring_plan
+                  title: "Required Monitoring"
+                  parameters: "{{ monitoring.parameters_to_monitor }}"
+                  frequency: "{{ monitoring.monitoring_frequency }}"
+                  
+            # Patient Considerations Tab
+            - tab: "Patient Factors"
+              icon: "user"
+              content:
+                - type: consideration_cards
+                  cards:
+                    - title: "Age-Related"
+                      field: "patient_considerations.age_related"
+                      icon: "user"
+                      condition: "patient_considerations.age_related.length > 0"
+                      
+                    - title: "Pregnancy"
+                      content: |
+                        <strong>Category:</strong> {{ patient_considerations.pregnancy_category }}
+                      icon: "heart"
+                      condition: "patient_considerations.pregnancy_category"
+                      alert_level: |
+                        {{ patient_considerations.pregnancy_category in ['D', 'X'] ? 'danger' : 'info' }}
+                        
+                    - title: "Breastfeeding"
+                      content: |
+                        {{ patient_considerations.breastfeeding_compatible ? 
+                           '✓ Generally compatible' : 
+                           '⚠️ Use with caution or avoid' }}
+                      condition: "patient_considerations.breastfeeding_compatible != null"
+                      
+        # Guidelines & Citations
+        - type: collapsible_section
+          title: "Referenced Guidelines & Sources"
+          icon: "book"
+          default_collapsed: true
+          content:
+            field: "guideline_citations"
+            render: |
+              {% for citation in guideline_citations %}
+              <div class="citation">
+                <strong>{{ citation.source }}</strong>
+                <p>{{ citation.excerpt }}</p>
+              </div>
+              {% endfor %}
+              
+        # Specialist Consult Recommendation
+        - type: info_box
+          condition: "requires_specialist_consult"
+          severity: "info"
+          content: |
+            💡 <strong>Specialist Consultation Recommended</strong>
+            Consider consulting a clinical pharmacist or specialist for this medication in this patient.
+            
+      actions:
+        - label: "Add to Patient Chart"
+          icon: "plus"
+          color: "green"
+          action:
+            type: "add_to_chart"
+            
+        - label: "Print Monograph"
+          icon: "printer"
+          color: "gray"
+          action:
+            type: "print"
+            
+        - label: "Export PDF"
+          icon: "download"
+          color: "gray"
+          action:
+            type: "export_pdf"
+            
+        - label: "New Search"
+          icon: "search"
+          color: "blue"
+          action:
+            type: "reset"

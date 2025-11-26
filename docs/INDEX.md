@@ -59,6 +59,7 @@ This documentation provides comprehensive coverage of the language, its features
 #### Frontend
 - **[Frontend Generation](FRONTEND_GENERATION.md)** - React/Vite app structure and client library
 - **[Component API](COMPONENT_API.md)** - Table, chart, form, and action components
+- **[Data Display Components](DATA_DISPLAY_COMPONENTS.md)** - Professional data tables, lists, charts, timelines, and KPI cards
 
 #### Integration
 - **[Frontend-Backend Contract](INTEGRATION_CONTRACT.md)** - API schemas and communication patterns
@@ -101,6 +102,7 @@ This documentation provides comprehensive coverage of the language, its features
 - ✅ RAG and query system
 - ✅ Backend generation (FastAPI)
 - ✅ Frontend generation (React/Vite)
+- ✅ Data display components (tables, charts, KPIs, timelines)
 
 ### Experimental Features
 - 🧪 Agents and graphs (syntax stable, runtime evolving)

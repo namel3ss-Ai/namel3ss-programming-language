@@ -1,0 +1,495 @@
+# =============================================================================
+# DATASETS & RAG CONFIGURATION
+# Medical knowledge bases and retrieval systems
+# =============================================================================
+
+# =============================================================================
+# MEDICAL GUIDELINES DATASET
+# Emergency triage protocols, clinical guidelines, best practices
+# =============================================================================
+
+dataset medical_guidelines:
+  name: "Medical Guidelines & Protocols"
+  description: "Emergency triage protocols, clinical guidelines, and best practices"
+  
+  source:
+    type: "directory"
+    path: "./data/medical_guidelines/"
+    file_patterns: ["*.md", "*.pdf", "*.txt"]
+    recursive: true
+    
+  document_structure:
+    parser: "smart"  # Auto-detect format
+    chunking:
+      strategy: "semantic"
+      chunk_size: 1000
+      chunk_overlap: 200
+      preserve_sections: true
+      
+  metadata_extraction:
+    extract_fields:
+      - guideline_name
+      - category
+      - last_updated
+      - authority  # e.g., "WHO", "CDC", "AHA"
+      - evidence_level
+      - specialty
+      - applicable_age_groups
+      
+  preprocessing:
+    - remove_headers_footers
+    - normalize_whitespace
+    - extract_tables
+    - preserve_lists
+    
+  indexing:
+    embedding_model: embeddings
+    vector_dimension: 768
+    index_type: "hnsw"
+    distance_metric: "cosine"
+    
+  update_schedule: "daily"
+  version_control: true
+
+# =============================================================================
+# DRUG DATABASE DATASET
+# Comprehensive medication information, interactions, dosing
+# =============================================================================
+
+dataset drug_database:
+  name: "Drug Information Database"
+  description: "Comprehensive medication monographs, interactions, and safety data"
+  
+  source:
+    type: "structured"
+    format: "json"
+    path: "./data/drugs/"
+    
+  schema:
+    drug_name: string
+    generic_name: string
+    brand_names: array
+    drug_class: string
+    mechanism_of_action: text
+    indications: array
+    contraindications: array
+    warnings: array
+    dosing: object
+    interactions: array
+    adverse_effects: array
+    pharmacokinetics: object
+    monitoring: array
+    references: array
+    
+  document_structure:
+    chunking:
+      strategy: "by_field"
+      fields_to_chunk: ["mechanism_of_action", "indications", "contraindications"]
+      chunk_size: 800
+      
+  metadata_extraction:
+    extract_fields:
+      - drug_class
+      - controlled_substance_schedule
+      - pregnancy_category
+      - requires_monitoring
+      - high_alert_medication
+      
+  indexing:
+    embedding_model: embeddings
+    vector_dimension: 768
+    hybrid_search: true  # Combine semantic + keyword search
+    keyword_fields: ["drug_name", "generic_name", "brand_names"]
+    
+  update_schedule: "weekly"
+
+# =============================================================================
+# CLINICAL PATHWAYS DATASET
+# Evidence-based care pathways and workflows
+# =============================================================================
+
+dataset clinical_pathways:
+  name: "Clinical Care Pathways"
+  description: "Evidence-based treatment protocols and care workflows"
+  
+  source:
+    type: "directory"
+    path: "./data/pathways/"
+    file_patterns: ["*.md", "*.json"]
+    
+  document_structure:
+    parser: "structured"
+    chunking:
+      strategy: "by_phase"  # Chunk by care phases
+      preserve_hierarchy: true
+      
+  metadata_extraction:
+    extract_fields:
+      - condition
+      - pathway_type
+      - target_population
+      - care_setting
+      - evidence_grade
+      - last_reviewed
+      
+  indexing:
+    embedding_model: embeddings
+    vector_dimension: 768
+    
+  update_schedule: "monthly"
+
+# =============================================================================
+# PATIENT EDUCATION MATERIALS
+# Approved patient-facing information
+# =============================================================================
+
+dataset patient_education:
+  name: "Patient Education Materials"
+  description: "Approved, patient-friendly health information"
+  
+  source:
+    type: "directory"
+    path: "./data/patient_education/"
+    file_patterns: ["*.md", "*.txt"]
+    
+  document_structure:
+    chunking:
+      strategy: "semantic"
+      chunk_size: 500
+      reading_level_aware: true
+      
+  metadata_extraction:
+    extract_fields:
+      - topic
+      - reading_level
+      - language
+      - approved_by
+      - approval_date
+      
+  indexing:
+    embedding_model: embeddings
+    vector_dimension: 768
+    
+  update_schedule: "weekly"
+
+# =============================================================================
+# RAG CONFIGURATION FOR MEDICAL GUIDELINES
+# =============================================================================
+
+rag medical_guidelines:
+  name: "Medical Guidelines RAG"
+  dataset: medical_guidelines
+  
+  retrieval:
+    strategy: "hybrid"  # Semantic + keyword
+    top_k: 5
+    similarity_threshold: 0.7
+    
+    reranking:
+      enabled: true
+      model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+      top_k_after_rerank: 3
+      
+    query_expansion:
+      enabled: true
+      methods:
+        - synonyms
+        - medical_terms
+        - acronym_expansion
+        
+    filters:
+      - field: "evidence_level"
+        priority: ["A", "B", "C"]
+      - field: "last_updated"
+        min_date: "2020-01-01"  # Prefer recent guidelines
+        
+  context_construction:
+    max_tokens: 3000
+    include_metadata: true
+    include_citations: true
+    
+    format: |
+      ## Retrieved Medical Guidelines
+      
+      {% for doc in retrieved_docs %}
+      ### {{ doc.metadata.guideline_name }}
+      **Source:** {{ doc.metadata.authority }}
+      **Evidence Level:** {{ doc.metadata.evidence_level }}
+      **Last Updated:** {{ doc.metadata.last_updated }}
+      
+      {{ doc.content }}
+      
+      ---
+      {% endfor %}
+      
+  caching:
+    enabled: true
+    ttl: 3600  # 1 hour
+    cache_key_fields: ["query", "filters"]
+    
+  logging:
+    log_queries: true
+    log_retrievals: true
+    track_metrics: true
+
+# =============================================================================
+# RAG CONFIGURATION FOR DRUG DATABASE
+# =============================================================================
+
+rag drug_database:
+  name: "Drug Information RAG"
+  dataset: drug_database
+  
+  retrieval:
+    strategy: "hybrid"
+    top_k: 3
+    similarity_threshold: 0.75
+    
+    # Exact match boosting for drug names
+    exact_match_boost: 2.0
+    fuzzy_matching: true
+    
+    reranking:
+      enabled: true
+      model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+      top_k_after_rerank: 2
+      
+  context_construction:
+    max_tokens: 2500
+    include_metadata: true
+    structured_format: true
+    
+    format: |
+      ## Drug Information
+      
+      {% for doc in retrieved_docs %}
+      ### {{ doc.metadata.generic_name }} ({{ doc.metadata.drug_class }})
+      
+      **Brand Names:** {{ doc.metadata.brand_names | join(', ') }}
+      {% if doc.metadata.high_alert_medication %}
+      ⚠️ **HIGH ALERT MEDICATION**
+      {% endif %}
+      
+      {{ doc.content }}
+      
+      ---
+      {% endfor %}
+      
+  caching:
+    enabled: true
+    ttl: 7200  # 2 hours (drug info changes less frequently)
+    
+  logging:
+    log_queries: true
+    log_retrievals: true
+    track_metrics: true
+
+# =============================================================================
+# RAG CONFIGURATION FOR CLINICAL PATHWAYS
+# =============================================================================
+
+rag clinical_pathways:
+  name: "Clinical Pathways RAG"
+  dataset: clinical_pathways
+  
+  retrieval:
+    strategy: "semantic"
+    top_k: 3
+    similarity_threshold: 0.65
+    
+    reranking:
+      enabled: true
+      model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+      top_k_after_rerank: 2
+      
+    filters:
+      - field: "evidence_grade"
+        priority: ["A", "B"]
+        
+  context_construction:
+    max_tokens: 2000
+    include_metadata: true
+    preserve_structure: true
+    
+    format: |
+      ## Clinical Care Pathways
+      
+      {% for doc in retrieved_docs %}
+      ### {{ doc.metadata.condition }} - {{ doc.metadata.pathway_type }}
+      **Evidence Grade:** {{ doc.metadata.evidence_grade }}
+      **Target:** {{ doc.metadata.target_population }}
+      **Setting:** {{ doc.metadata.care_setting }}
+      
+      {{ doc.content }}
+      
+      ---
+      {% endfor %}
+      
+  caching:
+    enabled: true
+    ttl: 3600
+    
+  logging:
+    log_queries: true
+    log_retrievals: true
+    track_metrics: true
+
+# =============================================================================
+# RAG CONFIGURATION FOR PATIENT EDUCATION
+# =============================================================================
+
+rag patient_education:
+  name: "Patient Education RAG"
+  dataset: patient_education
+  
+  retrieval:
+    strategy: "semantic"
+    top_k: 3
+    similarity_threshold: 0.70
+    
+    filters:
+      - field: "reading_level"
+        values: ["basic", "intermediate"]
+      - field: "approved_by"
+        exists: true
+        
+  context_construction:
+    max_tokens: 1500
+    include_metadata: false  # Simpler for patients
+    patient_friendly: true
+    
+    format: |
+      {% for doc in retrieved_docs %}
+      {{ doc.content }}
+      
+      {% endfor %}
+      
+  caching:
+    enabled: true
+    ttl: 3600
+    
+  logging:
+    log_queries: true
+    log_retrievals: true
+    track_metrics: true
+
+# =============================================================================
+# VECTOR DATABASE CONFIGURATION
+# =============================================================================
+
+vector_db:
+  provider: "pgvector"
+  connection: "{{ env.VECTOR_DB_URL }}"
+  
+  collections:
+    - name: "medical_guidelines_vectors"
+      dimension: 768
+      index_type: "hnsw"
+      distance_metric: "cosine"
+      m: 16  # HNSW parameter
+      ef_construction: 200
+      
+    - name: "drug_database_vectors"
+      dimension: 768
+      index_type: "hnsw"
+      distance_metric: "cosine"
+      m: 16
+      ef_construction: 200
+      
+    - name: "clinical_pathways_vectors"
+      dimension: 768
+      index_type: "hnsw"
+      distance_metric: "cosine"
+      m: 16
+      ef_construction: 200
+      
+    - name: "patient_education_vectors"
+      dimension: 768
+      index_type: "hnsw"
+      distance_metric: "cosine"
+      m: 16
+      ef_construction: 200
+      
+  maintenance:
+    auto_vacuum: true
+    rebuild_index_threshold: 0.1  # Rebuild if 10% of data changes
+    backup_schedule: "daily"
+
+# =============================================================================
+# EMBEDDING PIPELINE
+# =============================================================================
+
+embedding_pipeline:
+  model: embeddings
+  batch_size: 32
+  timeout: 30
+  retry_attempts: 3
+  
+  preprocessing:
+    - lowercase: false  # Preserve medical terms
+    - remove_special_chars: false
+    - normalize_unicode: true
+    
+  postprocessing:
+    - normalize_vectors: true
+    - dimensionality_check: true
+
+# =============================================================================
+# SEARCH & RETRIEVAL MONITORING
+# =============================================================================
+
+rag_monitoring:
+  enabled: true
+  
+  metrics:
+    - retrieval_latency
+    - cache_hit_rate
+    - relevance_scores
+    - query_volume
+    - reranking_impact
+    
+  alerts:
+    - condition: "retrieval_latency > 2000"  # ms
+      action: "notify_admin"
+      message: "RAG retrieval slow"
+      
+    - condition: "cache_hit_rate < 0.3"
+      action: "log_warning"
+      message: "Low cache efficiency"
+      
+    - condition: "relevance_scores < 0.5"
+      action: "flag_for_review"
+      message: "Low relevance scores detected"
+      
+  logging:
+    level: "INFO"
+    include_query_text: true
+    include_retrieved_docs: false  # Privacy
+    include_timing: true
+    include_scores: true
+
+# =============================================================================
+# DATA QUALITY & VALIDATION
+# =============================================================================
+
+data_quality:
+  validation:
+    - check: "no_duplicate_documents"
+      frequency: "daily"
+      
+    - check: "metadata_completeness"
+      required_fields: ["last_updated", "authority"]
+      frequency: "daily"
+      
+    - check: "broken_references"
+      frequency: "weekly"
+      
+  monitoring:
+    track_dataset_sizes: true
+    alert_on_significant_changes: true
+    change_threshold: 0.2  # 20% change
+    
+  audit:
+    log_all_updates: true
+    retention_period: "90_days"
+    include_who_what_when: true

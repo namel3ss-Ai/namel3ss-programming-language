@@ -15,7 +15,9 @@ from namel3ss.ast import (
     Dataset,
     DatasetSchemaField,
     GroupByOp,
+    ShowCard,
     ShowChart,
+    ShowList,
     ShowTable,
 )
 
@@ -148,6 +150,77 @@ class PreviewDataResolver:
                 }
             ],
         }
+
+    def card_preview(self, stmt: ShowCard) -> Dict[str, Any]:
+        """Generate preview data for card widget."""
+        preview = self._resolve_source_preview(stmt.source_type, stmt.source)
+        seed = f"card:{stmt.source}:{stmt.title}"
+        
+        if preview:
+            rows = preview.rows[: self._sample_size]
+        else:
+            # Generate fallback rows based on item config
+            columns = self._infer_card_columns(stmt)
+            rows = [self._build_fallback_row(columns, seed, index) for index in range(self._sample_size)]
+        
+        if stmt.filter_by:
+            rows = self._apply_filter(rows, stmt.filter_by)
+        
+        if stmt.sort_by:
+            rows = self._apply_sort(rows, stmt.sort_by)
+        
+        return {
+            "rows": rows[: self._sample_size],
+        }
+
+    def list_preview(self, stmt: ShowList) -> Dict[str, Any]:
+        """Generate preview data for list widget."""
+        preview = self._resolve_source_preview(stmt.source_type, stmt.source)
+        seed = f"list:{stmt.source}:{stmt.title}"
+        
+        if preview:
+            rows = preview.rows[: self._sample_size]
+        else:
+            # Generate fallback rows
+            columns = self._infer_card_columns(stmt)
+            rows = [self._build_fallback_row(columns, seed, index) for index in range(self._sample_size)]
+        
+        if stmt.filter_by:
+            rows = self._apply_filter(rows, stmt.filter_by)
+        
+        if stmt.sort_by:
+            rows = self._apply_sort(rows, stmt.sort_by)
+        
+        return {
+            "rows": rows[: self._sample_size],
+        }
+
+    def _infer_card_columns(self, stmt) -> List[str]:
+        """Infer column names from card/list item configuration."""
+        columns = []
+        
+        # Add common fields
+        columns.extend(["id", "title", "status"])
+        
+        # Try to extract fields from item config if available
+        if hasattr(stmt, 'item_config') and stmt.item_config:
+            item_config = stmt.item_config
+            
+            # Extract from sections
+            if hasattr(item_config, 'sections') and item_config.sections:
+                for section in item_config.sections:
+                    if hasattr(section, 'items') and section.items:
+                        for item in section.items:
+                            if hasattr(item, 'field') and item.field:
+                                if item.field not in columns:
+                                    columns.append(item.field)
+                            if hasattr(item, 'values') and item.values:
+                                for value in item.values:
+                                    if hasattr(value, 'field') and value.field:
+                                        if value.field not in columns:
+                                            columns.append(value.field)
+        
+        return columns or ["id", "name", "status", "date"]
 
     # ------------------------------------------------------------------
     # Internal helpers

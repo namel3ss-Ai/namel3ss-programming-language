@@ -329,6 +329,36 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
             return self._parse_show_chart(line, parent_indent)
         if stripped.startswith('show form '):
             return self._parse_show_form(line, parent_indent)
+        if stripped.startswith('show card '):
+            return self._parse_show_card(line, parent_indent)
+        if stripped.startswith('show list '):
+            return self._parse_show_list(line, parent_indent)
+        
+        # Data display components
+        if stripped.startswith('show data_table '):
+            return self._parse_show_data_table(line, parent_indent)
+        if stripped.startswith('show data_list '):
+            return self._parse_show_data_list(line, parent_indent)
+        if stripped.startswith('show stat_summary '):
+            return self._parse_show_stat_summary(line, parent_indent)
+        if stripped.startswith('show timeline '):
+            return self._parse_show_timeline(line, parent_indent)
+        if stripped.startswith('show avatar_group '):
+            return self._parse_show_avatar_group(line, parent_indent)
+        if stripped.startswith('show data_chart '):
+            return self._parse_show_data_chart(line, parent_indent)
+        
+        # Layout primitives
+        if stripped.startswith('layout stack'):
+            return self._parse_layout_stack(line, parent_indent)
+        if stripped.startswith('layout grid'):
+            return self._parse_layout_grid(line, parent_indent)
+        if stripped.startswith('layout split'):
+            return self._parse_layout_split(line, parent_indent)
+        if stripped.startswith('layout tabs'):
+            return self._parse_layout_tabs(line, parent_indent)
+        if stripped.startswith('layout accordion'):
+            return self._parse_layout_accordion(line, parent_indent)
             
         # ML prediction
         if stripped.startswith('predict '):
@@ -347,7 +377,7 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
         suggestion = suggest_keyword(first_word, 'page-statement')
         
         valid_keywords = ', '.join(sorted([
-            'set', 'show', 'if', 'for', 'while', 'break', 'continue', 'predict', 'action', 'log'
+            'set', 'show', 'layout', 'if', 'for', 'while', 'break', 'continue', 'predict', 'action', 'log'
         ]))
         
         error_msg = f"Unknown page statement: '{first_word}'"

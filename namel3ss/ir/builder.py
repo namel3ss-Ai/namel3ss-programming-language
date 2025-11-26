@@ -41,6 +41,20 @@ from .spec import (
     CacheStrategy,
     DataBindingSpec,
     UpdateChannelSpec,
+    # Data display component IR specs
+    IRDataTable,
+    IRColumnConfig,
+    IRToolbarConfig,
+    IRDataList,
+    IRListItemConfig,
+    IRStatSummary,
+    IRSparklineConfig,
+    IRTimeline,
+    IRTimelineItem,
+    IRAvatarGroup,
+    IRAvatarItem,
+    IRDataChart,
+    IRChartConfig,
 )
 
 
@@ -587,6 +601,30 @@ def _statement_to_component_spec(stmt, state) -> Optional[ComponentSpec]:
         return _show_chart_to_component(stmt, state)
     elif stmt_type == "ShowForm":
         return _show_form_to_component(stmt, state)
+    # Data display components
+    elif stmt_type == "ShowDataTable":
+        return _show_data_table_to_component(stmt, state)
+    elif stmt_type == "ShowDataList":
+        return _show_data_list_to_component(stmt, state)
+    elif stmt_type == "ShowStatSummary":
+        return _show_stat_summary_to_component(stmt, state)
+    elif stmt_type == "ShowTimeline":
+        return _show_timeline_to_component(stmt, state)
+    elif stmt_type == "ShowAvatarGroup":
+        return _show_avatar_group_to_component(stmt, state)
+    elif stmt_type == "ShowDataChart":
+        return _show_data_chart_to_component(stmt, state)
+    # Layout primitives
+    elif stmt_type == "StackLayout":
+        return _stack_layout_to_component(stmt, state)
+    elif stmt_type == "GridLayout":
+        return _grid_layout_to_component(stmt, state)
+    elif stmt_type == "SplitLayout":
+        return _split_layout_to_component(stmt, state)
+    elif stmt_type == "TabsLayout":
+        return _tabs_layout_to_component(stmt, state)
+    elif stmt_type == "AccordionLayout":
+        return _accordion_layout_to_component(stmt, state)
     # Add other statement types as needed
     
     return None
@@ -783,6 +821,717 @@ def _dict_to_type_spec(data: Dict[str, Any]) -> TypeSpec:
     
     else:
         return TypeSpec(kind=kind)
+
+
+# =============================================================================
+# Data Display Component Converters
+# =============================================================================
+
+def _show_data_table_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowDataTable AST node to IRDataTable"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        # Extract sortable/filterable fields from columns
+        sortable_fields = [col.id for col in stmt.columns if col.sortable] if stmt.columns else []
+        filterable_fields = [col.id for col in stmt.columns] if stmt.columns else []
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=stmt.page_size,
+            enable_sorting=True,
+            sortable_fields=sortable_fields,
+            enable_filtering=True,
+            filterable_fields=filterable_fields,
+            enable_search=stmt.toolbar.search is not None if stmt.toolbar else False,
+            searchable_fields=filterable_fields if stmt.toolbar and stmt.toolbar.search else [],
+            editable=binding_config.editable if binding_config else False,
+            enable_create=binding_config.enable_create if binding_config else False,
+            enable_update=binding_config.enable_update if binding_config else False,
+            enable_delete=binding_config.enable_delete if binding_config else False,
+            create_endpoint=f"/api/datasets/{dataset_name}" if binding_config and binding_config.enable_create else None,
+            update_endpoint=f"/api/datasets/{dataset_name}/{{id}}" if binding_config and binding_config.enable_update else None,
+            delete_endpoint=f"/api/datasets/{dataset_name}/{{id}}" if binding_config and binding_config.enable_delete else None,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+            optimistic_updates=binding_config.optimistic_updates if binding_config else True,
+        )
+    
+    # Convert columns
+    ir_columns = []
+    if stmt.columns:
+        for col in stmt.columns:
+            ir_columns.append(IRColumnConfig(
+                id=col.id,
+                label=col.label,
+                field=col.field,
+                width=col.width,
+                align=col.align,
+                sortable=col.sortable,
+                format=col.format,
+                transform=col.transform,
+                render_template=col.render_template,
+            ))
+    
+    # Convert toolbar
+    ir_toolbar = None
+    if stmt.toolbar:
+        ir_toolbar = IRToolbarConfig(
+            search=stmt.toolbar.search,
+            filters=stmt.toolbar.filters,
+            bulk_actions=[_conditional_action_to_dict(a) for a in stmt.toolbar.bulk_actions] if stmt.toolbar.bulk_actions else [],
+            actions=[_conditional_action_to_dict(a) for a in stmt.toolbar.actions] if stmt.toolbar.actions else [],
+        )
+    
+    # Convert row actions
+    row_actions = [_conditional_action_to_dict(a) for a in stmt.row_actions] if stmt.row_actions else []
+    
+    # Convert empty state
+    empty_state = _empty_state_to_dict(stmt.empty_state) if stmt.empty_state else None
+    
+    ir_table = IRDataTable(
+        title=stmt.title,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        columns=ir_columns,
+        row_actions=row_actions,
+        toolbar=ir_toolbar,
+        filter_by=stmt.filter_by,
+        sort_by=stmt.sort_by,
+        default_sort=stmt.default_sort,
+        page_size=stmt.page_size,
+        enable_pagination=stmt.enable_pagination,
+        empty_state=empty_state,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+    )
+    
+    # Wrap in ComponentSpec for compatibility
+    return ComponentSpec(
+        name=stmt.title,
+        type="data_table",
+        props={
+            "ir_spec": ir_table,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRDataTable"},
+    )
+
+
+def _show_data_list_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowDataList AST node to IRDataList"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=stmt.page_size,
+            enable_sorting=False,
+            sortable_fields=[],
+            enable_filtering=True,
+            filterable_fields=[],
+            enable_search=stmt.enable_search,
+            searchable_fields=[],
+            editable=False,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+        )
+    
+    # Convert item config
+    ir_item = None
+    if stmt.item:
+        ir_item = IRListItemConfig(
+            avatar=stmt.item.avatar,
+            title=stmt.item.title,
+            subtitle=stmt.item.subtitle,
+            metadata=stmt.item.metadata,
+            actions=[_conditional_action_to_dict(a) for a in stmt.item.actions] if stmt.item.actions else [],
+            badge=stmt.item.badge,
+            icon=stmt.item.icon,
+            state_class=stmt.item.state_class,
+        )
+    
+    # Convert empty state
+    empty_state = _empty_state_to_dict(stmt.empty_state) if stmt.empty_state else None
+    
+    ir_list = IRDataList(
+        title=stmt.title,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        item=ir_item,
+        variant=stmt.variant,
+        dividers=stmt.dividers,
+        filter_by=stmt.filter_by,
+        enable_search=stmt.enable_search,
+        search_placeholder=stmt.search_placeholder,
+        page_size=stmt.page_size,
+        enable_pagination=stmt.enable_pagination,
+        empty_state=empty_state,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+    )
+    
+    return ComponentSpec(
+        name=stmt.title,
+        type="data_list",
+        props={
+            "ir_spec": ir_list,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRDataList"},
+    )
+
+
+def _show_stat_summary_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowStatSummary AST node to IRStatSummary"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=1,  # Stat summaries typically fetch single values
+            enable_sorting=False,
+            sortable_fields=[],
+            enable_filtering=False,
+            filterable_fields=[],
+            enable_search=False,
+            searchable_fields=[],
+            editable=False,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+        )
+    
+    # Convert sparkline config
+    ir_sparkline = None
+    if stmt.sparkline:
+        ir_sparkline = IRSparklineConfig(
+            data_source=stmt.sparkline.data_source,
+            x_field=stmt.sparkline.x_field,
+            y_field=stmt.sparkline.y_field,
+            color=stmt.sparkline.color,
+            variant=stmt.sparkline.variant,
+        )
+    
+    ir_stat = IRStatSummary(
+        label=stmt.label,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        value=stmt.value,
+        format=stmt.format,
+        prefix=stmt.prefix,
+        suffix=stmt.suffix,
+        delta=stmt.delta,
+        trend=stmt.trend,
+        comparison_period=stmt.comparison_period,
+        sparkline=ir_sparkline,
+        color=stmt.color,
+        icon=stmt.icon,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+    )
+    
+    return ComponentSpec(
+        name=stmt.label,
+        type="stat_summary",
+        props={
+            "ir_spec": ir_stat,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRStatSummary"},
+    )
+
+
+def _show_timeline_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowTimeline AST node to IRTimeline"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=stmt.page_size,
+            enable_sorting=True,
+            sortable_fields=[],
+            enable_filtering=True,
+            filterable_fields=[],
+            enable_search=False,
+            searchable_fields=[],
+            editable=False,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+        )
+    
+    # Convert item config
+    ir_item = None
+    if stmt.item:
+        ir_item = IRTimelineItem(
+            timestamp=stmt.item.timestamp,
+            title=stmt.item.title,
+            description=stmt.item.description,
+            icon=stmt.item.icon,
+            status=stmt.item.status,
+            color=stmt.item.color,
+            actions=[_conditional_action_to_dict(a) for a in stmt.item.actions] if stmt.item.actions else [],
+        )
+    
+    # Convert empty state
+    empty_state = _empty_state_to_dict(stmt.empty_state) if stmt.empty_state else None
+    
+    ir_timeline = IRTimeline(
+        title=stmt.title,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        item=ir_item,
+        variant=stmt.variant,
+        show_timestamps=stmt.show_timestamps,
+        group_by_date=stmt.group_by_date,
+        filter_by=stmt.filter_by,
+        sort_by=stmt.sort_by,
+        page_size=stmt.page_size,
+        enable_pagination=stmt.enable_pagination,
+        empty_state=empty_state,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+    )
+    
+    return ComponentSpec(
+        name=stmt.title,
+        type="timeline",
+        props={
+            "ir_spec": ir_timeline,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRTimeline"},
+    )
+
+
+def _show_avatar_group_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowAvatarGroup AST node to IRAvatarGroup"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=stmt.max_visible + 10,  # Fetch a few extra for "+N more"
+            enable_sorting=False,
+            sortable_fields=[],
+            enable_filtering=True,
+            filterable_fields=[],
+            enable_search=False,
+            searchable_fields=[],
+            editable=False,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+        )
+    
+    # Convert item config
+    ir_item = None
+    if stmt.item:
+        ir_item = IRAvatarItem(
+            name=stmt.item.name,
+            image_url=stmt.item.image_url,
+            initials=stmt.item.initials,
+            color=stmt.item.color,
+            status=stmt.item.status,
+            tooltip=stmt.item.tooltip,
+        )
+    
+    ir_avatar_group = IRAvatarGroup(
+        title=stmt.title,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        item=ir_item,
+        max_visible=stmt.max_visible,
+        size=stmt.size,
+        variant=stmt.variant,
+        filter_by=stmt.filter_by,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+    )
+    
+    return ComponentSpec(
+        name=stmt.title or "Avatar Group",
+        type="avatar_group",
+        props={
+            "ir_spec": ir_avatar_group,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRAvatarGroup"},
+    )
+
+
+def _show_data_chart_to_component(stmt, state) -> ComponentSpec:
+    """Convert ShowDataChart AST node to IRDataChart"""
+    from namel3ss.ast.pages import DataBindingConfig
+    
+    # Build binding spec
+    binding_spec = None
+    if hasattr(stmt, "binding") and stmt.binding:
+        binding_config: DataBindingConfig = stmt.binding
+        dataset_name = stmt.source
+        
+        binding_spec = DataBindingSpec(
+            dataset_name=dataset_name,
+            endpoint_path=f"/api/datasets/{dataset_name}",
+            page_size=1000,  # Charts can handle more data
+            enable_sorting=False,
+            sortable_fields=[],
+            enable_filtering=True,
+            filterable_fields=[],
+            enable_search=False,
+            searchable_fields=[],
+            editable=False,
+            subscribe_to_changes=binding_config.subscribe_to_changes if binding_config else False,
+            websocket_topic=f"dataset:{dataset_name}:changes" if binding_config and binding_config.subscribe_to_changes else None,
+            polling_interval=binding_config.refresh_interval if binding_config else None,
+            cache_ttl=binding_config.cache_ttl if binding_config else None,
+        )
+    
+    # Convert chart config
+    ir_config = None
+    if stmt.config:
+        ir_config = IRChartConfig(
+            variant=stmt.config.variant,
+            x_field=stmt.config.x_field,
+            y_fields=stmt.config.y_fields,
+            group_by=stmt.config.group_by,
+            stacked=stmt.config.stacked,
+            smooth=stmt.config.smooth,
+            fill=stmt.config.fill,
+            legend=stmt.config.legend,
+            tooltip=stmt.config.tooltip,
+            x_axis=stmt.config.x_axis,
+            y_axis=stmt.config.y_axis,
+            colors=stmt.config.colors,
+            color_scheme=stmt.config.color_scheme,
+        )
+    
+    # Convert empty state
+    empty_state = _empty_state_to_dict(stmt.empty_state) if stmt.empty_state else None
+    
+    ir_chart = IRDataChart(
+        title=stmt.title,
+        source_type=stmt.source_type,
+        source=stmt.source,
+        config=ir_config,
+        filter_by=stmt.filter_by,
+        sort_by=stmt.sort_by,
+        empty_state=empty_state,
+        binding=binding_spec,
+        layout=_layout_meta_to_dict(stmt.layout) if stmt.layout else None,
+        style=stmt.style,
+        height=stmt.height,
+    )
+    
+    return ComponentSpec(
+        name=stmt.title,
+        type="data_chart",
+        props={
+            "ir_spec": ir_chart,
+        },
+        data_source=stmt.source,
+        binding=binding_spec,
+        metadata={"ir_type": "IRDataChart"},
+    )
+
+
+# Helper functions for conversions
+
+def _conditional_action_to_dict(action) -> Dict[str, Any]:
+    """Convert ConditionalAction AST node to dictionary"""
+    return {
+        "label": action.label,
+        "action_type": action.action_type,
+        "action_target": action.action_target,
+        "params": action.params,
+        "condition": action.condition,
+        "style": action.style,
+        "icon": action.icon,
+        "confirm": action.confirm,
+    }
+
+
+def _empty_state_to_dict(empty_state) -> Dict[str, Any]:
+    """Convert EmptyStateConfig AST node to dictionary"""
+    if not empty_state:
+        return None
+    return {
+        "icon": empty_state.icon,
+        "title": empty_state.title,
+        "message": empty_state.message,
+        "action": empty_state.action,
+    }
+
+
+def _layout_meta_to_dict(layout_meta) -> Dict[str, Any]:
+    """Convert LayoutMeta AST node to dictionary"""
+    if not layout_meta:
+        return None
+    return {
+        "direction": layout_meta.direction,
+        "spacing": layout_meta.spacing,
+        "width": layout_meta.width,
+        "height": layout_meta.height,
+        "variant": layout_meta.variant,
+        "align": layout_meta.align,
+        "emphasis": layout_meta.emphasis,
+        "extras": layout_meta.extras,
+    }
+
+
+# =============================================================================
+# Layout Primitive Converters
+# =============================================================================
+
+def _stack_layout_to_component(stmt, state) -> ComponentSpec:
+    """Convert StackLayout AST node to ComponentSpec with children"""
+    from .spec import IRStackLayout
+    
+    # Recursively convert children
+    children = []
+    for child_stmt in stmt.children:
+        child_spec = _statement_to_component_spec(child_stmt, state)
+        if child_spec:
+            children.append(child_spec)
+    
+    layout_ir = IRStackLayout(
+        direction=stmt.direction,
+        gap=stmt.gap,
+        align=stmt.align,
+        justify=stmt.justify,
+        wrap=stmt.wrap,
+        children=children,
+        style=stmt.style,
+        layout_meta=stmt.layout if hasattr(stmt, 'layout') else None,
+    )
+    
+    return ComponentSpec(
+        name=f"stack_{id(stmt)}",
+        type="stack",
+        props={
+            "direction": stmt.direction,
+            "gap": stmt.gap,
+            "align": stmt.align,
+            "justify": stmt.justify,
+            "wrap": stmt.wrap,
+        },
+        children=children,
+        layout=layout_ir,
+    )
+
+
+def _grid_layout_to_component(stmt, state) -> ComponentSpec:
+    """Convert GridLayout AST node to ComponentSpec with children"""
+    from .spec import IRGridLayout
+    
+    # Recursively convert children
+    children = []
+    for child_stmt in stmt.children:
+        child_spec = _statement_to_component_spec(child_stmt, state)
+        if child_spec:
+            children.append(child_spec)
+    
+    layout_ir = IRGridLayout(
+        columns=stmt.columns,
+        min_column_width=stmt.min_column_width,
+        gap=stmt.gap,
+        responsive=stmt.responsive,
+        children=children,
+        style=stmt.style,
+        layout_meta=stmt.layout if hasattr(stmt, 'layout') else None,
+    )
+    
+    return ComponentSpec(
+        name=f"grid_{id(stmt)}",
+        type="grid",
+        props={
+            "columns": stmt.columns,
+            "minColumnWidth": stmt.min_column_width,
+            "gap": stmt.gap,
+            "responsive": stmt.responsive,
+        },
+        children=children,
+        layout=layout_ir,
+    )
+
+
+def _split_layout_to_component(stmt, state) -> ComponentSpec:
+    """Convert SplitLayout AST node to ComponentSpec with left/right children"""
+    from .spec import IRSplitLayout
+    
+    # Recursively convert left children
+    left_children = []
+    for child_stmt in stmt.left:
+        child_spec = _statement_to_component_spec(child_stmt, state)
+        if child_spec:
+            left_children.append(child_spec)
+    
+    # Recursively convert right children
+    right_children = []
+    for child_stmt in stmt.right:
+        child_spec = _statement_to_component_spec(child_stmt, state)
+        if child_spec:
+            right_children.append(child_spec)
+    
+    layout_ir = IRSplitLayout(
+        left=left_children,
+        right=right_children,
+        ratio=stmt.ratio,
+        resizable=stmt.resizable,
+        orientation=stmt.orientation,
+        style=stmt.style,
+        layout_meta=stmt.layout if hasattr(stmt, 'layout') else None,
+    )
+    
+    return ComponentSpec(
+        name=f"split_{id(stmt)}",
+        type="split",
+        props={
+            "ratio": stmt.ratio,
+            "resizable": stmt.resizable,
+            "orientation": stmt.orientation,
+        },
+        children=left_children + right_children,  # Combine for ComponentSpec
+        layout=layout_ir,
+    )
+
+
+def _tabs_layout_to_component(stmt, state) -> ComponentSpec:
+    """Convert TabsLayout AST node to ComponentSpec with tab children"""
+    from .spec import IRTabsLayout, IRTabItem
+    
+    # Convert tabs
+    tabs_ir = []
+    all_children = []
+    for tab in stmt.tabs:
+        # Recursively convert tab content
+        tab_children = []
+        for child_stmt in tab.content:
+            child_spec = _statement_to_component_spec(child_stmt, state)
+            if child_spec:
+                tab_children.append(child_spec)
+                all_children.append(child_spec)
+        
+        tab_ir = IRTabItem(
+            id=tab.id,
+            label=tab.label,
+            icon=tab.icon,
+            badge=tab.badge,
+            content=tab_children,
+        )
+        tabs_ir.append(tab_ir)
+    
+    layout_ir = IRTabsLayout(
+        tabs=tabs_ir,
+        default_tab=stmt.default_tab,
+        persist_state=stmt.persist_state,
+        style=stmt.style,
+        layout_meta=stmt.layout if hasattr(stmt, 'layout') else None,
+    )
+    
+    return ComponentSpec(
+        name=f"tabs_{id(stmt)}",
+        type="tabs",
+        props={
+            "defaultTab": stmt.default_tab,
+            "persistState": stmt.persist_state,
+        },
+        children=all_children,
+        layout=layout_ir,
+    )
+
+
+def _accordion_layout_to_component(stmt, state) -> ComponentSpec:
+    """Convert AccordionLayout AST node to ComponentSpec with accordion items"""
+    from .spec import IRAccordionLayout, IRAccordionItem
+    
+    # Convert items
+    items_ir = []
+    all_children = []
+    for item in stmt.items:
+        # Recursively convert item content
+        item_children = []
+        for child_stmt in item.content:
+            child_spec = _statement_to_component_spec(child_stmt, state)
+            if child_spec:
+                item_children.append(child_spec)
+                all_children.append(child_spec)
+        
+        item_ir = IRAccordionItem(
+            id=item.id,
+            title=item.title,
+            description=item.description,
+            icon=item.icon,
+            default_open=item.default_open,
+            content=item_children,
+        )
+        items_ir.append(item_ir)
+    
+    layout_ir = IRAccordionLayout(
+        items=items_ir,
+        multiple=stmt.multiple,
+        style=stmt.style,
+        layout_meta=stmt.layout if hasattr(stmt, 'layout') else None,
+    )
+    
+    return ComponentSpec(
+        name=f"accordion_{id(stmt)}",
+        type="accordion",
+        props={
+            "multiple": stmt.multiple,
+        },
+        children=all_children,
+        layout=layout_ir,
+    )
 
 
 __all__ = [

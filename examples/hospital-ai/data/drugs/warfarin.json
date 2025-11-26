@@ -1,0 +1,201 @@
+{
+  "drug_name": "Warfarin",
+  "generic_name": "Warfarin Sodium",
+  "brand_names": ["Coumadin", "Jantoven"],
+  "drug_class": "Anticoagulant (Vitamin K Antagonist)",
+  
+  "mechanism_of_action": "Warfarin inhibits the synthesis of vitamin K-dependent clotting factors (II, VII, IX, X) and anticoagulant proteins C and S. It interferes with the cyclic interconversion of vitamin K and vitamin K epoxide, reducing the amount of active vitamin K available for the carboxylation of clotting factors.",
+  
+  "indications": [
+    "Prophylaxis and treatment of venous thrombosis and pulmonary embolism",
+    "Prophylaxis and treatment of thromboembolic complications associated with atrial fibrillation",
+    "Prophylaxis and treatment of thromboembolic complications associated with cardiac valve replacement",
+    "Reduction of risk of death, recurrent MI, and thromboembolic events such as stroke after MI"
+  ],
+  
+  "contraindications": [
+    "Pregnancy (Category X - causes fetal harm)",
+    "Active bleeding or bleeding tendency (hemophilia, recent surgery, active GI ulceration)",
+    "Severe hepatic disease",
+    "Malignant hypertension",
+    "Inadequate laboratory monitoring capabilities",
+    "Patient non-compliance or inability to cooperate",
+    "Recent or contemplated CNS surgery or eye surgery",
+    "Lumbar puncture and other diagnostic or therapeutic procedures with potential for uncontrollable bleeding",
+    "Hypersensitivity to warfarin"
+  ],
+  
+  "warnings": {
+    "black_box": [
+      "BLEEDING RISK: Warfarin can cause major or fatal bleeding. Bleeding is more likely during the starting period and with higher doses. Risk factors include high intensity anticoagulation (INR > 4), age ≥ 65, history of GI bleeding, hypertension, cerebrovascular disease, serious heart disease, anemia, malignancy, trauma, renal insufficiency, drug-drug interactions, long duration of therapy, and poor anticoagulant control.",
+      "Regular monitoring of INR is essential. Dose adjustments must be individualized based on INR response.",
+      "PREGNANCY: Warfarin is contraindicated in pregnancy. It crosses the placenta and can cause fatal hemorrhage to the fetus and congenital malformations. Women of childbearing potential must use effective contraception."
+    ],
+    "serious": [
+      "Calciphylaxis (calcium uremic arteriolopathy) - rare but serious",
+      "Acute kidney injury",
+      "Cholesterol microembolization",
+      "Purple toe syndrome",
+      "Skin necrosis (usually appears between days 3-8 of therapy)",
+      "Hepatotoxicity"
+    ],
+    "precautions": [
+      "Numerous drug and food interactions",
+      "Genetic factors affect dosing (CYP2C9 and VKORC1 polymorphisms)",
+      "Increased bleeding risk with concurrent use of antiplatelet agents or NSAIDs",
+      "Vitamin K-rich foods can decrease efficacy",
+      "Alcohol can increase bleeding risk"
+    ]
+  },
+  
+  "dosing": {
+    "adult_dose": "Initial: 2-5 mg once daily (consider 2-3 mg in elderly or patients at high bleeding risk). Adjust based on INR. Typical maintenance: 2-10 mg once daily.",
+    "target_inr": {
+      "venous_thrombosis": "2.0-3.0",
+      "atrial_fibrillation": "2.0-3.0",
+      "mechanical_heart_valve_mitral": "2.5-3.5",
+      "mechanical_heart_valve_aortic": "2.0-3.0"
+    },
+    "pediatric_dose": "Individualized based on INR. Initial: 0.1-0.2 mg/kg/day (max 10 mg). Infants may require higher doses.",
+    "geriatric_adjustments": "Lower starting doses recommended (2-3 mg daily). Elderly patients may be more sensitive to warfarin and have increased bleeding risk. More frequent INR monitoring advised.",
+    "renal_adjustment": "No specific dose adjustment required, but monitor INR more frequently. Increased bleeding risk with renal impairment.",
+    "hepatic_adjustment": "Contraindicated in severe hepatic disease. Use with caution in mild-moderate disease with more frequent INR monitoring."
+  },
+  
+  "interactions": [
+    {
+      "drug": "Aspirin and other antiplatelet agents",
+      "severity": "major",
+      "effect": "Significantly increased bleeding risk",
+      "management": "Avoid concurrent use if possible. If necessary, use lowest effective doses and monitor closely for bleeding."
+    },
+    {
+      "drug": "NSAIDs (ibuprofen, naproxen, etc.)",
+      "severity": "major",
+      "effect": "Increased bleeding risk, especially GI bleeding",
+      "management": "Avoid if possible. Consider acetaminophen for pain. If NSAID necessary, use lowest dose for shortest duration and monitor INR."
+    },
+    {
+      "drug": "Antibiotics (especially metronidazole, sulfamethoxazole-trimethoprim, fluoroquinolones)",
+      "severity": "major",
+      "effect": "Increased INR and bleeding risk",
+      "management": "Increase INR monitoring frequency. May need temporary warfarin dose reduction."
+    },
+    {
+      "drug": "Amiodarone",
+      "severity": "major",
+      "effect": "Significantly increases INR (inhibits CYP2C9)",
+      "management": "Reduce warfarin dose by 30-50% when starting amiodarone. Monitor INR closely."
+    },
+    {
+      "drug": "Rifampin",
+      "severity": "major",
+      "effect": "Decreases INR (induces CYP2C9)",
+      "management": "May need to increase warfarin dose. Monitor INR closely when starting or stopping rifampin."
+    },
+    {
+      "drug": "Azole antifungals (fluconazole, voriconazole)",
+      "severity": "major",
+      "effect": "Increased INR and bleeding risk",
+      "management": "Consider dose reduction. Monitor INR closely."
+    },
+    {
+      "drug": "Vitamin K",
+      "severity": "major",
+      "effect": "Decreases INR (antagonizes warfarin)",
+      "management": "Avoid vitamin K supplements. Maintain consistent dietary vitamin K intake."
+    },
+    {
+      "drug": "St. John's Wort",
+      "severity": "major",
+      "effect": "Decreases INR",
+      "management": "Avoid concurrent use."
+    },
+    {
+      "drug": "Alcohol (acute intoxication)",
+      "severity": "moderate",
+      "effect": "May increase INR",
+      "management": "Limit alcohol intake. Chronic heavy use may decrease INR."
+    }
+  ],
+  
+  "adverse_effects": {
+    "common": [
+      "Bleeding (most common - ranges from minor to major)",
+      "Bruising",
+      "Anemia",
+      "Nausea",
+      "Abdominal pain"
+    ],
+    "serious": [
+      "Major hemorrhage (intracranial, GI, retroperitoneal)",
+      "Skin necrosis",
+      "Purple toe syndrome",
+      "Calciphylaxis",
+      "Hepatotoxicity",
+      "Acute kidney injury"
+    ],
+    "frequency": "Bleeding complications occur in 15-20% of patients per year, with major bleeding in 1-3% per year"
+  },
+  
+  "monitoring": {
+    "parameters_to_monitor": [
+      "INR (primary monitoring parameter)",
+      "Complete blood count (hemoglobin/hematocrit for bleeding)",
+      "Signs and symptoms of bleeding",
+      "Liver function tests (if indicated)",
+      "Renal function",
+      "Patient compliance and dietary changes"
+    ],
+    "monitoring_frequency": {
+      "initiation": "INR daily or every other day until stable",
+      "stable_therapy": "INR every 4 weeks (some patients may need more frequent monitoring)",
+      "after_dose_change": "INR within 3-7 days, then weekly until stable",
+      "intercurrent_illness_or_new_drug": "More frequent INR monitoring"
+    }
+  },
+  
+  "patient_considerations": {
+    "pregnancy_category": "X (Contraindicated)",
+    "breastfeeding_compatible": true,
+    "breastfeeding_note": "Low levels in breast milk. Appears safe but monitor infant for bruising/bleeding.",
+    "age_related": [
+      "Elderly (≥65 years): Increased sensitivity, higher bleeding risk, lower starting doses recommended",
+      "Pediatric: Limited data, requires individualized dosing and close monitoring"
+    ]
+  },
+  
+  "pharmacogenetics": {
+    "cyp2c9": "Polymorphisms (*2 and *3 alleles) result in reduced enzyme activity and increased bleeding risk. May require lower doses.",
+    "vkorc1": "Genetic variants affect warfarin sensitivity. Lower doses may be needed in some patients.",
+    "testing": "Pharmacogenetic testing may guide initial dosing but is not routinely required."
+  },
+  
+  "reversal_strategies": {
+    "minor_bleeding_inr_elevated": "Hold warfarin, give oral vitamin K 2.5-5 mg",
+    "major_bleeding": "Hold warfarin, give IV vitamin K 10 mg slow infusion PLUS 4-factor prothrombin complex concentrate (PCC) or fresh frozen plasma if PCC unavailable",
+    "emergent_surgery": "4-factor PCC plus vitamin K 5-10 mg IV",
+    "inr_elevated_no_bleeding": {
+      "inr_4.5_to_10": "Hold 1-2 doses, monitor INR, resume at lower dose when therapeutic",
+      "inr_greater_than_10": "Hold warfarin, give oral vitamin K 2.5-5 mg"
+    }
+  },
+  
+  "dietary_considerations": {
+    "vitamin_k_foods": [
+      "Green leafy vegetables (kale, spinach, collards)",
+      "Broccoli",
+      "Brussels sprouts",
+      "Green tea"
+    ],
+    "counseling": "Maintain consistent vitamin K intake. Don't avoid these foods, but keep intake consistent from week to week.",
+    "cranberry_juice": "May increase INR. Limit or avoid."
+  },
+  
+  "references": [
+    "Warfarin Prescribing Information, Bristol-Myers Squibb, 2023",
+    "Chest Guidelines: Antithrombotic Therapy for VTE Disease, 2021",
+    "American Heart Association/American College of Cardiology Atrial Fibrillation Guidelines, 2023",
+    "Micromedex Drug Information, IBM Watson Health"
+  ]
+}

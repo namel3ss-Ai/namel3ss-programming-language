@@ -70,7 +70,53 @@ define chain "SupportFlow":
     - step "save":
         write_memory: chat_history
 
-# Page with AI-powered form
+# Professional dashboard with data display components
+page "Analytics Dashboard" at "/dashboard":
+  # KPI metrics with sparklines
+  show stat_summary from dataset revenue:
+    label: "Total Revenue"
+    value:
+      field: total_revenue
+      format: currency
+    delta:
+      field: revenue_change
+      format: percentage
+    sparkline:
+      data: daily_revenue
+      color: "#10b981"
+  
+  # Multi-series chart
+  show data_chart "Sales Trend" from dataset sales:
+    chart:
+      type: line
+      x_axis: date
+      series:
+        - data_key: revenue
+          label: "Revenue"
+        - data_key: orders
+          label: "Orders"
+  
+  # Interactive data table
+  show data_table "Recent Orders" from dataset orders:
+    columns:
+      - field: order_number
+        header: "Order #"
+        sortable: true
+      - field: amount
+        header: "Amount"
+        format: currency
+    toolbar:
+      searchable: true
+      filters:
+        - field: status
+          label: "Status"
+          type: select
+    row_actions:
+      - label: "View"
+        action: view_order
+        icon: eye
+
+# AI-powered form with chain workflow
 page "Support Chat" at "/chat":
   show form "Ask Support":
     fields: message
@@ -426,6 +472,7 @@ namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
 
 **Examples:**
 - **[🛠️ Examples Directory](examples/)** - Complete working applications
+- **[🏥 Hospital AI](examples/hospital-ai/)** - Multi-agent hospital support system with triage, medication lookup, and patient messaging
 - **[📝 Language Syntax](docs/LANGUAGE_REFERENCE.md)** - Complete N3 syntax guide
 - **[🏗️ Architecture](docs/ARCHITECTURE.md)** - System design and internals
 

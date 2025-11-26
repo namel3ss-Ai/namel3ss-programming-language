@@ -1,0 +1,606 @@
+# =============================================================================
+# LAYOUT PRIMITIVES DEMONSTRATION
+# Production-ready example showcasing stack, grid, split, tabs, and accordion
+# =============================================================================
+
+# =============================================================================
+# DATA SOURCES
+# =============================================================================
+
+dataset dashboard_metrics:
+  source: sql
+  connection: analytics_db
+  query: |
+    SELECT 
+      date,
+      total_users,
+      active_users,
+      revenue,
+      conversion_rate
+    FROM daily_metrics
+    WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+    ORDER BY date DESC
+
+dataset sales_by_region:
+  source: sql
+  connection: analytics_db
+  query: |
+    SELECT 
+      region,
+      total_sales,
+      growth_rate,
+      top_product
+    FROM regional_sales
+    WHERE quarter = EXTRACT(QUARTER FROM CURRENT_DATE)
+
+dataset orders:
+  source: sql
+  connection: orders_db
+  query: |
+    SELECT 
+      id,
+      customer_name,
+      order_date,
+      status,
+      total_amount,
+      items_count
+    FROM orders
+    WHERE order_date >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY order_date DESC
+
+dataset order_details:
+  source: sql
+  connection: orders_db
+  query: |
+    SELECT 
+      order_id,
+      product_name,
+      quantity,
+      unit_price,
+      subtotal
+    FROM order_items
+    WHERE order_id = ?
+  parameters:
+    order_id: selected_order_id
+
+dataset customer_segments:
+  source: sql
+  connection: crm_db
+  query: |
+    SELECT 
+      segment_name,
+      customer_count,
+      avg_lifetime_value,
+      churn_rate
+    FROM customer_segments
+    ORDER BY customer_count DESC
+
+dataset support_tickets:
+  source: sql
+  connection: support_db
+  query: |
+    SELECT 
+      id,
+      subject,
+      priority,
+      status,
+      created_at,
+      assigned_to
+    FROM tickets
+    WHERE status IN ('open', 'in_progress')
+    ORDER BY priority DESC, created_at DESC
+    LIMIT 50
+
+dataset knowledge_base_articles:
+  source: sql
+  connection: support_db
+  query: |
+    SELECT 
+      id,
+      title,
+      category,
+      views,
+      helpful_count,
+      last_updated
+    FROM articles
+    WHERE published = true
+    ORDER BY views DESC
+    LIMIT 20
+
+# =============================================================================
+# MAIN DASHBOARD PAGE - Comprehensive Layout Demo
+# =============================================================================
+
+page dashboard:
+  path: "/dashboard"
+  title: "Analytics Dashboard"
+  
+  # Top-level stack for vertical layout
+  layout stack:
+    direction: vertical
+    gap: large
+    align: stretch
+    
+    children:
+      # Header section with key metrics (grid layout)
+      - layout grid:
+          columns: 4
+          gap: medium
+          responsive: true
+          min_column_width: 200px
+          
+          children:
+            - show card "Total Users" from dataset dashboard_metrics:
+                empty_state:
+                  icon: users
+                  title: "No data available"
+                
+                item:
+                  type: card
+                  style: metric_card
+                  
+                  sections:
+                    - type: info_grid
+                      columns: 1
+                      items:
+                        - icon: users
+                          label: "Count"
+                          values:
+                            - field: total_users
+                              format: number
+                              style: metric_value
+            
+            - show card "Active Users" from dataset dashboard_metrics:
+                item:
+                  type: card
+                  style: metric_card
+                  
+                  sections:
+                    - type: info_grid
+                      columns: 1
+                      items:
+                        - icon: activity
+                          label: "Active"
+                          values:
+                            - field: active_users
+                              format: number
+                              style: metric_value
+            
+            - show card "Revenue" from dataset dashboard_metrics:
+                item:
+                  type: card
+                  style: metric_card
+                  
+                  sections:
+                    - type: info_grid
+                      columns: 1
+                      items:
+                        - icon: dollar-sign
+                          label: "Total"
+                          values:
+                            - field: revenue
+                              format: currency
+                              style: metric_value
+            
+            - show card "Conversion Rate" from dataset dashboard_metrics:
+                item:
+                  type: card
+                  style: metric_card
+                  
+                  sections:
+                    - type: info_grid
+                      columns: 1
+                      items:
+                        - icon: trending-up
+                          label: "Rate"
+                          values:
+                            - field: conversion_rate
+                              format: percent
+                              style: metric_value
+      
+      # Main content area with tabs
+      - layout tabs:
+          default_tab: overview
+          persist_state: true
+          
+          tabs:
+            - id: overview
+              label: "Overview"
+              icon: home
+              
+              content:
+                # Nested grid for overview charts
+                - layout grid:
+                    columns: 2
+                    gap: large
+                    responsive: true
+                    
+                    children:
+                      - show chart "Sales by Region" from dataset sales_by_region:
+                          type: bar
+                          x: region
+                          y: total_sales
+                          color: region
+                      
+                      - show chart "Growth Trends" from dataset dashboard_metrics:
+                          type: line
+                          x: date
+                          y: revenue
+                          title: "Revenue Over Time"
+            
+            - id: sales
+              label: "Sales"
+              icon: shopping-cart
+              badge: "12"
+              
+              content:
+                # Split layout for orders and details
+                - layout split:
+                    ratio: 0.4
+                    resizable: true
+                    orientation: horizontal
+                    
+                    left:
+                      - show card "Recent Orders" from dataset orders:
+                          empty_state:
+                            icon: shopping-bag
+                            title: "No recent orders"
+                            message: "Orders from the last 7 days will appear here"
+                          
+                          item:
+                            type: card
+                            style: order_card
+                            
+                            header:
+                              title: "{{ customer_name }}"
+                              badges:
+                                - field: status
+                                  style: status_badge
+                                  transform: humanize
+                            
+                            sections:
+                              - type: info_grid
+                                columns: 2
+                                items:
+                                  - icon: calendar
+                                    label: "Date"
+                                    values:
+                                      - field: order_date
+                                        format: "MMM DD, YYYY"
+                                  
+                                  - icon: dollar-sign
+                                    label: "Amount"
+                                    values:
+                                      - field: total_amount
+                                        format: currency
+                                  
+                                  - icon: package
+                                    label: "Items"
+                                    values:
+                                      - field: items_count
+                            
+                            actions:
+                              - label: "View Details"
+                                icon: eye
+                                style: primary
+                                action: select_order
+                                params: "{{ id }}"
+                    
+                    right:
+                      - show card "Order Details" from dataset order_details:
+                          filter_by: "order_id == selected_order_id"
+                          
+                          empty_state:
+                            icon: inbox
+                            title: "Select an order"
+                            message: "Click on an order to view its details"
+                          
+                          item:
+                            type: card
+                            style: order_item_card
+                            
+                            sections:
+                              - type: info_grid
+                                columns: 1
+                                items:
+                                  - label: "Product"
+                                    values:
+                                      - field: product_name
+                                  
+                                  - label: "Quantity"
+                                    values:
+                                      - field: quantity
+                                  
+                                  - label: "Price"
+                                    values:
+                                      - field: unit_price
+                                        format: currency
+                                  
+                                  - label: "Subtotal"
+                                    values:
+                                      - field: subtotal
+                                        format: currency
+                                        style: subtotal_value
+            
+            - id: customers
+              label: "Customers"
+              icon: users
+              
+              content:
+                # Stack for customer segmentation
+                - layout stack:
+                    direction: vertical
+                    gap: medium
+                    
+                    children:
+                      - show chart "Customer Segments" from dataset customer_segments:
+                          type: pie
+                          x: segment_name
+                          y: customer_count
+                          title: "Distribution by Segment"
+                      
+                      - show card "Segment Details" from dataset customer_segments:
+                          item:
+                            type: card
+                            style: segment_card
+                            
+                            header:
+                              title: "{{ segment_name }}"
+                            
+                            sections:
+                              - type: info_grid
+                                columns: 3
+                                items:
+                                  - icon: users
+                                    label: "Customers"
+                                    values:
+                                      - field: customer_count
+                                        format: number
+                                  
+                                  - icon: dollar-sign
+                                    label: "Avg LTV"
+                                    values:
+                                      - field: avg_lifetime_value
+                                        format: currency
+                                  
+                                  - icon: trending-down
+                                    label: "Churn Rate"
+                                    values:
+                                      - field: churn_rate
+                                        format: percent
+            
+            - id: support
+              label: "Support"
+              icon: help-circle
+              badge: "24"
+              
+              content:
+                # Accordion for support sections
+                - layout accordion:
+                    multiple: false
+                    
+                    items:
+                      - id: open_tickets
+                        title: "Open Tickets"
+                        description: "Active support tickets requiring attention"
+                        icon: alert-circle
+                        default_open: true
+                        
+                        content:
+                          - show card "Support Tickets" from dataset support_tickets:
+                              filter_by: "status IN ('open', 'in_progress')"
+                              
+                              empty_state:
+                                icon: check-circle
+                                title: "All caught up!"
+                                message: "No open tickets at the moment"
+                              
+                              item:
+                                type: card
+                                style: ticket_card
+                                
+                                header:
+                                  title: "{{ subject }}"
+                                  badges:
+                                    - field: priority
+                                      style: priority_badge
+                                      transform: uppercase
+                                    - field: status
+                                      style: status_badge
+                                      transform: humanize
+                                
+                                sections:
+                                  - type: info_grid
+                                    columns: 2
+                                    items:
+                                      - icon: user
+                                        label: "Assigned To"
+                                        values:
+                                          - field: assigned_to
+                                      
+                                      - icon: clock
+                                        label: "Created"
+                                        values:
+                                          - field: created_at
+                                            transform:
+                                              format: relative
+                                
+                                actions:
+                                  - label: "View Ticket"
+                                    icon: external-link
+                                    style: primary
+                                    link: "/tickets/{{ id }}"
+                                  
+                                  - label: "Assign to Me"
+                                    icon: user-check
+                                    style: secondary
+                                    action: assign_ticket
+                                    params: "{{ id }}"
+                                    condition: "assigned_to == null"
+                      
+                      - id: knowledge_base
+                        title: "Knowledge Base"
+                        description: "Popular help articles and documentation"
+                        icon: book-open
+                        default_open: false
+                        
+                        content:
+                          - show card "Popular Articles" from dataset knowledge_base_articles:
+                              item:
+                                type: article_card
+                                style: kb_article
+                                
+                                header:
+                                  title: "{{ title }}"
+                                  badges:
+                                    - field: category
+                                      style: category_badge
+                                
+                                sections:
+                                  - type: info_grid
+                                    columns: 3
+                                    items:
+                                      - icon: eye
+                                        label: "Views"
+                                        values:
+                                          - field: views
+                                            format: number
+                                      
+                                      - icon: thumbs-up
+                                        label: "Helpful"
+                                        values:
+                                          - field: helpful_count
+                                            format: number
+                                      
+                                      - icon: calendar
+                                        label: "Updated"
+                                        values:
+                                          - field: last_updated
+                                            format: "MMM DD"
+                                
+                                actions:
+                                  - label: "Read Article"
+                                    icon: arrow-right
+                                    style: link
+                                    link: "/kb/{{ id }}"
+                      
+                      - id: support_stats
+                        title: "Support Statistics"
+                        description: "Performance metrics and trends"
+                        icon: bar-chart
+                        default_open: false
+                        
+                        content:
+                          - layout grid:
+                              columns: 3
+                              gap: medium
+                              
+                              children:
+                                - show card "Response Time" from dataset dashboard_metrics:
+                                    item:
+                                      type: card
+                                      style: stat_card
+                                
+                                - show card "Resolution Rate" from dataset dashboard_metrics:
+                                    item:
+                                      type: card
+                                      style: stat_card
+                                
+                                - show card "Customer Satisfaction" from dataset dashboard_metrics:
+                                    item:
+                                      type: card
+                                      style: stat_card
+
+# =============================================================================
+# NESTED LAYOUTS PAGE - Advanced Composition
+# =============================================================================
+
+page advanced_layouts:
+  path: "/advanced"
+  title: "Advanced Layout Composition"
+  
+  layout stack:
+    direction: vertical
+    gap: large
+    
+    children:
+      # Grid of stacks
+      - layout grid:
+          columns: 3
+          gap: medium
+          
+          children:
+            - layout stack:
+                direction: vertical
+                gap: small
+                
+                children:
+                  - show card "Card A1" from dataset dashboard_metrics
+                  - show card "Card A2" from dataset dashboard_metrics
+            
+            - layout stack:
+                direction: vertical
+                gap: small
+                
+                children:
+                  - show card "Card B1" from dataset sales_by_region
+                  - show card "Card B2" from dataset sales_by_region
+            
+            - layout stack:
+                direction: vertical
+                gap: small
+                
+                children:
+                  - show card "Card C1" from dataset orders
+                  - show card "Card C2" from dataset orders
+      
+      # Tabs containing split layouts
+      - layout tabs:
+          default_tab: workspace1
+          
+          tabs:
+            - id: workspace1
+              label: "Workspace 1"
+              
+              content:
+                - layout split:
+                    ratio: 0.5
+                    resizable: true
+                    
+                    left:
+                      - show chart "Left Chart" from dataset dashboard_metrics
+                    
+                    right:
+                      - layout grid:
+                          columns: 2
+                          
+                          children:
+                            - show card "Right Card 1" from dataset sales_by_region
+                            - show card "Right Card 2" from dataset sales_by_region
+            
+            - id: workspace2
+              label: "Workspace 2"
+              
+              content:
+                - layout split:
+                    ratio: 0.3
+                    resizable: true
+                    
+                    left:
+                      - show card "Left Sidebar" from dataset orders
+                    
+                    right:
+                      - layout accordion:
+                          multiple: true
+                          
+                          items:
+                            - id: section_a
+                              title: "Section A"
+                              default_open: true
+                              content:
+                                - show card "Accordion Content A" from dataset dashboard_metrics
+                            
+                            - id: section_b
+                              title: "Section B"
+                              content:
+                                - show card "Accordion Content B" from dataset sales_by_region

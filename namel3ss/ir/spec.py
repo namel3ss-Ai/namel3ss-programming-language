@@ -738,6 +738,444 @@ class ComponentSpec:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+# =============================================================================
+# Data Display Component IR Specifications
+# =============================================================================
+
+@dataclass
+class IRColumnConfig:
+    """IR specification for table column configuration."""
+    id: str
+    label: str
+    field: Optional[str] = None
+    width: Optional[Union[str, int]] = None
+    align: str = "left"  # "left" | "center" | "right"
+    sortable: bool = True
+    format: Optional[str] = None  # "currency" | "date" | "number" | "percentage"
+    transform: Optional[Union[str, Dict[str, Any]]] = None
+    render_template: Optional[str] = None
+
+
+@dataclass
+class IRToolbarConfig:
+    """IR specification for data table toolbar."""
+    search: Optional[Dict[str, Any]] = None  # {field: str, placeholder: str}
+    filters: List[Dict[str, Any]] = field(default_factory=list)  # [{field, type, options}, ...]
+    bulk_actions: List[Dict[str, Any]] = field(default_factory=list)  # Action specs
+    actions: List[Dict[str, Any]] = field(default_factory=list)  # Additional toolbar actions
+
+
+@dataclass
+class IRDataTable:
+    """
+    IR specification for professional data table component.
+    
+    Runtime-agnostic representation of table with columns, sorting,
+    filtering, pagination, row actions, and toolbar.
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame"
+    source: str  # Dataset/table/frame name
+    
+    # Column configuration
+    columns: List[IRColumnConfig] = field(default_factory=list)
+    
+    # Row actions (per-row operations)
+    row_actions: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Toolbar configuration
+    toolbar: Optional[IRToolbarConfig] = None
+    
+    # Filtering and sorting
+    filter_by: Optional[str] = None  # SQL WHERE clause or filter expression
+    sort_by: Optional[str] = None  # Column name
+    default_sort: Optional[Dict[str, str]] = None  # {column: str, direction: "asc"|"desc"}
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Styling
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRListItemConfig:
+    """IR specification for list item configuration."""
+    avatar: Optional[Dict[str, Any]] = None  # Avatar config
+    title: Union[str, Dict[str, Any]] = ""  # Static or dynamic
+    subtitle: Optional[Union[str, Dict[str, Any]]] = None
+    metadata: Dict[str, Union[str, Dict[str, Any]]] = field(default_factory=dict)  # Key-value pairs
+    actions: List[Dict[str, Any]] = field(default_factory=list)
+    badge: Optional[Dict[str, Any]] = None
+    icon: Optional[str] = None
+    state_class: Optional[Dict[str, str]] = None  # Conditional CSS classes
+
+
+@dataclass
+class IRDataList:
+    """
+    IR specification for data list component.
+    
+    Runtime-agnostic representation of vertical list for activity feeds,
+    notifications, search results with avatar, title, subtitle, metadata.
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame"
+    source: str
+    
+    # Item configuration
+    item: Optional[IRListItemConfig] = None
+    
+    # Variants
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    dividers: bool = True
+    
+    # Filtering and search
+    filter_by: Optional[str] = None
+    enable_search: bool = False
+    search_placeholder: Optional[str] = None
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Styling
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRSparklineConfig:
+    """IR specification for sparkline mini-chart."""
+    data_source: str
+    x_field: str
+    y_field: str
+    color: Optional[str] = None
+    variant: str = "line"  # "line" | "bar" | "area"
+
+
+@dataclass
+class IRStatSummary:
+    """
+    IR specification for stat summary/KPI card component.
+    
+    Runtime-agnostic representation of metric cards with value,
+    delta, trend indicator, and optional sparkline.
+    """
+    label: str
+    source_type: str  # "dataset" | "table" | "frame"
+    source: str
+    
+    # Value configuration
+    value: str  # Field name or expression
+    format: Optional[str] = None  # "currency" | "number" | "percentage"
+    prefix: Optional[str] = None  # "$", etc.
+    suffix: Optional[str] = None  # "%", " users", etc.
+    
+    # Delta/comparison
+    delta: Optional[Dict[str, Any]] = None  # {value, format, label}
+    trend: Optional[Union[str, Dict[str, Any]]] = None  # "up" | "down" | "neutral" or dynamic
+    comparison_period: Optional[str] = None  # "vs last week", etc.
+    
+    # Sparkline
+    sparkline: Optional[IRSparklineConfig] = None
+    
+    # Styling
+    color: Optional[str] = None  # Accent color
+    icon: Optional[str] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Layout
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRTimelineItem:
+    """IR specification for timeline item configuration."""
+    timestamp: Union[str, Dict[str, Any]] = ""  # Field or expression
+    title: Union[str, Dict[str, Any]] = ""
+    description: Optional[Union[str, Dict[str, Any]]] = None
+    icon: Optional[Union[str, Dict[str, Any]]] = None
+    status: Optional[Union[str, Dict[str, Any]]] = None  # "success" | "warning" | "error" | "info"
+    color: Optional[str] = None
+    actions: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class IRTimeline:
+    """
+    IR specification for timeline component.
+    
+    Runtime-agnostic representation of chronological event timeline
+    with timestamps, icons, status indicators, and actions.
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame"
+    source: str
+    
+    # Item configuration
+    item: Optional[IRTimelineItem] = None
+    
+    # Display options
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    show_timestamps: bool = True
+    group_by_date: bool = False
+    
+    # Filtering and sorting
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Styling
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRAvatarItem:
+    """IR specification for avatar item configuration."""
+    name: Optional[Union[str, Dict[str, Any]]] = None
+    image_url: Optional[Union[str, Dict[str, Any]]] = None
+    initials: Optional[Union[str, Dict[str, Any]]] = None
+    color: Optional[Union[str, Dict[str, Any]]] = None
+    status: Optional[Union[str, Dict[str, Any]]] = None  # "online" | "offline" | "busy" | "away"
+    tooltip: Optional[Union[str, Dict[str, Any]]] = None
+
+
+@dataclass
+class IRAvatarGroup:
+    """
+    IR specification for avatar group component.
+    
+    Runtime-agnostic representation of compact user/agent display
+    with avatars, status indicators, and "+N more" overflow.
+    """
+    title: Optional[str] = None
+    source_type: str = "dataset"  # "dataset" | "table" | "frame"
+    source: str = ""
+    
+    # Item configuration
+    item: Optional[IRAvatarItem] = None
+    
+    # Display options
+    max_visible: int = 5
+    size: str = "md"  # "xs" | "sm" | "md" | "lg" | "xl"
+    variant: str = "stacked"  # "stacked" | "grid"
+    
+    # Filtering
+    filter_by: Optional[str] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Styling
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRChartConfig:
+    """IR specification for enhanced chart configuration."""
+    variant: str = "line"  # "line" | "bar" | "pie" | "area" | "scatter"
+    x_field: str = ""
+    y_fields: List[str] = field(default_factory=list)  # Multi-series support
+    
+    # Grouping and stacking
+    group_by: Optional[str] = None
+    stacked: bool = False
+    
+    # Line/area specific
+    smooth: bool = True
+    fill: bool = True
+    
+    # Chart elements
+    legend: Optional[Dict[str, Any]] = None  # {position: "top"|"bottom"|"left"|"right", show: bool}
+    tooltip: Optional[Dict[str, Any]] = None  # {show: bool, format: str}
+    x_axis: Optional[Dict[str, Any]] = None  # {label: str, format: str, rotate: int}
+    y_axis: Optional[Dict[str, Any]] = None  # {label: str, format: str}
+    
+    # Colors
+    colors: List[str] = field(default_factory=list)  # Custom colors for series
+    color_scheme: Optional[str] = None  # Predefined color scheme
+
+
+@dataclass
+class IRDataChart:
+    """
+    IR specification for advanced data chart component.
+    
+    Runtime-agnostic representation of multi-series charts with
+    comprehensive configuration for legend, tooltip, axes, colors.
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame"
+    source: str
+    
+    # Chart configuration
+    config: Optional[IRChartConfig] = None
+    
+    # Filtering and sorting
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    
+    # Empty state
+    empty_state: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingSpec] = None
+    
+    # Styling
+    layout: Optional[Dict[str, Any]] = None
+    style: Optional[Dict[str, Any]] = None
+    height: Optional[Union[str, int]] = None
+    
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+# =============================================================================
+# Layout Primitive IR Specifications
+# =============================================================================
+
+@dataclass
+class IRStackLayout:
+    """
+    IR specification for stack layout.
+    
+    Runtime-agnostic representation of flexbox-like linear layouts.
+    """
+    direction: str = "vertical"  # "vertical" | "horizontal"
+    gap: Union[str, int] = "medium"  # "small" | "medium" | "large" | px value
+    align: str = "stretch"  # "start" | "center" | "end" | "stretch"
+    justify: str = "start"  # "start" | "center" | "end" | "space_between" | "space_around" | "space_evenly"
+    wrap: bool = False
+    
+    children: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+    
+    style: Dict[str, Any] = field(default_factory=dict)
+    layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRGridLayout:
+    """
+    IR specification for grid layout.
+    
+    Runtime-agnostic representation of CSS Grid layouts.
+    """
+    columns: Union[int, str] = "auto"  # Number or "auto"
+    min_column_width: Optional[str] = None  # "200px" | "12rem" | token
+    gap: Union[str, int] = "medium"
+    responsive: bool = True
+    
+    children: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+    
+    style: Dict[str, Any] = field(default_factory=dict)
+    layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRSplitLayout:
+    """
+    IR specification for split pane layout.
+    
+    Runtime-agnostic representation of resizable split layouts.
+    """
+    left: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+    right: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+    ratio: float = 0.5  # 0.0 to 1.0
+    resizable: bool = False
+    orientation: str = "horizontal"  # "horizontal" | "vertical"
+    
+    style: Dict[str, Any] = field(default_factory=dict)
+    layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRTabItem:
+    """IR specification for a single tab."""
+    id: str
+    label: str
+    icon: Optional[str] = None
+    badge: Optional[Union[str, Dict[str, Any]]] = None
+    content: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+
+
+@dataclass
+class IRTabsLayout:
+    """
+    IR specification for tabbed interface.
+    
+    Runtime-agnostic representation of tab-based navigation.
+    """
+    tabs: List[IRTabItem] = field(default_factory=list)
+    default_tab: Optional[str] = None
+    persist_state: bool = True  # Persist in URL or state
+    
+    style: Dict[str, Any] = field(default_factory=dict)
+    layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IRAccordionItem:
+    """IR specification for a single accordion item."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    default_open: bool = False
+    content: List[Union[ComponentSpec, 'IRStackLayout', 'IRGridLayout', 'IRSplitLayout', 'IRTabsLayout', 'IRAccordionLayout']] = field(default_factory=list)
+
+
+@dataclass
+class IRAccordionLayout:
+    """
+    IR specification for accordion/collapsible sections.
+    
+    Runtime-agnostic representation of collapsible content panels.
+    """
+    items: List[IRAccordionItem] = field(default_factory=list)
+    multiple: bool = False  # Allow multiple items expanded
+    
+    style: Dict[str, Any] = field(default_factory=dict)
+    layout_meta: Dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class RouteSpec:
     """Frontend route specification"""

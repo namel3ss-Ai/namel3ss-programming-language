@@ -1,0 +1,267 @@
+# Multi-Agent Hospital Support AI
+# A secure, role-based hospital support system with triage, medication lookup,
+# appointment booking, and patient messaging capabilities
+
+# =============================================================================
+# APP DEFINITION
+# =============================================================================
+
+app hospital_support:
+  name: "Hospital Support AI"
+  version: "1.0.0"
+  description: "Multi-agent AI system for hospital staff and patient support"
+  
+  # Default route
+  default_route: "/login"
+  
+  # Security is enabled by default
+  security:
+    enabled: true
+    session_timeout: 3600  # 1 hour
+    require_https: true    # In production
+
+# =============================================================================
+# ENVIRONMENT CONFIGURATION
+# =============================================================================
+
+environment:
+  # Model provider configuration
+  MODEL_PROVIDER: "local"  # Options: local, openai, anthropic
+  LOCAL_MODEL_URL: "http://localhost:11434"  # Ollama endpoint
+  LOCAL_MODEL_NAME: "llama3.1:8b"
+  
+  # Cloud provider fallback (optional)
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  
+  # Database configuration
+  DATABASE_URL: "postgresql://localhost:5432/hospital_ai"
+  VECTOR_DB_URL: "postgresql://localhost:5432/hospital_ai_vectors"
+  
+  # RAG configuration
+  EMBEDDING_MODEL: "local"  # Options: local, openai
+  EMBEDDING_MODEL_NAME: "nomic-embed-text"
+  RERANKER_ENABLED: "true"
+  
+  # Security
+  JWT_SECRET: "your-secret-key-change-in-production"
+  CORS_ORIGINS: "http://localhost:3000,http://localhost:8000"
+  
+  # Application settings
+  PORT: "8000"
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "development"  # development, staging, production
+
+# =============================================================================
+# SECURITY ROLES & PERMISSIONS
+# =============================================================================
+
+security_roles:
+  # Patient role - limited access
+  patient:
+    description: "Hospital patient with restricted access"
+    permissions:
+      - read_own_appointments
+      - read_own_messages
+      - send_patient_messages
+      - view_approved_information
+    restrictions:
+      - cannot_access_agents
+      - cannot_view_other_patients
+      - cannot_book_appointments
+      
+  # Clinician role - full access to tools
+  clinician:
+    description: "Medical staff with full system access"
+    permissions:
+      - use_triage_agent
+      - use_recommendation_agent
+      - use_booking_agent
+      - use_workflow_agent
+      - use_messaging_agent
+      - read_all_patients
+      - write_patient_messages
+      - create_appointments
+      - access_rag_guidelines
+      - view_audit_logs
+    restrictions:
+      - cannot_delete_patient_data
+      
+  # Admin role - system management
+  admin:
+    description: "System administrator"
+    permissions:
+      - all_clinician_permissions
+      - manage_users
+      - manage_clinicians
+      - view_system_logs
+      - modify_security_settings
+      - access_analytics
+      - manage_datasets
+
+# =============================================================================
+# MODEL CONFIGURATIONS
+# =============================================================================
+
+# Primary local model for reasoning
+model local_reasoning:
+  provider: "{{ env.MODEL_PROVIDER }}"
+  name: "{{ env.LOCAL_MODEL_NAME }}"
+  endpoint: "{{ env.LOCAL_MODEL_URL }}"
+  temperature: 0.1
+  max_tokens: 2000
+  system_prompt: |
+    You are a medical AI assistant designed to support healthcare professionals.
+    Your role is to provide evidence-based information and suggestions.
+    
+    CRITICAL GUIDELINES:
+    - You do NOT diagnose patients
+    - You provide triage recommendations and information
+    - Always cite medical guidelines when available
+    - Flag uncertainties clearly
+    - Emphasize when human clinical judgment is required
+    - Never provide definitive medical advice
+    
+    All outputs must be grounded in retrieved medical guidelines.
+
+# Fallback cloud model for complex reasoning
+model cloud_reasoning:
+  provider: openai
+  name: "gpt-4"
+  api_key: "{{ env.OPENAI_API_KEY }}"
+  temperature: 0.1
+  max_tokens: 3000
+  condition: "{{ env.MODEL_PROVIDER == 'openai' }}"
+
+# Embedding model for RAG
+model embeddings:
+  provider: "{{ env.EMBEDDING_MODEL }}"
+  name: "{{ env.EMBEDDING_MODEL_NAME }}"
+  endpoint: "{{ env.LOCAL_MODEL_URL }}"
+  task: "embedding"
+
+# Fast model for simple tasks
+model simple_tasks:
+  provider: "{{ env.MODEL_PROVIDER }}"
+  name: "{{ env.LOCAL_MODEL_NAME }}"
+  temperature: 0.3
+  max_tokens: 500
+
+# =============================================================================
+# MEMORY SYSTEMS
+# =============================================================================
+
+# Session memory for current user context
+memory "user_session":
+  scope: session
+  kind: key_value
+  ttl: 3600
+  fields:
+    - user_id: string
+    - role: string
+    - name: string
+    - department: string
+    - last_activity: timestamp
+
+# Conversation history for agent interactions
+memory "agent_conversations":
+  scope: conversation
+  kind: conversation
+  max_items: 100
+  retention: 7_days
+
+# Triage history
+memory "triage_history":
+  scope: user
+  kind: list
+  max_items: 50
+  fields:
+    - patient_id: string
+    - triage_level: string
+    - symptoms: list
+    - timestamp: timestamp
+    - clinician_id: string
+
+# Appointment cache
+memory "appointment_cache":
+  scope: global
+  kind: key_value
+  ttl: 300  # 5 minutes
+
+# =============================================================================
+# HEALTH CHECK ENDPOINT
+# =============================================================================
+
+endpoint "/api/health":
+  method: get
+  public: true
+  
+  returns:
+    status: "healthy"
+    version: "1.0.0"
+    environment: "{{ env.ENVIRONMENT }}"
+    timestamp: now()
+    services:
+      database: "connected"
+      vector_db: "connected"
+      model_provider: "{{ env.MODEL_PROVIDER }}"
+
+# =============================================================================
+# AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+endpoint "/api/auth/login":
+  method: post
+  public: true
+  
+  inputs:
+    username: text
+    password: text
+    role: text  # For demo purposes
+  
+  # In production, this would validate against a user database
+  # For demo, we accept any credentials with role selection
+  
+  logic:
+    # Validate role
+    validate_role:
+      if: inputs.role not in ["patient", "clinician", "admin"]
+      then:
+        error: "Invalid role selected"
+        
+    # Create session token (mock)
+    create_session:
+      user_id: "{{ inputs.username }}"
+      role: "{{ inputs.role }}"
+      expires_at: "{{ now() + 3600 }}"
+  
+  stores:
+    session: memory.user_session
+    
+  returns:
+    success: true
+    token: "mock-jwt-token-{{ inputs.username }}-{{ inputs.role }}"
+    user:
+      id: "{{ inputs.username }}"
+      role: "{{ inputs.role }}"
+      name: "{{ inputs.username | title }}"
+    expires_in: 3600
+
+endpoint "/api/auth/logout":
+  method: post
+  requires_auth: true
+  
+  logic:
+    clear_session:
+      memory: user_session
+      
+  returns:
+    success: true
+    message: "Logged out successfully"
+
+endpoint "/api/auth/me":
+  method: get
+  requires_auth: true
+  
+  returns:
+    user: "{{ memory.user_session }}"

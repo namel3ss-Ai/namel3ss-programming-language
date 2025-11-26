@@ -1,0 +1,640 @@
+# =============================================================================
+# DATA DISPLAY DASHBOARD - PRODUCTION EXAMPLE
+# Demonstrates all 6 new data display components with real SQL queries
+# =============================================================================
+
+# =============================================================================
+# DATASETS - Real SQL queries for analytics dashboard
+# =============================================================================
+
+dataset revenue_summary:
+  sql: |
+    SELECT 
+      SUM(amount) as total_revenue,
+      SUM(amount) - LAG(SUM(amount), 1) OVER (ORDER BY DATE_TRUNC('month', created_at)) as revenue_change,
+      CASE 
+        WHEN SUM(amount) > LAG(SUM(amount), 1) OVER (ORDER BY DATE_TRUNC('month', created_at)) THEN 1
+        ELSE -1 
+      END as trend_direction,
+      JSON_AGG(
+        JSON_BUILD_OBJECT('value', daily_revenue)
+        ORDER BY day
+      ) as revenue_history
+    FROM (
+      SELECT 
+        DATE_TRUNC('day', created_at) as day,
+        SUM(amount) as daily_revenue
+      FROM orders
+      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY DATE_TRUNC('day', created_at)
+    ) daily
+    WHERE day >= CURRENT_DATE - INTERVAL '30 days'
+
+dataset customer_stats:
+  sql: |
+    SELECT 
+      COUNT(DISTINCT id) as total_customers,
+      COUNT(DISTINCT id) - LAG(COUNT(DISTINCT id)) OVER (ORDER BY DATE_TRUNC('month', created_at)) as customer_change,
+      JSON_AGG(
+        JSON_BUILD_OBJECT('value', daily_signups)
+        ORDER BY day
+      ) as signup_history
+    FROM (
+      SELECT 
+        DATE_TRUNC('day', created_at) as day,
+        COUNT(DISTINCT id) as daily_signups
+      FROM customers
+      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY DATE_TRUNC('day', created_at)
+    ) daily
+
+dataset order_stats:
+  sql: |
+    SELECT 
+      COUNT(*) as total_orders,
+      COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('month', created_at)) as order_change,
+      CASE 
+        WHEN COUNT(*) > LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('month', created_at)) THEN 1
+        ELSE -1 
+      END as trend_direction
+    FROM orders
+    WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+
+dataset revenue_by_category:
+  sql: |
+    SELECT 
+      c.name as category,
+      SUM(oi.quantity * oi.unit_price) as revenue
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    JOIN categories c ON p.category_id = c.id
+    WHERE oi.created_at >= CURRENT_DATE - INTERVAL '30 days'
+    GROUP BY c.name
+    ORDER BY revenue DESC
+
+dataset sales_trend:
+  sql: |
+    SELECT 
+      TO_CHAR(DATE_TRUNC('day', o.created_at), 'Mon DD') as date,
+      SUM(o.amount) as revenue,
+      COUNT(o.id) as orders,
+      COUNT(DISTINCT o.customer_id) as customers
+    FROM orders o
+    WHERE o.created_at >= CURRENT_DATE - INTERVAL '30 days'
+    GROUP BY DATE_TRUNC('day', o.created_at)
+    ORDER BY DATE_TRUNC('day', o.created_at)
+
+dataset recent_orders:
+  sql: |
+    SELECT 
+      o.id,
+      o.order_number,
+      c.name as customer_name,
+      c.email as customer_email,
+      o.amount,
+      o.status,
+      o.created_at,
+      o.payment_method,
+      COUNT(oi.id) as item_count
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.id
+    LEFT JOIN order_items oi ON o.id = oi.order_id
+    WHERE o.created_at >= CURRENT_DATE - INTERVAL '7 days'
+    GROUP BY o.id, o.order_number, c.name, c.email, o.amount, o.status, o.created_at, o.payment_method
+    ORDER BY o.created_at DESC
+    LIMIT 100
+
+dataset order_activities:
+  sql: |
+    SELECT 
+      a.id,
+      a.order_id,
+      o.order_number,
+      a.activity_type,
+      a.description,
+      a.performed_by,
+      u.name as user_name,
+      a.created_at,
+      CASE 
+        WHEN a.activity_type IN ('order_placed', 'payment_received') THEN 'success'
+        WHEN a.activity_type IN ('order_cancelled', 'payment_failed') THEN 'error'
+        WHEN a.activity_type IN ('order_shipped', 'order_delivered') THEN 'info'
+        ELSE 'neutral'
+      END as status
+    FROM order_activities a
+    JOIN orders o ON a.order_id = o.id
+    LEFT JOIN users u ON a.performed_by = u.id
+    WHERE a.created_at >= CURRENT_DATE - INTERVAL '7 days'
+    ORDER BY a.created_at DESC
+    LIMIT 50
+
+dataset top_customers:
+  sql: |
+    SELECT 
+      c.id,
+      c.name,
+      c.email,
+      c.avatar_url,
+      COALESCE(c.status, 'offline') as status,
+      SUM(o.amount) as total_spent,
+      COUNT(o.id) as order_count
+    FROM customers c
+    LEFT JOIN orders o ON c.id = o.customer_id
+    WHERE o.created_at >= CURRENT_DATE - INTERVAL '30 days'
+    GROUP BY c.id, c.name, c.email, c.avatar_url, c.status
+    ORDER BY total_spent DESC
+    LIMIT 10
+
+dataset product_performance:
+  sql: |
+    SELECT 
+      p.name as product_name,
+      SUM(oi.quantity) as units_sold,
+      SUM(oi.quantity * oi.unit_price) as revenue
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.created_at >= CURRENT_DATE - INTERVAL '30 days'
+    GROUP BY p.name
+    ORDER BY revenue DESC
+    LIMIT 20
+
+dataset team_members:
+  sql: |
+    SELECT 
+      id,
+      name as full_name,
+      email,
+      avatar_url,
+      role,
+      CASE 
+        WHEN last_active_at > CURRENT_TIMESTAMP - INTERVAL '5 minutes' THEN 'online'
+        WHEN last_active_at > CURRENT_TIMESTAMP - INTERVAL '1 hour' THEN 'away'
+        ELSE 'offline'
+      END as online_status
+    FROM users
+    WHERE role IN ('admin', 'manager', 'support')
+      AND is_active = true
+    ORDER BY last_active_at DESC
+
+# =============================================================================
+# ANALYTICS DASHBOARD PAGE
+# =============================================================================
+
+page analytics_dashboard:
+  path: "/dashboard/analytics"
+  requires_role: admin, manager
+  title: "Analytics Dashboard"
+  
+  ui:
+    type: dashboard
+    
+    theme:
+      primary: "#3b82f6"
+      secondary: "#10b981"
+      background: "#f9fafb"
+      
+    layout:
+      sidebar: true
+      header: true
+      
+    header:
+      title: "Analytics Dashboard"
+      subtitle: "Real-time business metrics and insights"
+      
+      actions:
+        - label: "Export Report"
+          icon: "download"
+          action: export_report
+        - label: "Refresh Data"
+          icon: "refresh"
+          action: refresh_data
+          
+    sidebar:
+      navigation:
+        - label: "Dashboard"
+          icon: "home"
+          link: "/dashboard/analytics"
+          active: true
+        - label: "Orders"
+          icon: "shopping-cart"
+          link: "/orders"
+        - label: "Customers"
+          icon: "users"
+          link: "/customers"
+        - label: "Products"
+          icon: "package"
+          link: "/products"
+        - label: "Reports"
+          icon: "bar-chart"
+          link: "/reports"
+          
+    content:
+      sections:
+        # =============================================================================
+        # STAT SUMMARY CARDS - KPI Metrics
+        # =============================================================================
+        
+        - type: metrics_row
+          title: "Key Performance Indicators"
+          columns: 3
+          
+          cards:
+            # Revenue metric with sparkline
+            - show stat_summary from dataset revenue_summary:
+                title: "Revenue"
+                label: "Total Revenue (30 days)"
+                value:
+                  field: total_revenue
+                  format: currency
+                
+                delta:
+                  field: revenue_change
+                  format: currency
+                  show_sign: true
+                
+                trend:
+                  field: trend_direction
+                  up_is_good: true
+                
+                sparkline:
+                  data: revenue_history
+                  color: "#10b981"
+                  height: "40px"
+                
+                comparison: "vs previous period"
+            
+            # Customer growth metric
+            - show stat_summary from dataset customer_stats:
+                title: "Customers"
+                label: "Total Customers"
+                value:
+                  field: total_customers
+                  format: number
+                
+                delta:
+                  field: customer_change
+                  format: number
+                  show_sign: true
+                
+                sparkline:
+                  data: signup_history
+                  color: "#3b82f6"
+                  height: "40px"
+                
+                comparison: "vs previous period"
+            
+            # Orders metric
+            - show stat_summary from dataset order_stats:
+                title: "Orders"
+                label: "Total Orders (30 days)"
+                value:
+                  field: total_orders
+                  format: number
+                
+                delta:
+                  field: order_change
+                  format: number
+                  show_sign: true
+                
+                trend:
+                  field: trend_direction
+                  up_is_good: true
+                
+                comparison: "vs previous period"
+        
+        # =============================================================================
+        # DATA CHARTS - Visual Analytics
+        # =============================================================================
+        
+        - type: charts_section
+          title: "Sales Analytics"
+          columns: 2
+          
+          charts:
+            # Multi-series line chart for trends
+            - show data_chart "Sales Trend (30 Days)" from dataset sales_trend:
+                chart:
+                  type: line
+                  x_axis: date
+                  legend: true
+                  grid: true
+                  height: "350px"
+                  
+                  series:
+                    - data_key: revenue
+                      label: "Revenue ($)"
+                      color: "#10b981"
+                    - data_key: orders
+                      label: "Orders"
+                      color: "#3b82f6"
+                    - data_key: customers
+                      label: "Customers"
+                      color: "#f59e0b"
+                
+                empty_state:
+                  icon: chart
+                  title: "No sales data"
+                  message: "No sales data available for this period"
+            
+            # Pie chart for category breakdown
+            - show data_chart "Revenue by Category" from dataset revenue_by_category:
+                chart:
+                  type: pie
+                  legend: true
+                  height: "350px"
+                  
+                  series:
+                    - data_key: revenue
+                      label: "Revenue"
+                
+                empty_state:
+                  icon: chart
+                  title: "No category data"
+                  message: "No revenue data by category"
+        
+        # =============================================================================
+        # DATA TABLE - Detailed Order Records
+        # =============================================================================
+        
+        - type: table_section
+          title: "Recent Orders"
+          
+          show data_table "Recent Orders (7 Days)" from dataset recent_orders:
+            columns:
+              - field: order_number
+                header: "Order #"
+                width: "120px"
+                sortable: true
+              
+              - field: customer_name
+                header: "Customer"
+                sortable: true
+              
+              - field: customer_email
+                header: "Email"
+                sortable: true
+              
+              - field: amount
+                header: "Amount"
+                width: "120px"
+                sortable: true
+                format: currency
+                align: right
+              
+              - field: item_count
+                header: "Items"
+                width: "80px"
+                sortable: true
+                align: center
+              
+              - field: status
+                header: "Status"
+                width: "120px"
+                sortable: true
+              
+              - field: payment_method
+                header: "Payment"
+                width: "120px"
+              
+              - field: created_at
+                header: "Date"
+                width: "150px"
+                sortable: true
+                format: datetime
+            
+            toolbar:
+              searchable: true
+              search_fields: ["order_number", "customer_name", "customer_email"]
+              
+              filters:
+                - field: status
+                  label: "Status"
+                  type: select
+                  options:
+                    - value: pending
+                      label: "Pending"
+                    - value: processing
+                      label: "Processing"
+                    - value: completed
+                      label: "Completed"
+                    - value: cancelled
+                      label: "Cancelled"
+                
+                - field: payment_method
+                  label: "Payment Method"
+                  type: select
+                  options:
+                    - value: credit_card
+                      label: "Credit Card"
+                    - value: paypal
+                      label: "PayPal"
+                    - value: bank_transfer
+                      label: "Bank Transfer"
+              
+              bulk_actions:
+                - label: "Export Selected"
+                  action: export_orders
+                  icon: download
+                - label: "Mark as Processing"
+                  action: bulk_process
+                  icon: play
+                  requires_selection: true
+            
+            row_actions:
+              - label: "View Details"
+                action: view_order
+                icon: eye
+              
+              - label: "Process Order"
+                action: process_order
+                icon: check
+                condition: "status == 'pending'"
+              
+              - label: "Cancel Order"
+                action: cancel_order
+                icon: x
+                condition: "status != 'cancelled' && status != 'completed'"
+            
+            rows_per_page: 20
+            
+            empty_state:
+              icon: shopping-cart
+              title: "No recent orders"
+              message: "No orders have been placed in the last 7 days"
+              action_label: "View All Orders"
+              action_link: "/orders"
+        
+        # =============================================================================
+        # TIMELINE - Activity Log
+        # =============================================================================
+        
+        - type: timeline_section
+          title: "Order Activity Log"
+          
+          show timeline "Recent Activity (7 Days)" from dataset order_activities:
+            group_by_date: true
+            
+            items:
+              - timestamp: created_at
+                icon: "📦"
+                status: status
+                
+                title:
+                  text: "{{ activity_type | humanize }}"
+                
+                description:
+                  text: "Order #{{ order_number }}: {{ description }} by {{ user_name }}"
+            
+            empty_state:
+              icon: clock
+              title: "No recent activity"
+              message: "No order activity in the last 7 days"
+        
+        # =============================================================================
+        # DATA LIST - Top Customers
+        # =============================================================================
+        
+        - type: list_section
+          title: "Top Customers (30 Days)"
+          
+          show data_list "Top Spending Customers" from dataset top_customers:
+            item:
+              avatar:
+                field: avatar_url
+                fallback: "?"
+                size: lg
+              
+              title:
+                field: name
+              
+              subtitle:
+                field: email
+              
+              metadata:
+                - field: total_spent
+                  icon: dollar-sign
+                  format: currency
+                
+                - text: "{{ order_count }} orders"
+                  icon: shopping-cart
+              
+              badge:
+                text: "VIP"
+                style: vip_badge
+                condition: "total_spent > 1000"
+              
+              actions:
+                - label: "View Profile"
+                  action: view_customer
+                  icon: user
+                
+                - label: "Send Message"
+                  action: send_message
+                  icon: message
+            
+            empty_state:
+              icon: users
+              title: "No customer data"
+              message: "No customer purchase data available"
+        
+        # =============================================================================
+        # Secondary Charts
+        # =============================================================================
+        
+        - type: charts_section
+          title: "Product Performance"
+          
+          show data_chart "Top Products by Revenue" from dataset product_performance:
+            chart:
+              type: bar
+              x_axis: product_name
+              legend: false
+              grid: true
+              height: "300px"
+              
+              series:
+                - data_key: revenue
+                  label: "Revenue"
+                  color: "#3b82f6"
+            
+            empty_state:
+              icon: package
+              title: "No product data"
+              message: "No product performance data available"
+        
+        # =============================================================================
+        # AVATAR GROUP - Team Members Online
+        # =============================================================================
+        
+        - type: team_section
+          title: "Team Online"
+          
+          show avatar_group "Support Team Members" from dataset team_members:
+            items:
+              - image_field: avatar_url
+                name_field: full_name
+                status_field: online_status
+                tooltip_template: "{{ full_name }} - {{ role }}"
+            
+            max_visible: 8
+            size: md
+            show_status: true
+  
+  data_sources:
+    refresh_interval: 60  # Refresh every 60 seconds
+
+# =============================================================================
+# PRODUCT PERFORMANCE PAGE
+# =============================================================================
+
+page product_performance:
+  path: "/dashboard/products"
+  requires_role: admin, manager
+  title: "Product Performance"
+  
+  ui:
+    type: dashboard
+    
+    content:
+      sections:
+        # Combination of data table and charts for detailed product analysis
+        
+        - show data_chart "Product Sales Comparison" from dataset product_performance:
+            chart:
+              type: bar
+              x_axis: product_name
+              legend: true
+              grid: true
+              height: "400px"
+              
+              series:
+                - data_key: units_sold
+                  label: "Units Sold"
+                  color: "#10b981"
+                - data_key: revenue
+                  label: "Revenue ($)"
+                  color: "#3b82f6"
+        
+        - show data_table "Product Details" from dataset product_performance:
+            columns:
+              - field: product_name
+                header: "Product"
+                sortable: true
+              
+              - field: units_sold
+                header: "Units Sold"
+                sortable: true
+                format: number
+                align: right
+              
+              - field: revenue
+                header: "Revenue"
+                sortable: true
+                format: currency
+                align: right
+            
+            toolbar:
+              searchable: true
+              search_fields: ["product_name"]
+            
+            rows_per_page: 25

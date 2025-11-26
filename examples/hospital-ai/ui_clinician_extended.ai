@@ -1,0 +1,676 @@
+# =============================================================================
+# CLINICIAN PAGES (CONTINUED)
+# Workflows, Appointments, and Messaging
+# =============================================================================
+
+# =============================================================================
+# CARE WORKFLOW ASSISTANT PAGE
+# =============================================================================
+
+page workflow_assistant:
+  path: "/clinician/workflows"
+  requires_role: clinician
+  title: "Care Workflow Assistant"
+  
+  ui:
+    type: form_with_results
+    layout: horizontal
+    
+    theme:
+      primary: "#8b5cf6"
+      accent: "#a78bfa"
+      
+    header:
+      title: "AI-Powered Care Workflow Assistant"
+      subtitle: "Evidence-based clinical pathways and care planning"
+      icon: "pathway"
+      
+    form:
+      title: "Care Planning"
+      
+      fields:
+        - name: patient_condition
+          type: autocomplete
+          label: "Patient Condition / Diagnosis"
+          required: true
+          placeholder: "e.g., Acute Myocardial Infarction, Pneumonia, Heart Failure"
+          data_source: "/api/conditions/autocomplete"
+          
+        - name: current_stage
+          type: select
+          label: "Current Care Stage"
+          required: true
+          options:
+            - "Initial Assessment"
+            - "Acute Management"
+            - "Stabilization"
+            - "Recovery"
+            - "Discharge Planning"
+            - "Follow-up"
+            
+        - name: care_goal
+          type: textarea
+          label: "Primary Care Goal"
+          required: true
+          placeholder: "What is the desired outcome for this patient?"
+          rows: 2
+          
+        - name: patient_age
+          type: number
+          label: "Patient Age"
+          required: true
+          
+        - name: comorbidities
+          type: multiselect
+          label: "Comorbidities"
+          searchable: true
+          create_new: true
+          options:
+            - "Diabetes Mellitus"
+            - "Hypertension"
+            - "Heart Failure"
+            - "COPD"
+            - "Chronic Kidney Disease"
+            - "Chronic Liver Disease"
+            - "Cancer"
+            - "Immunosuppression"
+            
+        - name: current_treatments
+          type: tags
+          label: "Current Treatments"
+          placeholder: "Add treatments/interventions"
+          
+        - name: functional_status
+          type: select
+          label: "Functional Status"
+          options:
+            - "Independent"
+            - "Requires Minimal Assistance"
+            - "Requires Moderate Assistance"
+            - "Requires Substantial Assistance"
+            - "Dependent"
+            
+      submit:
+        text: "Generate Care Pathway"
+        icon: "sparkles"
+        loading_text: "Analyzing..."
+        agent: workflow_agent
+        
+    results_panel:
+      title: "Recommended Care Pathway"
+      
+      sections:
+        # Pathway Overview
+        - type: pathway_header
+          fields:
+            pathway_name: "{{ pathway_name }}"
+            current_phase: "{{ current_phase }}"
+            
+        # Step-by-Step Plan
+        - type: timeline
+          title: "Care Steps"
+          field: "recommended_steps"
+          render_item: |
+            <div class="workflow-step">
+              <div class="step-number">{{ step_number }}</div>
+              <div class="step-content">
+                <h4>{{ action }}</h4>
+                <p class="rationale">{{ rationale }}</p>
+                <div class="step-meta">
+                  <span class="timeframe"><icon:clock/> {{ timeframe }}</span>
+                  <span class="responsible"><icon:user/> {{ responsible_role }}</span>
+                </div>
+                {% if required_resources.length > 0 %}
+                <div class="resources">
+                  <strong>Resources:</strong> {{ required_resources | join(', ') }}
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            
+        # Milestones
+        - type: milestone_tracker
+          title: "Care Milestones"
+          field: "milestones"
+          render_item: |
+            <div class="milestone">
+              <h4>{{ milestone }}</h4>
+              <p><strong>Criteria:</strong> {{ criteria }}</p>
+              <p><strong>Expected:</strong> {{ expected_timeframe }}</p>
+            </div>
+            
+        # Monitoring Plan
+        - type: card
+          title: "Monitoring Plan"
+          icon: "activity"
+          content: |
+            <strong>Parameters to Monitor:</strong>
+            <ul>
+            {% for param in monitoring_plan.parameters %}
+              <li>{{ param }}</li>
+            {% endfor %}
+            </ul>
+            <p><strong>Frequency:</strong> {{ monitoring_plan.frequency }}</p>
+            
+        # Transition Criteria
+        - type: tabs
+          title: "Transition Criteria"
+          tabs:
+            - tab: "Next Phase"
+              content:
+                field: "transition_criteria.to_next_phase"
+                render: "checklist"
+                
+            - tab: "Escalation"
+              content:
+                field: "transition_criteria.to_higher_acuity"
+                render: "checklist"
+                alert: "warning"
+                
+            - tab: "De-escalation"
+              content:
+                field: "transition_criteria.to_lower_acuity"
+                render: "checklist"
+                alert: "success"
+                
+        # Potential Complications
+        - type: warning_section
+          title: "Potential Complications"
+          field: "potential_complications"
+          render_item: |
+            <div class="complication">
+              <h4>{{ complication }}</h4>
+              <div class="warning-signs">
+                <strong>Warning Signs:</strong>
+                <ul>
+                {% for sign in warning_signs %}
+                  <li>{{ sign }}</li>
+                {% endfor %}
+                </ul>
+              </div>
+              <div class="prevention">
+                <strong>Prevention:</strong>
+                <ul>
+                {% for strategy in prevention_strategies %}
+                  <li>{{ strategy }}</li>
+                {% endfor %}
+                </ul>
+              </div>
+            </div>
+            
+        # Guidelines
+        - type: collapsible_section
+          title: "Clinical Guidelines Referenced"
+          icon: "book"
+          default_collapsed: true
+          field: "guideline_citations"
+          
+      actions:
+        - label: "Save to Care Plan"
+          icon: "save"
+          color: "green"
+          
+        - label: "Print Pathway"
+          icon: "printer"
+          color: "gray"
+          
+        - label: "Share with Team"
+          icon: "share"
+          color: "blue"
+
+# =============================================================================
+# APPOINTMENT BOOKING PAGE
+# =============================================================================
+
+page appointment_booking:
+  path: "/clinician/appointments"
+  requires_role: clinician
+  title: "Appointment Management"
+  
+  ui:
+    type: calendar_with_sidebar
+    
+    theme:
+      primary: "#10b981"
+      accent: "#34d399"
+      
+    header:
+      title: "Appointment Management"
+      icon: "calendar"
+      
+      actions:
+        - label: "New Appointment"
+          icon: "plus"
+          action: "open_booking_modal"
+          color: "green"
+          
+    sidebar:
+      title: "Book Appointment"
+      
+      form:
+        fields:
+          - name: patient_id
+            type: autocomplete
+            label: "Patient"
+            required: true
+            placeholder: "Search patient by name or ID"
+            data_source: "/api/patients/search"
+            render_result: "{{ name }} (ID: {{ id }})"
+            
+          - name: appointment_type
+            type: select
+            label: "Appointment Type"
+            required: true
+            options:
+              - value: "consultation"
+                label: "Initial Consultation"
+              - value: "follow_up"
+                label: "Follow-up Visit"
+              - value: "procedure"
+                label: "Procedure"
+              - value: "urgent"
+                label: "Urgent Visit"
+            icon_map:
+              consultation: "user-check"
+              follow_up: "refresh"
+              procedure: "tool"
+              urgent: "alert-circle"
+              
+          - name: specialty
+            type: select
+            label: "Specialty"
+            options:
+              - "General Medicine"
+              - "Cardiology"
+              - "Pulmonology"
+              - "Gastroenterology"
+              - "Neurology"
+              - "Orthopedics"
+              - "Surgery"
+              - "Pediatrics"
+              - "Obstetrics/Gynecology"
+              
+          - name: provider_preference
+            type: autocomplete
+            label: "Preferred Provider (Optional)"
+            data_source: "/api/providers/search"
+            
+          - name: urgency
+            type: radio
+            label: "Urgency"
+            required: true
+            options:
+              - value: "emergency"
+                label: "Emergency (within 24 hours)"
+                color: "red"
+              - value: "urgent"
+                label: "Urgent (within 1 week)"
+                color: "orange"
+              - value: "routine"
+                label: "Routine"
+                color: "green"
+            default: "routine"
+            
+          - name: preferred_date
+            type: date
+            label: "Preferred Date"
+            min: "{{ today }}"
+            max: "{{ today + 90_days }}"
+            
+          - name: preferred_time
+            type: select
+            label: "Preferred Time"
+            options:
+              - "Morning (8am-12pm)"
+              - "Afternoon (12pm-5pm)"
+              - "Evening (5pm-8pm)"
+              
+          - name: reason
+            type: textarea
+            label: "Reason for Visit"
+            required: true
+            placeholder: "Brief description of why the patient needs this appointment"
+            rows: 3
+            
+        actions:
+          - label: "Find Available Slots"
+            action: "search_slots"
+            agent: booking_agent
+            params:
+              action: "search_slots"
+            color: "blue"
+            
+    calendar:
+      view: "week"  # week, month, day
+      views_available: ["day", "week", "month"]
+      
+      time_range:
+        start: "08:00"
+        end: "20:00"
+        
+      slot_duration: 30  # minutes
+      
+      data_source: "/api/appointments/calendar"
+      
+      event_render: |
+        <div class="appointment-event {{ type }}">
+          <div class="time">{{ start_time }} - {{ end_time }}</div>
+          <div class="patient">{{ patient_name }}</div>
+          <div class="type-badge">{{ type }}</div>
+        </div>
+        
+      event_click: "show_appointment_details"
+      
+      slot_click: "quick_book"
+      
+    modal_available_slots:
+      title: "Available Appointment Slots"
+      trigger: "agent_response"
+      
+      content:
+        type: slot_list
+        field: "available_slots"
+        render_item: |
+          <div class="slot-card">
+            <div class="slot-header">
+              <h4>{{ date | format_date('ddd, MMM DD') }}</h4>
+              <span class="time">{{ time }}</span>
+            </div>
+            <div class="slot-details">
+              <div><icon:user/> {{ provider }}</div>
+              <div><icon:building/> {{ location }}</div>
+              <div><icon:clock/> {{ duration }} minutes</div>
+            </div>
+            <button class="book-button" onclick="book_slot('{{ slot_id }}')">
+              Book This Slot
+            </button>
+          </div>
+          
+    modal_appointment_details:
+      title: "Appointment Details"
+      
+      sections:
+        - type: detail_view
+          fields:
+            - label: "Confirmation #"
+              field: "confirmation_number"
+              style: "monospace"
+              
+            - label: "Patient"
+              field: "patient_name"
+              link: "/clinician/patients/{{ patient_id }}"
+              
+            - label: "Date & Time"
+              field: "{{ date }} at {{ time }}"
+              icon: "calendar"
+              
+            - label: "Provider"
+              field: "provider"
+              icon: "user"
+              
+            - label: "Location"
+              field: "location"
+              icon: "map-pin"
+              
+            - label: "Type"
+              field: "type"
+              render: "badge"
+              
+            - label: "Status"
+              field: "status"
+              render: "status_badge"
+              
+            - label: "Reason"
+              field: "reason"
+              style: "text"
+              
+      actions:
+        - label: "Reschedule"
+          icon: "calendar"
+          color: "blue"
+          
+        - label: "Cancel"
+          icon: "x"
+          color: "red"
+          confirm: "Are you sure you want to cancel this appointment?"
+          
+        - label: "Send Reminder"
+          icon: "bell"
+          color: "gray"
+
+# =============================================================================
+# PATIENT MESSAGING PAGE
+# =============================================================================
+
+page patient_messaging:
+  path: "/clinician/messages"
+  requires_role: clinician
+  title: "Patient Messages"
+  
+  ui:
+    type: messaging
+    layout: three_column  # patient list | conversation | details
+    
+    theme:
+      primary: "#f59e0b"
+      accent: "#fbbf24"
+      
+    header:
+      title: "Patient Messaging"
+      icon: "message-square"
+      
+      actions:
+        - label: "New Message"
+          icon: "edit"
+          action: "open_new_message"
+          color: "orange"
+          
+    patient_list:
+      title: "Patients"
+      
+      search:
+        placeholder: "Search patients..."
+        
+      filter:
+        - label: "All"
+          value: "all"
+        - label: "Unread"
+          value: "unread"
+          badge: "{{ unread_count }}"
+        - label: "Urgent"
+          value: "urgent"
+        - label: "Follow-up Needed"
+          value: "follow_up"
+          
+      data_source: "/api/clinician/message-threads"
+      
+      item_render: |
+        <div class="patient-thread {{ unread ? 'unread' : '' }}">
+          <div class="patient-avatar">{{ patient_name | initials }}</div>
+          <div class="thread-info">
+            <div class="patient-name">{{ patient_name }}</div>
+            <div class="last-message">{{ last_message | truncate(40) }}</div>
+            <div class="timestamp">{{ last_message_time | relative }}</div>
+          </div>
+          {% if unread_count > 0 %}
+          <div class="unread-badge">{{ unread_count }}</div>
+          {% endif %}
+          {% if urgent %}
+          <div class="urgent-indicator">!</div>
+          {% endif %}
+        </div>
+        
+    conversation_panel:
+      title: "{{ selected_patient.name }}"
+      subtitle: "ID: {{ selected_patient.id }}"
+      
+      message_list:
+        data_source: "/api/messages/{{ selected_patient.id }}"
+        auto_scroll: true
+        
+        message_render: |
+          <div class="message {{ from_role }}">
+            <div class="message-header">
+              <span class="sender">{{ from_name }}</span>
+              <span class="timestamp">{{ timestamp | format_datetime }}</span>
+            </div>
+            <div class="message-body">
+              {{ content }}
+            </div>
+            {% if attachments.length > 0 %}
+            <div class="attachments">
+              {% for attachment in attachments %}
+              <a href="{{ attachment.url }}" class="attachment">
+                <icon:paperclip/> {{ attachment.name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          
+      compose_area:
+        placeholder: "Type your message..."
+        
+        tools:
+          - label: "AI Assist"
+            icon: "sparkles"
+            action: "open_ai_assistant"
+            tooltip: "Rewrite message in patient-friendly language"
+            
+          - label: "Template"
+            icon: "file-text"
+            action: "insert_template"
+            
+          - label: "Attach File"
+            icon: "paperclip"
+            action: "attach_file"
+            
+        quick_replies:
+          - "Thank you for reaching out. I'll review this shortly."
+          - "Please come in for a follow-up appointment."
+          - "Your test results look good. No action needed."
+          - "I recommend seeing a specialist for this concern."
+          
+        send_button:
+          text: "Send"
+          icon: "send"
+          shortcut: "Ctrl+Enter"
+          
+    detail_sidebar:
+      title: "Patient Info"
+      
+      sections:
+        - type: patient_summary
+          fields:
+            - label: "Name"
+              field: "name"
+            - label: "Age"
+              field: "age"
+            - label: "Last Visit"
+              field: "last_visit"
+            - label: "Conditions"
+              field: "conditions"
+              render: "tags"
+              
+        - type: quick_actions
+          title: "Quick Actions"
+          actions:
+            - label: "View Full Chart"
+              icon: "file-text"
+              link: "/clinician/patients/{{ patient_id }}"
+              
+            - label: "Book Appointment"
+              icon: "calendar"
+              action: "book_appointment"
+              
+            - label: "Request Tests"
+              icon: "clipboard"
+              action: "order_tests"
+              
+        - type: conversation_notes
+          title: "Conversation Notes"
+          editable: true
+          autosave: true
+          
+    modal_ai_assistant:
+      title: "AI Message Assistant"
+      subtitle: "Convert clinical language to patient-friendly text"
+      
+      form:
+        fields:
+          - name: message_type
+            type: select
+            label: "Message Type"
+            options:
+              - "Test Results"
+              - "Medication Instructions"
+              - "Appointment Reminder"
+              - "General Communication"
+              
+          - name: clinical_content
+            type: textarea
+            label: "Clinical Content"
+            placeholder: "Enter your message in clinical language..."
+            rows: 5
+            
+          - name: patient_reading_level
+            type: select
+            label: "Patient Reading Level"
+            options:
+              - value: "basic"
+                label: "Basic (6th-8th grade)"
+              - value: "intermediate"
+                label: "Intermediate (9th-12th grade)"
+              - value: "advanced"
+                label: "Advanced"
+            default: "intermediate"
+            
+          - name: include_reassurance
+            type: checkbox
+            label: "Include reassuring tone"
+            default: true
+            
+        submit:
+          text: "Generate Patient-Friendly Version"
+          icon: "sparkles"
+          agent: messaging_agent
+          
+      result:
+        title: "Patient-Friendly Message"
+        
+        sections:
+          - type: text_display
+            field: "patient_message"
+            style: "message_preview"
+            
+          - type: info_list
+            title: "Key Points"
+            field: "key_points"
+            
+          - type: info_list
+            title: "Questions Patient Should Ask"
+            field: "questions_to_ask_doctor"
+            condition: "questions_to_ask_doctor.length > 0"
+            
+          - type: badge_display
+            fields:
+              - label: "Readability"
+                field: "readability_score"
+              - label: "Tone"
+                field: "tone"
+                
+        actions:
+          - label: "Use This Message"
+            icon: "check"
+            color: "green"
+            action: "insert_to_compose"
+            
+          - label: "Regenerate"
+            icon: "refresh"
+            color: "blue"
+            action: "regenerate"
+            
+          - label: "Edit Manually"
+            icon: "edit"
+            color: "gray"
+            action: "edit_result"

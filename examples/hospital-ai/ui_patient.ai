@@ -1,0 +1,758 @@
+# =============================================================================
+# PATIENT DASHBOARD PAGES
+# Simplified, secure interface for patients
+# =============================================================================
+
+# =============================================================================
+# PATIENT DASHBOARD - MAIN PAGE
+# =============================================================================
+
+page patient_dashboard:
+  path: "/patient/dashboard"
+  requires_role: patient
+  title: "My Health Portal"
+  
+  ui:
+    type: dashboard
+    
+    theme:
+      primary: "#10b981"
+      secondary: "#3b82f6"
+      background: "#f9fafb"
+      
+    layout:
+      sidebar: true
+      header: true
+      mobile_friendly: true
+      
+    header:
+      title: "My Health Portal"
+      subtitle: "Welcome, {{ user.name }}"
+      
+      actions:
+        - label: "Profile"
+          icon: "user"
+          link: "/patient/profile"
+        - label: "Logout"
+          icon: "logout"
+          action: logout
+          
+    sidebar:
+      navigation:
+        - label: "Dashboard"
+          icon: "home"
+          link: "/patient/dashboard"
+          active: true
+          
+        - label: "My Appointments"
+          icon: "calendar"
+          link: "/patient/appointments"
+          badge: "{{ upcoming_appointments_count }}"
+          
+        - label: "Messages"
+          icon: "message"
+          link: "/patient/messages"
+          badge: "{{ unread_messages_count }}"
+          badge_color: "orange"
+          
+        - label: "Health Information"
+          icon: "heart"
+          link: "/patient/health-info"
+          
+        - separator: true
+          
+        - label: "Help & Support"
+          icon: "help-circle"
+          link: "/patient/help"
+          
+    content:
+      sections:
+        # Welcome message
+        - type: welcome_card
+          content: |
+            <h2>Welcome to your Health Portal</h2>
+            <p>View your appointments, communicate with your care team, and access health information.</p>
+            
+        # Upcoming appointments
+        - type: card_section
+          title: "Upcoming Appointments"
+          icon: "calendar"
+          
+          show card "Upcoming Appointments" from dataset appointments:
+            filter_by: "status == 'upcoming'"
+            limit: 3
+            
+            empty_state:
+              icon: calendar
+              title: "No upcoming appointments"
+              message: "No upcoming appointments scheduled"
+            
+            item:
+              type: card
+              style: appointment_summary
+              
+              header:
+                title: "{{ type | humanize }}"
+                badges:
+                  - field: date
+                    format: "MMM DD"
+                    style: date_badge
+              
+              sections:
+                - type: info_grid
+                  columns: 1
+                  items:
+                    - icon: clock
+                      label: "Time"
+                      values:
+                        - field: time
+                    
+                    - icon: user
+                      label: "Provider"
+                      values:
+                        - text: "Dr. {{ provider }}"
+                    
+                    - icon: map-pin
+                      label: "Location"
+                      values:
+                        - field: location
+              
+              actions:
+                - label: "View Details"
+                  icon: eye
+                  style: primary
+                  action: view_details
+                  params: "{{ id }}"
+          
+          actions:
+            - label: "View All Appointments"
+              link: "/patient/appointments"
+              icon: "arrow-right"
+              
+        # Recent messages
+        - type: card_section
+          title: "Recent Messages"
+          icon: "message"
+          badge: "{{ unread_count }}"
+          
+          show list "Recent Messages" from dataset messages:
+            filter_by: "recent == true"
+            limit: 5
+            list_type: compact
+            
+            empty_state:
+              icon: message
+              title: "No messages"
+              message: "No messages"
+            
+            columns:
+              - field: from_name
+                label: "From"
+                icon: user-md
+                style: provider_name
+              
+              - field: content
+                label: "Message"
+                style: preview_text
+                transform:
+                  truncate: 60
+              
+              - field: timestamp
+                label: "Time"
+                style: timestamp
+                transform:
+                  format: relative
+            
+            item_state:
+              unread: "{{ unread }}"
+          
+          actions:
+            - label: "View All Messages"
+              link: "/patient/messages"
+              icon: "arrow-right"
+              
+        # Health tips (from approved education materials)
+        - type: card_section
+          title: "Health Tips for You"
+          icon: "lightbulb"
+          
+          show card "Health Tips for You" from dataset personalized_tips:
+            columns: 2
+            
+            empty_state:
+              icon: lightbulb
+              title: "No tips available"
+              message: "Check back later for personalized health tips"
+            
+            item:
+              type: card
+              style: health_tip
+              
+              header:
+                title: "{{ title }}"
+                avatar:
+                  icon: "{{ icon }}"
+              
+              sections:
+                - type: text_section
+                  content:
+                    text: "{{ summary }}"
+              
+              actions:
+                - label: "Learn more"
+                  icon: arrow-right
+                  style: link
+                  link: "/patient/health-info/{{ id }}"
+              
+        # Quick actions
+        - type: action_cards
+          title: "Quick Actions"
+          columns: 3
+          
+          cards:
+            - title: "Send Message"
+              description: "Contact your care team"
+              icon: "send"
+              color: "blue"
+              action:
+                type: navigate
+                to: "/patient/messages/new"
+                
+            - title: "View Test Results"
+              description: "Check your latest results"
+              icon: "clipboard-check"
+              color: "green"
+              action:
+                type: navigate
+                to: "/patient/test-results"
+              badge: "{{ new_results_count }}"
+              
+            - title: "Request Prescription Refill"
+              description: "Refill your medications"
+              icon: "pill"
+              color: "purple"
+              action:
+                type: navigate
+                to: "/patient/prescriptions"
+                
+  data_sources:
+    stats:
+      endpoint: "/api/patient/dashboard-stats"
+      refresh: 60
+
+# =============================================================================
+# PATIENT APPOINTMENTS PAGE
+# =============================================================================
+
+page patient_appointments:
+  path: "/patient/appointments"
+  requires_role: patient
+  title: "My Appointments"
+  
+  ui:
+    type: list_view
+    
+    theme:
+      primary: "#10b981"
+      
+    header:
+      title: "My Appointments"
+      icon: "calendar"
+      
+    filters:
+      - label: "Upcoming"
+        value: "upcoming"
+        default: true
+      - label: "Past"
+        value: "past"
+      - label: "All"
+        value: "all"
+        
+    content:
+      data_source: "/api/patient/appointments"
+      group_by: "date"
+      
+      empty_state:
+        icon: calendar
+        icon_size: large
+        title: "No appointments scheduled"
+        message: "Your care team will schedule appointments as needed."
+        
+      item:
+        type: card
+        style: appointment_detail
+        
+        header:
+          badges:
+            - field: type
+              style: type_badge
+              transform: humanize
+            - field: status
+              style: status_badge
+              transform: humanize
+              
+        sections:
+          - type: info_grid
+            columns: 2
+            items:
+              - icon: calendar
+                label: "Date & Time"
+                values:
+                  - field: date
+                    format: "MMMM DD, YYYY"
+                  - field: time
+                    
+              - icon: user
+                label: "Provider"
+                values:
+                  - text: "Dr. {{ provider }}"
+                  - field: specialty
+                    style: sub_value
+                    
+              - icon: map-pin
+                label: "Location"
+                values:
+                  - field: location
+                    
+              - icon: clock
+                label: "Duration"
+                values:
+                  - text: "{{ duration }} minutes"
+                  
+          - type: text_section
+            condition: "reason != null"
+            style: reason
+            content:
+              label: "Reason for visit:"
+              text: "{{ reason }}"
+              
+          - type: text_section
+            condition: "instructions != null"
+            style: instructions
+            icon: info-circle
+            content:
+              label: "Instructions:"
+              text: "{{ instructions }}"
+              
+        actions:
+          - label: "Request Reschedule"
+            icon: calendar
+            style: secondary
+            action: request_reschedule
+            params: "{{ id }}"
+            condition: "status == 'confirmed' && days_until > 2"
+            
+          - label: "Print Confirmation"
+            icon: printer
+            style: secondary
+            action: print_confirmation
+            params: "{{ id }}"
+            condition: "confirmation_number != null"
+            
+          - label: "Add to Calendar"
+            icon: download
+            style: secondary
+            action: add_to_calendar
+            params: "{{ id }}"
+            condition: "days_until <= 7 && days_until >= 0"
+            
+        footer:
+          condition: "confirmation_number != null"
+          text: "Confirmation #: {{ confirmation_number }}"
+          style: confirmation
+
+# =============================================================================
+# PATIENT MESSAGES PAGE
+# =============================================================================
+
+page patient_messages:
+  path: "/patient/messages"
+  requires_role: patient
+  title: "My Messages"
+  
+  ui:
+    type: messaging
+    layout: two_column  # conversation list | selected conversation
+    mobile_adaptive: true
+    
+    theme:
+      primary: "#3b82f6"
+      
+    header:
+      title: "Messages from My Care Team"
+      icon: "message-square"
+      
+      actions:
+        - label: "New Message"
+          icon: "edit"
+          action: "open_new_message"
+          color: "blue"
+          
+    conversation_list:
+      title: "Conversations"
+      
+      search:
+        placeholder: "Search messages..."
+        
+      filter:
+        - label: "All"
+          value: "all"
+        - label: "Unread"
+          value: "unread"
+          badge: "{{ unread_count }}"
+          
+      data_source: "/api/patient/message-threads"
+      
+      item:
+        type: card
+        style: conversation
+        state_class:
+          unread: "{{ unread }}"
+          
+        avatar:
+          icon: user-md
+          style: provider_avatar
+          
+        content:
+          - type: text
+            field: provider_name
+            style: provider_name
+            
+          - type: text
+            field: last_message
+            style: last_message
+            transform:
+              truncate: 50
+              
+          - type: text
+            field: last_message_time
+            style: timestamp
+            transform:
+              format: relative
+              
+        badge:
+          condition: "unread_count > 0"
+          value: "{{ unread_count }}"
+          style: unread
+        
+    message_view:
+      title: "{{ selected_provider.name }}"
+      subtitle: "{{ selected_provider.title }}"
+      
+      message_list:
+        data_source: "/api/patient/messages/{{ selected_thread_id }}"
+        auto_scroll: true
+        
+        message:
+          type: message_bubble
+          role_class: "{{ from_role }}"
+          
+          avatar:
+            icon:
+              clinician: user-md
+              patient: user
+            condition_field: from_role
+            
+          header:
+            - field: from_name
+              style: sender
+            - field: timestamp
+              style: timestamp
+              transform:
+                format: "MMM DD, h:mm A"
+                
+          body:
+            field: content
+            
+          attachments:
+            condition: "attachments.length > 0"
+            items:
+              type: file_link
+              icon: paperclip
+              label: "{{ name }}"
+              url: "{{ url }}"
+              download: true
+            </div>
+          </div>
+          
+      compose_area:
+        placeholder: "Type your message to your care team..."
+        
+        restrictions:
+          max_length: 2000
+          allowed_attachments: ["pdf", "jpg", "png"]
+          max_attachment_size: "5MB"
+          
+        tools:
+          - label: "Attach File"
+            icon: "paperclip"
+            action: "attach_file"
+            
+        send_button:
+          text: "Send Message"
+          icon: "send"
+          
+        help_text: |
+          <p><icon:info-circle/> Your care team will respond within 24-48 hours.</p>
+          <p>For urgent medical concerns, please call {{ emergency_contact_number }} or go to the emergency room.</p>
+          
+    modal_new_message:
+      title: "New Message"
+      
+      form:
+        fields:
+          - name: to_provider
+            type: select
+            label: "Send to"
+            required: true
+            data_source: "/api/patient/my-providers"
+            render_option: "{{ name }} - {{ specialty }}"
+            
+          - name: subject
+            type: select
+            label: "Subject"
+            required: true
+            options:
+              - "General Question"
+              - "Appointment Request"
+              - "Prescription Refill"
+              - "Test Results Question"
+              - "Symptom Report"
+              - "Other"
+              
+          - name: message
+            type: textarea
+            label: "Message"
+            required: true
+            placeholder: "Type your message..."
+            rows: 6
+            max_length: 2000
+            
+        submit:
+          text: "Send Message"
+          icon: "send"
+          endpoint: "/api/patient/messages/send"
+
+# =============================================================================
+# PATIENT HEALTH INFORMATION PAGE
+# =============================================================================
+
+page patient_health_info:
+  path: "/patient/health-info"
+  requires_role: patient
+  title: "Health Information"
+  
+  ui:
+    type: content_library
+    
+    theme:
+      primary: "#8b5cf6"
+      
+    header:
+      title: "Health Information for You"
+      subtitle: "Learn about your conditions and treatments"
+      icon: "book-open"
+      
+    search:
+      placeholder: "Search health topics..."
+      endpoint: "/api/patient/health-info/search"
+      
+    categories:
+      - name: "My Conditions"
+        icon: "activity"
+        personalized: true
+        data_source: "/api/patient/personalized-info/conditions"
+        
+      - name: "My Medications"
+        icon: "pill"
+        personalized: true
+        data_source: "/api/patient/personalized-info/medications"
+        
+      - name: "General Health"
+        icon: "heart"
+        topics:
+          - "Nutrition"
+          - "Exercise"
+          - "Sleep"
+          - "Stress Management"
+          
+      - name: "Prevention"
+        icon: "shield"
+        topics:
+          - "Vaccinations"
+          - "Screenings"
+          - "Healthy Lifestyle"
+          
+    content_card:
+      type: article_card
+      style: health_info
+      
+      header:
+        title: "{{ title }}"
+        badge:
+          condition: "approved_by != null"
+          icon: check-circle
+          text: "Reviewed by {{ approved_by }}"
+          style: approved
+          
+      content:
+        field: content
+        format: markdown
+        
+      sections:
+        - type: key_points
+          condition: "key_points.length > 0"
+          title: "Key Points:"
+          items:
+            field: key_points
+            style: bullet_list
+            
+        - type: questions
+          condition: "questions_to_ask.length > 0"
+          title: "Questions to Ask Your Doctor:"
+          items:
+            field: questions_to_ask
+            style: bullet_list
+            
+      footer:
+        left:
+          label: "Reading level:"
+          value: "{{ reading_level }}"
+          transform: humanize
+        right:
+          label: "Last updated:"
+          value: "{{ last_updated }}"
+          transform:
+            format: "MMMM DD, YYYY"
+            
+      actions:
+        - label: "Print"
+          icon: printer
+          action: print_info
+          params: "{{ id }}"
+          
+        - label: "Discuss with Provider"
+          icon: share
+          action: share_with_provider
+          params: "{{ id }}"
+        
+    disclaimer:
+      text: |
+        <div class="disclaimer">
+          <icon:alert-circle/>
+          <p><strong>Important:</strong> This information is for educational purposes only and is not a substitute for professional medical advice. Always consult your healthcare provider for personalized medical guidance.</p>
+        </div>
+
+# =============================================================================
+# PATIENT PROFILE PAGE
+# =============================================================================
+
+page patient_profile:
+  path: "/patient/profile"
+  requires_role: patient
+  title: "My Profile"
+  
+  ui:
+    type: form
+    layout: single_column
+    max_width: 800px
+    
+    theme:
+      primary: "#10b981"
+      
+    header:
+      title: "My Profile"
+      icon: "user"
+      
+    sections:
+      - section: "Personal Information"
+        readonly: true
+        info_text: "To update this information, please contact your healthcare provider."
+        
+        fields:
+          - name: full_name
+            type: text
+            label: "Full Name"
+            value: "{{ user.name }}"
+            readonly: true
+            
+          - name: date_of_birth
+            type: date
+            label: "Date of Birth"
+            value: "{{ user.date_of_birth }}"
+            readonly: true
+            
+          - name: patient_id
+            type: text
+            label: "Patient ID"
+            value: "{{ user.patient_id }}"
+            readonly: true
+            
+      - section: "Contact Information"
+        editable: true
+        
+        fields:
+          - name: email
+            type: email
+            label: "Email"
+            value: "{{ user.email }}"
+            
+          - name: phone
+            type: tel
+            label: "Phone Number"
+            value: "{{ user.phone }}"
+            
+          - name: preferred_contact_method
+            type: radio
+            label: "Preferred Contact Method"
+            options:
+              - value: "email"
+                label: "Email"
+              - value: "phone"
+                label: "Phone"
+              - value: "portal"
+                label: "Portal Messages"
+            value: "{{ user.preferred_contact_method }}"
+            
+      - section: "Notification Preferences"
+        editable: true
+        
+        fields:
+          - name: appointment_reminders
+            type: checkbox
+            label: "Send appointment reminders"
+            checked: "{{ user.preferences.appointment_reminders }}"
+            
+          - name: message_notifications
+            type: checkbox
+            label: "Notify me of new messages"
+            checked: "{{ user.preferences.message_notifications }}"
+            
+          - name: health_tips
+            type: checkbox
+            label: "Send personalized health tips"
+            checked: "{{ user.preferences.health_tips }}"
+            
+      - section: "Security"
+        
+        fields:
+          - name: change_password
+            type: button
+            label: "Change Password"
+            action: "open_change_password_modal"
+            
+          - name: two_factor_auth
+            type: toggle
+            label: "Enable Two-Factor Authentication"
+            value: "{{ user.security.two_factor_enabled }}"
+            
+    actions:
+      - label: "Save Changes"
+        type: "submit"
+        endpoint: "/api/patient/profile/update"
+        color: "green"
+        
+      - label: "Cancel"
+        type: "button"
+        action: "reset_form"
+        color: "gray"

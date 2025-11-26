@@ -1,0 +1,312 @@
+# =============================================================================
+# Declarative UI Demo Application
+# Showcasing the new HTML-free declarative UI syntax for Namel3ss 0.6.0
+# =============================================================================
+
+app "Declarative UI Showcase"
+
+# Sample dataset for the demo
+dataset "appointments" from table appointments:
+  columns: id, patient_name, type, status, date, time, provider, specialty, location, duration, reason, instructions, confirmation_number, days_until
+  
+dataset "messages" from table messages:
+  columns: id, thread_id, from_name, from_role, content, timestamp, unread, attachments
+
+# =============================================================================
+# APPOINTMENTS PAGE - Demonstrating Card-based Lists
+# =============================================================================
+
+page "My Appointments" at "/appointments":
+  
+  # Traditional show card syntax with full declarative configuration
+  show card "Appointments" from dataset appointments:
+    # Empty state when no data
+    empty_state:
+      icon: "calendar"
+      icon_size: "large"
+      title: "No appointments scheduled"
+      message: "Your care team will schedule appointments as needed."
+      action_label: "Request Appointment"
+      action_link: "/request-appointment"
+    
+    # Group appointments by date
+    group_by: "date"
+    
+    # Item configuration - how each card is rendered
+    item:
+      type: "card"
+      style: "appointment_detail"
+      
+      # Dynamic state classes based on conditions
+      state_class:
+        urgent: "status == 'urgent'"
+        completed: "status == 'completed'"
+      
+      # Header with badges
+      header:
+        title: "{{ type }}"
+        badges:
+          - field: "type"
+            style: "type_badge"
+            transform: "humanize"
+          - field: "status"
+            style: "status_badge"
+            transform: "humanize"
+            condition: "status != null"
+      
+      # Sections - different content blocks
+      sections:
+        # Info grid section - 2 column responsive grid
+        - type: "info_grid"
+          columns: 2
+          items:
+            - icon: "calendar"
+              label: "Date & Time"
+              values:
+                - field: "date"
+                  format: "MMMM DD, YYYY"
+                - field: "time"
+            
+            - icon: "user"
+              label: "Provider"
+              values:
+                - text: "Dr. {{ provider }}"
+                - field: "specialty"
+                  style: "sub_value"
+            
+            - icon: "map-pin"
+              label: "Location"
+              values:
+                - field: "location"
+            
+            - icon: "clock"
+              label: "Duration"
+              values:
+                - text: "{{ duration }} minutes"
+        
+        # Conditional text section - only shows if reason exists
+        - type: "text_section"
+          condition: "reason != null"
+          style: "reason"
+          content:
+            label: "Reason for visit:"
+            text: "{{ reason }}"
+        
+        # Another conditional section
+        - type: "text_section"
+          condition: "instructions != null"
+          style: "instructions"
+          icon: "info-circle"
+          content:
+            label: "Instructions:"
+            text: "{{ instructions }}"
+      
+      # Conditional actions - each with its own condition
+      actions:
+        - label: "Request Reschedule"
+          icon: "calendar"
+          style: "secondary"
+          action: "request_reschedule"
+          params: "{{ id }}"
+          condition: "status == 'confirmed' && days_until > 2"
+        
+        - label: "Print Confirmation"
+          icon: "printer"
+          style: "secondary"
+          action: "print_confirmation"
+          params: "{{ id }}"
+          condition: "confirmation_number != null"
+        
+        - label: "Add to Calendar"
+          icon: "download"
+          style: "secondary"
+          action: "add_to_calendar"
+          params: "{{ id }}"
+          condition: "days_until <= 7 && days_until >= 0"
+        
+        - label: "Cancel"
+          icon: "x"
+          style: "danger"
+          action: "cancel_appointment"
+          params: "{{ id }}"
+          condition: "status == 'pending' || status == 'confirmed'"
+      
+      # Conditional footer
+      footer:
+        condition: "confirmation_number != null"
+        text: "Confirmation #: {{ confirmation_number }}"
+        style: "confirmation"
+
+# =============================================================================
+# MESSAGES PAGE - Demonstrating List-based Display
+# =============================================================================
+
+page "Messages" at "/messages":
+  
+  show list "Conversations" from dataset messages:
+    list_type: "conversation"
+    
+    # Enable search
+    enable_search: true
+    search_placeholder: "Search messages..."
+    
+    # Filters
+    filters:
+      - label: "All"
+        value: "all"
+      - label: "Unread"
+        value: "unread"
+        badge: "{{ unread_count }}"
+    
+    # Empty state
+    empty_state:
+      icon: "message-square"
+      title: "No messages"
+      message: "You don't have any messages yet."
+    
+    # Item rendering - conversation style
+    item:
+      type: "card"
+      style: "conversation"
+      
+      # State class based on unread status
+      state_class:
+        unread: "unread == true"
+      
+      # Avatar
+      avatar:
+        icon: "user-md"
+        style: "provider_avatar"
+      
+      # Content array - multiple content blocks
+      content:
+        - type: "text"
+          field: "from_name"
+          style: "provider_name"
+        
+        - type: "text"
+          field: "content"
+          style: "message_preview"
+          transform:
+            truncate: 60
+        
+        - type: "text"
+          field: "timestamp"
+          style: "timestamp"
+          transform:
+            format: "relative"
+      
+      # Badge for unread count
+      badge:
+        condition: "unread == true"
+        icon: "circle"
+        style: "unread_indicator"
+
+# =============================================================================
+# ARTICLES PAGE - Demonstrating Article Card Semantic Type
+# =============================================================================
+
+dataset "articles" from table articles:
+  columns: id, title, content, approved_by, key_points, questions_to_ask, reading_level, last_updated
+
+page "Health Information" at "/health-info":
+  
+  show card "Articles" from dataset articles:
+    empty_state:
+      icon: "book-open"
+      title: "No articles available"
+    
+    # Article card semantic type
+    item:
+      type: "article_card"
+      style: "health_info"
+      
+      header:
+        title: "{{ title }}"
+        badge:
+          condition: "approved_by != null"
+          icon: "check-circle"
+          text: "Reviewed by {{ approved_by }}"
+          style: "approved"
+      
+      # Main content field
+      content:
+        field: "content"
+        format: "markdown"
+      
+      sections:
+        # Key points section
+        - type: "key_points"
+          condition: "key_points != null"
+          title: "Key Points:"
+          list_items:
+            field: "key_points"
+            style: "bullet_list"
+        
+        # Questions section
+        - type: "questions"
+          condition: "questions_to_ask != null"
+          title: "Questions to Ask Your Doctor:"
+          list_items:
+            field: "questions_to_ask"
+            style: "bullet_list"
+      
+      # Footer with two columns
+      footer:
+        left:
+          label: "Reading level:"
+          value: "{{ reading_level }}"
+          transform: "humanize"
+        right:
+          label: "Last updated:"
+          value: "{{ last_updated }}"
+          transform:
+            format: "MMMM DD, YYYY"
+      
+      actions:
+        - label: "Print"
+          icon: "printer"
+          action: "print_info"
+          params: "{{ id }}"
+        
+        - label: "Discuss with Provider"
+          icon: "share"
+          action: "share_with_provider"
+          params: "{{ id }}"
+
+# =============================================================================
+# DASHBOARD - Demonstrating Mixed Content
+# =============================================================================
+
+page "Dashboard" at "/":
+  
+  show text "Welcome to Declarative UI":
+    color: "primary"
+    font size: "24px"
+  
+  # Quick stats with cards
+  show card "Recent Activity" from dataset appointments:
+    limit: 5
+    filter_by: "status == 'confirmed'"
+    sort_by: "date desc"
+    
+    item:
+      type: "card"
+      style: "compact"
+      
+      sections:
+        - type: "info_grid"
+          columns: 3
+          items:
+            - icon: "calendar"
+              field: "date"
+              transform:
+                format: "MMM DD"
+            - icon: "clock"
+              field: "time"
+            - icon: "user"
+              field: "provider"
+      
+      actions:
+        - label: "View"
+          link: "/appointments/{{ id }}"

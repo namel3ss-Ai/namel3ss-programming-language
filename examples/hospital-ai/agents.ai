@@ -1,0 +1,669 @@
+# =============================================================================
+# AGENT DEFINITIONS
+# Multi-agent system for hospital support operations
+# =============================================================================
+
+# =============================================================================
+# TRIAGE AGENT
+# Assists clinicians with patient triage and initial assessment
+# =============================================================================
+
+agent triage_agent:
+  name: "Triage Assistant"
+  description: "Provides triage recommendations based on patient symptoms and medical guidelines"
+  
+  permissions:
+    required_role: clinician
+    
+  model: local_reasoning
+  
+  inputs:
+    # Structured patient data
+    patient_id: string
+    patient_age: integer
+    patient_sex: string
+    
+    # Clinical presentation
+    symptoms: list[string]
+    symptom_duration: string
+    symptom_severity: string  # mild, moderate, severe
+    
+    # Vitals
+    temperature: float optional
+    heart_rate: integer optional
+    blood_pressure: string optional
+    respiratory_rate: integer optional
+    oxygen_saturation: float optional
+    
+    # Medical history
+    current_medications: list[string] optional
+    allergies: list[string] optional
+    chronic_conditions: list[string] optional
+    recent_procedures: list[string] optional
+    
+    # Additional context
+    pain_level: integer optional  # 1-10 scale
+    additional_notes: text optional
+    
+  uses_rag: medical_guidelines
+  rag_query: |
+    Triage protocols for: {{ inputs.symptoms | join(', ') }}
+    Emergency criteria, high-risk symptoms, assessment flowcharts
+    
+  structured_output:
+    schema:
+      triage_level:
+        type: string
+        enum: ["emergency", "urgent", "semi_urgent", "non_urgent"]
+        description: "Recommended triage category"
+        
+      acuity_score:
+        type: integer
+        minimum: 1
+        maximum: 5
+        description: "ESI acuity score (1=most urgent, 5=least urgent)"
+        
+      red_flags:
+        type: array
+        items: string
+        description: "Critical warning signs identified"
+        
+      recommended_actions:
+        type: array
+        items:
+          action: string
+          priority: string
+          timeframe: string
+        description: "Immediate next steps"
+        
+      disposition:
+        type: string
+        enum: ["immediate_resuscitation", "emergency_dept", "urgent_care", "primary_care", "home_care"]
+        
+      rationale:
+        type: string
+        description: "Clinical reasoning behind the triage decision"
+        
+      guideline_citations:
+        type: array
+        items:
+          source: string
+          excerpt: string
+        description: "Retrieved guideline sections used"
+        
+      confidence:
+        type: string
+        enum: ["high", "moderate", "low"]
+        
+      requires_physician_review:
+        type: boolean
+        
+      differential_considerations:
+        type: array
+        items: string
+        description: "Conditions to consider in differential diagnosis"
+  
+  prompt: |
+    You are a triage assistant AI supporting emergency medical staff.
+    
+    PATIENT DATA:
+    - ID: {{patient_id}}
+    - Age: {{patient_age}} years, Sex: {{patient_sex}}
+    
+    CHIEF COMPLAINTS:
+    - Symptoms: {{symptoms | join(', ')}}
+    - Duration: {{symptom_duration}}
+    - Severity: {{symptom_severity}}
+    
+    VITAL SIGNS:
+    {% if temperature %}- Temperature: {{temperature}}°F{% endif %}
+    {% if heart_rate %}- Heart Rate: {{heart_rate}} bpm{% endif %}
+    {% if blood_pressure %}- Blood Pressure: {{blood_pressure}}{% endif %}
+    {% if respiratory_rate %}- Respiratory Rate: {{respiratory_rate}}/min{% endif %}
+    {% if oxygen_saturation %}- O2 Saturation: {{oxygen_saturation}}%{% endif %}
+    {% if pain_level %}- Pain Level: {{pain_level}}/10{% endif %}
+    
+    MEDICAL HISTORY:
+    {% if current_medications %}- Current Medications: {{current_medications | join(', ')}}{% endif %}
+    {% if allergies %}- Allergies: {{allergies | join(', ')}}{% endif %}
+    {% if chronic_conditions %}- Chronic Conditions: {{chronic_conditions | join(', ')}}{% endif %}
+    
+    {% if additional_notes %}
+    ADDITIONAL NOTES:
+    {{additional_notes}}
+    {% endif %}
+    
+    RETRIEVED MEDICAL GUIDELINES:
+    {{rag_context}}
+    
+    ---
+    
+    TASK:
+    Provide a structured triage recommendation based on:
+    1. Emergency Signs & Symptoms Protocol
+    2. Vital sign abnormalities
+    3. Patient risk factors
+    4. Evidence-based triage guidelines
+    
+    CRITICAL INSTRUCTIONS:
+    - Identify any RED FLAG symptoms immediately
+    - Consider age-specific normals for vitals
+    - Account for chronic conditions in risk assessment
+    - Cite specific guideline sections used
+    - Express uncertainty when appropriate
+    - This is TRIAGE ASSISTANCE, not diagnosis
+    - Always recommend physician review for ambiguous cases
+    
+    Respond with the structured JSON output following the defined schema.
+  
+  post_processing:
+    # Log triage event
+    - log_event:
+        type: "triage_assessment"
+        patient_id: "{{inputs.patient_id}}"
+        triage_level: "{{output.triage_level}}"
+        clinician_id: "{{session.user_id}}"
+        
+    # Store in triage history
+    - store_memory:
+        memory: triage_history
+        data:
+          patient_id: "{{inputs.patient_id}}"
+          triage_level: "{{output.triage_level}}"
+          symptoms: "{{inputs.symptoms}}"
+          timestamp: "{{now()}}"
+          clinician_id: "{{session.user_id}}"
+          
+    # Alert if emergency
+    - conditional_alert:
+        if: output.triage_level == "emergency"
+        then:
+          alert_type: "critical"
+          message: "EMERGENCY triage level for patient {{inputs.patient_id}}"
+          notify: ["emergency_team", "charge_nurse"]
+
+# =============================================================================
+# MEDICATION RECOMMENDATION AGENT
+# Provides medication information, contraindications, and dosing guidance
+# =============================================================================
+
+agent recommendation_agent:
+  name: "Medication Advisor"
+  description: "Provides evidence-based medication information and safety checks"
+  
+  permissions:
+    required_role: clinician
+    
+  model: local_reasoning
+  
+  inputs:
+    # Query type
+    query_type: string  # "drug_info", "interaction_check", "dosing", "contraindications"
+    
+    # Medication info
+    medication_name: string
+    alternative_names: list[string] optional
+    
+    # Patient context
+    patient_age: integer
+    patient_weight: float optional  # kg
+    patient_sex: string
+    
+    # Medical context
+    indication: string optional
+    renal_function: string optional  # normal, mild_impairment, moderate_impairment, severe_impairment
+    hepatic_function: string optional
+    pregnancy_status: string optional  # not_pregnant, pregnant_trimester_1/2/3, breastfeeding
+    
+    # Safety context
+    current_medications: list[string]
+    allergies: list[string]
+    chronic_conditions: list[string]
+    
+  uses_rag: drug_database
+  rag_query: |
+    Medication: {{ inputs.medication_name }}
+    Query type: {{ inputs.query_type }}
+    Patient context: age {{inputs.patient_age}}, {{inputs.chronic_conditions | join(', ')}}
+    Interactions with: {{inputs.current_medications | join(', ')}}
+    
+  structured_output:
+    schema:
+      medication:
+        generic_name: string
+        brand_names: array
+        drug_class: string
+        
+      indications:
+        approved_uses: array
+        off_label_uses: array optional
+        
+      contraindications:
+        absolute: array
+        relative: array
+        
+      warnings:
+        black_box_warnings: array optional
+        serious_warnings: array
+        precautions: array
+        
+      dosing:
+        adult_dose: string
+        pediatric_dose: string optional
+        geriatric_adjustments: string optional
+        renal_adjustment: string optional
+        hepatic_adjustment: string optional
+        
+      interactions:
+        severity: string  # critical, major, moderate, minor
+        interacting_drugs: array
+        interaction_descriptions: array
+        management_recommendations: array
+        
+      adverse_effects:
+        common: array
+        serious: array
+        frequency: string optional
+        
+      patient_considerations:
+        age_related: array optional
+        pregnancy_category: string optional
+        breastfeeding_compatible: boolean optional
+        
+      monitoring:
+        parameters_to_monitor: array
+        monitoring_frequency: string
+        
+      guideline_citations:
+        type: array
+        items:
+          source: string
+          excerpt: string
+          
+      safety_score:
+        type: string
+        enum: ["safe", "caution", "high_risk", "contraindicated"]
+        
+      requires_specialist_consult:
+        type: boolean
+  
+  prompt: |
+    You are a medication safety and information assistant for healthcare providers.
+    
+    QUERY: {{query_type | upper}}
+    MEDICATION: {{medication_name}}
+    
+    PATIENT PROFILE:
+    - Age: {{patient_age}} years, Sex: {{patient_sex}}
+    {% if patient_weight %}- Weight: {{patient_weight}} kg{% endif %}
+    {% if indication %}- Indication: {{indication}}{% endif %}
+    
+    ORGAN FUNCTION:
+    {% if renal_function %}- Renal: {{renal_function}}{% endif %}
+    {% if hepatic_function %}- Hepatic: {{hepatic_function}}{% endif %}
+    {% if pregnancy_status %}- Pregnancy Status: {{pregnancy_status}}{% endif %}
+    
+    CURRENT MEDICATIONS:
+    {{current_medications | join(', ')}}
+    
+    ALLERGIES:
+    {{allergies | join(', ')}}
+    
+    CHRONIC CONDITIONS:
+    {{chronic_conditions | join(', ')}}
+    
+    RETRIEVED DRUG INFORMATION:
+    {{rag_context}}
+    
+    ---
+    
+    TASK:
+    Provide comprehensive medication guidance focusing on:
+    1. Safety assessment for THIS patient
+    2. Drug-drug interactions with current medications
+    3. Contraindications based on patient conditions
+    4. Appropriate dosing with adjustments
+    5. Monitoring requirements
+    
+    CRITICAL SAFETY CHECKS:
+    - Flag ALL potential interactions (even minor ones)
+    - Check for duplicate therapy or drug class overlap
+    - Consider age-related pharmacokinetics
+    - Account for organ dysfunction
+    - Verify pregnancy/breastfeeding safety if applicable
+    - Note allergy cross-reactivities
+    
+    IMPORTANT:
+    - This is INFORMATIONAL only, not prescriptive
+    - Always recommend clinical judgment
+    - Cite drug references and guidelines
+    - Flag when specialist consultation is advisable
+    - Express limitations of the information
+    
+    Provide structured JSON response per the schema.
+  
+  post_processing:
+    # Log medication lookup
+    - log_event:
+        type: "medication_lookup"
+        medication: "{{inputs.medication_name}}"
+        query_type: "{{inputs.query_type}}"
+        clinician_id: "{{session.user_id}}"
+        
+    # Alert on high-risk interactions
+    - conditional_alert:
+        if: output.interactions.severity in ["critical", "major"]
+        then:
+          alert_type: "warning"
+          message: "{{output.interactions.severity | upper}} drug interaction detected: {{inputs.medication_name}}"
+          
+    # Alert on contraindications
+    - conditional_alert:
+        if: output.safety_score == "contraindicated"
+        then:
+          alert_type: "danger"
+          message: "CONTRAINDICATION detected for {{inputs.medication_name}}"
+
+# =============================================================================
+# BOOKING AGENT
+# Handles appointment scheduling and slot management
+# =============================================================================
+
+agent booking_agent:
+  name: "Appointment Scheduler"
+  description: "Manages appointment booking and scheduling"
+  
+  permissions:
+    required_role: clinician
+    
+  model: simple_tasks
+  
+  inputs:
+    action: string  # "search_slots", "book_appointment", "cancel_appointment"
+    
+    # Patient info
+    patient_id: string
+    patient_name: string
+    
+    # Scheduling preferences
+    appointment_type: string  # "consultation", "follow_up", "procedure", "urgent"
+    specialty: string optional
+    provider_preference: string optional
+    
+    # Time preferences
+    preferred_date: date optional
+    preferred_time: time optional
+    time_window_start: datetime optional
+    time_window_end: datetime optional
+    
+    # Urgency
+    urgency: string  # "emergency", "urgent", "routine"
+    reason: text
+    
+    # For modifications
+    appointment_id: string optional
+    
+  uses_tool: scheduling_system
+  
+  structured_output:
+    schema:
+      action_taken: string
+      
+      available_slots:
+        type: array optional
+        items:
+          slot_id: string
+          provider: string
+          specialty: string
+          date: date
+          time: time
+          duration: integer
+          location: string
+          
+      booked_appointment:
+        type: object optional
+        properties:
+          appointment_id: string
+          patient_id: string
+          patient_name: string
+          provider: string
+          specialty: string
+          date: date
+          time: time
+          duration: integer
+          location: string
+          type: string
+          status: string
+          confirmation_number: string
+          
+      cancellation_confirmed:
+        type: boolean optional
+        
+      recommendations:
+        type: array
+        items: string
+        
+      next_steps:
+        type: array
+        items: string
+  
+  prompt: |
+    You are an appointment scheduling assistant.
+    
+    ACTION: {{action}}
+    
+    PATIENT: {{patient_name}} (ID: {{patient_id}})
+    
+    REQUEST DETAILS:
+    - Appointment Type: {{appointment_type}}
+    {% if specialty %}- Specialty: {{specialty}}{% endif %}
+    {% if provider_preference %}- Preferred Provider: {{provider_preference}}{% endif %}
+    - Urgency: {{urgency}}
+    - Reason: {{reason}}
+    
+    TIME PREFERENCES:
+    {% if preferred_date %}- Preferred Date: {{preferred_date}}{% endif %}
+    {% if preferred_time %}- Preferred Time: {{preferred_time}}{% endif %}
+    {% if time_window_start %}- Window: {{time_window_start}} to {{time_window_end}}{% endif %}
+    
+    {% if action == "search_slots" %}
+    TASK: Search for available appointment slots matching the criteria.
+    - Consider urgency level for prioritization
+    - Find slots within preferred timeframe
+    - Match specialty and provider preferences
+    - Return top 5 options
+    {% elif action == "book_appointment" %}
+    TASK: Book the appointment for the selected slot.
+    - Confirm availability
+    - Create booking
+    - Generate confirmation number
+    - Send notifications
+    {% elif action == "cancel_appointment" %}
+    TASK: Cancel appointment ID {{appointment_id}}.
+    - Verify cancellation eligibility
+    - Update schedule
+    - Send cancellation notification
+    {% endif %}
+    
+    Provide structured response with available slots or booking confirmation.
+  
+  tool_calls:
+    - call: scheduling_system.search_slots
+      when: action == "search_slots"
+      params:
+        specialty: "{{inputs.specialty}}"
+        start_date: "{{inputs.time_window_start}}"
+        end_date: "{{inputs.time_window_end}}"
+        urgency: "{{inputs.urgency}}"
+        
+    - call: scheduling_system.book_slot
+      when: action == "book_appointment"
+      params:
+        patient_id: "{{inputs.patient_id}}"
+        slot_id: "{{inputs.slot_id}}"
+        type: "{{inputs.appointment_type}}"
+        reason: "{{inputs.reason}}"
+        
+    - call: scheduling_system.cancel_appointment
+      when: action == "cancel_appointment"
+      params:
+        appointment_id: "{{inputs.appointment_id}}"
+  
+  post_processing:
+    - log_event:
+        type: "appointment_action"
+        action: "{{inputs.action}}"
+        patient_id: "{{inputs.patient_id}}"
+        clinician_id: "{{session.user_id}}"
+
+# =============================================================================
+# WORKFLOW AGENT
+# Provides care pathway and workflow recommendations
+# =============================================================================
+
+agent workflow_agent:
+  name: "Care Workflow Assistant"
+  description: "Suggests evidence-based care pathways and clinical workflows"
+  
+  permissions:
+    required_role: clinician
+    
+  model: local_reasoning
+  
+  inputs:
+    patient_condition: string
+    current_stage: string
+    care_goal: string
+    patient_context:
+      age: integer
+      comorbidities: list[string]
+      current_treatments: list[string]
+      functional_status: string
+      
+  uses_rag: clinical_pathways
+  rag_query: |
+    Clinical pathway for: {{ inputs.patient_condition }}
+    Care stage: {{ inputs.current_stage }}
+    Goal: {{ inputs.care_goal }}
+    
+  structured_output:
+    schema:
+      pathway_name: string
+      current_phase: string
+      
+      recommended_steps:
+        type: array
+        items:
+          step_number: integer
+          action: string
+          rationale: string
+          timeframe: string
+          responsible_role: string
+          required_resources: array
+          
+      milestones:
+        type: array
+        items:
+          milestone: string
+          criteria: string
+          expected_timeframe: string
+          
+      monitoring_plan:
+        parameters: array
+        frequency: string
+        
+      transition_criteria:
+        to_next_phase: array
+        to_higher_acuity: array
+        to_lower_acuity: array
+        
+      potential_complications:
+        type: array
+        items:
+          complication: string
+          warning_signs: array
+          prevention_strategies: array
+          
+      guideline_citations: array
+  
+  prompt: |
+    You are a clinical workflow assistant helping to plan patient care.
+    
+    PATIENT CONDITION: {{patient_condition}}
+    CURRENT STAGE: {{current_stage}}
+    CARE GOAL: {{care_goal}}
+    
+    PATIENT CONTEXT:
+    - Age: {{patient_context.age}}
+    - Comorbidities: {{patient_context.comorbidities | join(', ')}}
+    - Current Treatments: {{patient_context.current_treatments | join(', ')}}
+    - Functional Status: {{patient_context.functional_status}}
+    
+    RETRIEVED CLINICAL PATHWAYS:
+    {{rag_context}}
+    
+    ---
+    
+    TASK:
+    Design a structured care workflow that:
+    1. Follows evidence-based clinical pathways
+    2. Accounts for patient-specific factors
+    3. Defines clear milestones and transition criteria
+    4. Identifies potential complications
+    5. Specifies monitoring requirements
+    
+    Provide actionable, time-bound recommendations.
+
+# =============================================================================
+# MESSAGING AGENT
+# Rephrases clinical information for patient communication
+# =============================================================================
+
+agent messaging_agent:
+  name: "Patient Communication Assistant"
+  description: "Translates medical information into patient-friendly language"
+  
+  permissions:
+    required_role: clinician
+    
+  model: simple_tasks
+  
+  inputs:
+    message_type: string  # "test_result", "medication_instruction", "appointment_reminder", "general"
+    clinical_content: text
+    patient_reading_level: string optional  # "basic", "intermediate", "advanced"
+    include_reassurance: boolean optional
+    
+  structured_output:
+    schema:
+      patient_message: string
+      key_points: array
+      questions_to_ask_doctor: array optional
+      readability_score: string
+      tone: string
+      
+  prompt: |
+    You are helping a clinician communicate with a patient.
+    
+    MESSAGE TYPE: {{message_type}}
+    READING LEVEL: {{patient_reading_level | default("intermediate")}}
+    
+    CLINICAL CONTENT TO TRANSLATE:
+    {{clinical_content}}
+    
+    TASK:
+    Rewrite this in patient-friendly language that:
+    - Uses simple, clear terms (avoid medical jargon)
+    - Explains any necessary medical terms
+    - Is empathetic and reassuring (if appropriate)
+    - Highlights key action items
+    - Encourages questions
+    - Maintains accuracy
+    
+    Keep it concise but complete. Break complex information into bullet points.
+  
+  post_processing:
+    - log_event:
+        type: "patient_communication"
+        message_type: "{{inputs.message_type}}"
+        clinician_id: "{{session.user_id}}"

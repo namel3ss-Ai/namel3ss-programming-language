@@ -72,11 +72,42 @@ def write_client_lib(lib_dir: Path) -> None:
           successMessage?: string | null;
         }
 
+        export interface CardWidgetConfig {
+          id: string;
+          type: "card";
+          title: string;
+          source: DataSourceRef;
+          emptyState?: {
+            icon?: string;
+            iconSize?: "small" | "medium" | "large";
+            title: string;
+            message?: string;
+            actionLabel?: string;
+            actionLink?: string;
+          };
+          itemConfig?: Record<string, any>;
+          groupBy?: string;
+        }
+
+        export interface ListWidgetConfig {
+          id: string;
+          type: "list";
+          title: string;
+          source: DataSourceRef;
+          listType?: string;
+          emptyState?: Record<string, any>;
+          itemConfig?: Record<string, any>;
+          enableSearch?: boolean;
+          columns?: number;
+        }
+
         export type WidgetConfig =
           | TextWidgetConfig
           | TableWidgetConfig
           | ChartWidgetConfig
-          | FormWidgetConfig;
+          | FormWidgetConfig
+          | CardWidgetConfig
+          | ListWidgetConfig;
 
         export interface PageDefinition {
           slug: string;

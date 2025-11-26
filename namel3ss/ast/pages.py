@@ -256,6 +256,791 @@ class PredictStatement(Statement):
     parameters: Dict[str, Any] = field(default_factory=dict)
 
 
+# =============================================================================
+# Declarative UI Components (Card, List, Sections)
+# =============================================================================
+
+@dataclass
+class EmptyStateConfig:
+    """Configuration for empty state display when no data is available."""
+    icon: Optional[str] = None
+    icon_size: Optional[str] = None  # "small" | "medium" | "large"
+    title: str = "No items"
+    message: Optional[str] = None
+    action_label: Optional[str] = None
+    action_link: Optional[str] = None
+
+
+@dataclass
+class BadgeConfig:
+    """Badge configuration for displaying metadata on cards."""
+    field: Optional[str] = None  # Field name to display
+    text: Optional[str] = None  # Static text (overrides field)
+    style: Optional[str] = None  # CSS class name
+    transform: Optional[Union[str, Dict[str, Any]]] = None  # Transform to apply (e.g., "humanize", {"format": "..."})
+    icon: Optional[str] = None
+    condition: Optional[str] = None  # Expression to evaluate for conditional display
+
+
+@dataclass
+class FieldValueConfig:
+    """Configuration for a single field value display."""
+    field: Optional[str] = None  # Field name from data
+    text: Optional[str] = None  # Static text (supports templates like "Dr. {{ provider }}")
+    format: Optional[str] = None  # Format string (e.g., "MMMM DD, YYYY")
+    style: Optional[str] = None  # CSS class name
+    transform: Optional[Union[str, Dict[str, Any]]] = None
+
+
+@dataclass
+class InfoGridItem:
+    """Single item in an info grid section."""
+    icon: Optional[str] = None
+    label: Optional[str] = None
+    field: Optional[str] = None  # Single field
+    values: List[FieldValueConfig] = field(default_factory=list)  # Multiple values
+
+
+@dataclass
+class CardSection:
+    """A section within a card (e.g., info_grid, text_section, key_points)."""
+    type: str  # "info_grid" | "text_section" | "key_points" | "questions" | etc.
+    condition: Optional[str] = None  # Expression for conditional rendering
+    style: Optional[str] = None
+    title: Optional[str] = None
+    icon: Optional[str] = None
+    
+    # For info_grid sections
+    columns: Optional[int] = None
+    items: List[InfoGridItem] = field(default_factory=list)
+    
+    # For text_section
+    content: Optional[Dict[str, Any]] = None  # {label, text, ...}
+    
+    # For list sections (key_points, questions)
+    list_items: Optional[Dict[str, Any]] = None  # {field, style, ...}
+
+
+@dataclass
+class ConditionalAction:
+    """Action button with optional conditional display."""
+    label: str
+    icon: Optional[str] = None
+    style: Optional[str] = None  # "primary" | "secondary" | "danger"
+    action: Optional[str] = None  # Action name to invoke
+    link: Optional[str] = None  # Navigation link
+    params: Optional[str] = None  # Parameters to pass (can include templates)
+    condition: Optional[str] = None  # Expression for conditional display
+
+
+@dataclass
+class CardHeader:
+    """Card header configuration with title and badges."""
+    title: Optional[str] = None  # Field name or template
+    subtitle: Optional[str] = None
+    badges: List[BadgeConfig] = field(default_factory=list)
+    avatar: Optional[Dict[str, Any]] = None  # Avatar configuration
+
+
+@dataclass
+class CardFooter:
+    """Card footer configuration."""
+    condition: Optional[str] = None
+    text: Optional[str] = None  # Template string
+    style: Optional[str] = None
+    left: Optional[Dict[str, Any]] = None  # Left-aligned content
+    right: Optional[Dict[str, Any]] = None  # Right-aligned content
+
+
+@dataclass
+class CardItemConfig:
+    """Configuration for how individual items are rendered in a card list."""
+    type: str  # "card" | "message_bubble" | "article_card" | etc.
+    style: Optional[str] = None
+    state_class: Optional[Dict[str, str]] = None  # Dynamic CSS classes based on state
+    role_class: Optional[str] = None  # Template for role-based class
+    
+    header: Optional[Union[CardHeader, Dict[str, Any]]] = None
+    sections: List[CardSection] = field(default_factory=list)
+    actions: List[ConditionalAction] = field(default_factory=list)
+    footer: Optional[Union[CardFooter, Dict[str, Any]]] = None
+    
+    # For message bubbles and semantic components
+    avatar: Optional[Dict[str, Any]] = None
+    content: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None  # Content structure
+    body: Optional[Dict[str, Any]] = None
+    attachments: Optional[Dict[str, Any]] = None
+    badge: Optional[Union[BadgeConfig, Dict[str, Any]]] = None
+
+
+@dataclass
+class ShowCard(Statement):
+    """
+    Declarative card-based list component.
+    
+    Displays data from a data source as styled cards with sections,
+    badges, conditional actions, and empty states.
+    
+    Example:
+        show card "Appointments" from dataset appointments:
+            empty_state:
+                icon: calendar
+                title: "No appointments"
+            item:
+                type: card
+                sections:
+                    - type: info_grid
+                      columns: 2
+                      items: [...]
+                actions:
+                    - label: "Edit"
+                      condition: "status == 'pending'"
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame" | "endpoint"
+    source: str
+    
+    # Display configuration
+    empty_state: Optional[EmptyStateConfig] = None
+    item_config: Optional[CardItemConfig] = None
+    
+    # Grouping and filtering
+    group_by: Optional[str] = None
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    limit: Optional[int] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class ShowList(Statement):
+    """
+    Generic list component for displaying collections.
+    
+    Similar to ShowCard but with more flexible rendering options.
+    Supports custom item templates and semantic component types.
+    """
+    title: str
+    source_type: str
+    source: str
+    
+    list_type: str = "default"  # "default" | "conversation" | "message" | "article"
+    empty_state: Optional[EmptyStateConfig] = None
+    item_config: Optional[CardItemConfig] = None
+    
+    # Search and filtering
+    enable_search: bool = False
+    search_placeholder: Optional[str] = None
+    filters: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Layout
+    columns: Optional[int] = None  # For grid layout
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+# =============================================================================
+# Data Display Components (Professional Data Visualization)
+# =============================================================================
+
+@dataclass
+class ColumnConfig:
+    """Configuration for a table column."""
+    id: str
+    label: str
+    field: Optional[str] = None  # Data field name (defaults to id if not specified)
+    width: Optional[Union[str, int]] = None  # CSS width value or pixel number
+    align: str = "left"  # "left" | "center" | "right"
+    sortable: bool = True
+    format: Optional[str] = None  # Date/number/currency format string
+    transform: Optional[Union[str, Dict[str, Any]]] = None  # Value transformation
+    render_template: Optional[str] = None  # Custom template string (e.g., "Dr. {{ name }}")
+
+
+@dataclass
+class ToolbarConfig:
+    """Toolbar configuration for data tables and lists."""
+    search: Optional[Dict[str, Any]] = None  # {field: str, placeholder?: str}
+    filters: List[Dict[str, Any]] = field(default_factory=list)
+    bulk_actions: List[ConditionalAction] = field(default_factory=list)
+    actions: List[ConditionalAction] = field(default_factory=list)  # Top-level toolbar actions
+
+
+@dataclass
+class ShowDataTable(Statement):
+    """
+    Professional data table component with sorting, filtering, and actions.
+    
+    Example:
+        show data_table "Orders" from dataset orders:
+            columns:
+                - id: order_id
+                  label: "Order #"
+                  width: 120
+                  sortable: true
+                - id: customer
+                  label: "Customer"
+                  sortable: true
+                - id: total
+                  label: "Total"
+                  align: right
+                  format: currency
+                  sortable: true
+                - id: status
+                  label: "Status"
+                  sortable: true
+            row_actions:
+                - label: "View Details"
+                  icon: eye
+                  action: view_order
+                  params: "{{ id }}"
+                - label: "Cancel"
+                  icon: x
+                  style: danger
+                  action: cancel_order
+                  params: "{{ id }}"
+                  condition: "status == 'pending'"
+            toolbar:
+                search:
+                    field: customer
+                    placeholder: "Search customers..."
+                filters:
+                    - field: status
+                      label: "Status"
+                      options: ["pending", "completed", "cancelled"]
+                bulk_actions:
+                    - label: "Export Selected"
+                      icon: download
+                      action: export_orders
+    """
+    title: str
+    source_type: str  # "dataset" | "table" | "frame" | "endpoint"
+    source: str
+    
+    # Column configuration
+    columns: List[ColumnConfig] = field(default_factory=list)
+    
+    # Row-level actions
+    row_actions: List[ConditionalAction] = field(default_factory=list)
+    
+    # Toolbar configuration
+    toolbar: Optional[ToolbarConfig] = None
+    
+    # Filtering and sorting
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    default_sort: Optional[Dict[str, str]] = None  # {column: str, direction: "asc"|"desc"}
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[EmptyStateConfig] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class ListItemConfig:
+    """Configuration for individual list items."""
+    avatar: Optional[Dict[str, Any]] = None  # Avatar binding or configuration
+    title: Union[str, Dict[str, Any]]  # Field name or template
+    subtitle: Optional[Union[str, Dict[str, Any]]] = None
+    metadata: Dict[str, Union[str, Dict[str, Any]]] = field(default_factory=dict)  # Key-value metadata
+    actions: List[ConditionalAction] = field(default_factory=list)
+    badge: Optional[Union[BadgeConfig, Dict[str, Any]]] = None
+    icon: Optional[str] = None
+    state_class: Optional[Dict[str, str]] = None  # Dynamic CSS classes
+
+
+@dataclass
+class ShowDataList(Statement):
+    """
+    Vertical list component for activity feeds, summaries, and compact displays.
+    
+    Example:
+        show data_list "Recent Activity" from dataset activity_log:
+            item:
+                avatar:
+                    type: icon
+                    icon: "{{ event_icon }}"
+                    color: "{{ event_color }}"
+                title: "{{ event_title }}"
+                subtitle: "{{ event_description }}"
+                metadata:
+                    timestamp: "{{ created_at | format:'relative' }}"
+                    user: "{{ user_name }}"
+                actions:
+                    - label: "View Details"
+                      icon: arrow-right
+                      action: view_activity
+                      params: "{{ id }}"
+    """
+    title: str
+    source_type: str
+    source: str
+    
+    # Item configuration
+    item: Optional[ListItemConfig] = None
+    
+    # List styling
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    dividers: bool = True
+    
+    # Filtering and search
+    filter_by: Optional[str] = None
+    enable_search: bool = False
+    search_placeholder: Optional[str] = None
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[EmptyStateConfig] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class SparklineConfig:
+    """Configuration for sparkline mini-charts."""
+    data_source: str  # Binding to time series data
+    x_field: str
+    y_field: str
+    color: Optional[str] = None
+    variant: str = "line"  # "line" | "bar" | "area"
+
+
+@dataclass
+class ShowStatSummary(Statement):
+    """
+    KPI/metric card component for displaying statistics.
+    
+    Example:
+        show stat_summary "Revenue" from dataset metrics:
+            value: "{{ total_revenue }}"
+            label: "Total Revenue"
+            format: currency
+            delta:
+                value: "{{ revenue_change }}"
+                format: percentage
+            trend: "{{ revenue_trend }}"
+            sparkline:
+                data_source: revenue_history
+                x_field: date
+                y_field: amount
+    """
+    label: str
+    source_type: str
+    source: str
+    
+    # Value configuration
+    value: str  # Expression or field binding
+    format: Optional[str] = None  # "currency" | "number" | "percentage"
+    prefix: Optional[str] = None
+    suffix: Optional[str] = None
+    
+    # Comparison metrics
+    delta: Optional[Dict[str, Any]] = None  # {value: expr, format: str, label?: str}
+    trend: Optional[Union[str, Dict[str, Any]]] = None  # "up" | "down" | "neutral" | expr
+    comparison_period: Optional[str] = None  # Description like "vs last month"
+    
+    # Optional sparkline
+    sparkline: Optional[SparklineConfig] = None
+    
+    # Styling
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class TimelineItem:
+    """Single timeline event configuration."""
+    timestamp: Union[str, Dict[str, Any]]  # Field or expression
+    title: Union[str, Dict[str, Any]]
+    description: Optional[Union[str, Dict[str, Any]]] = None
+    icon: Optional[Union[str, Dict[str, Any]]] = None
+    status: Optional[Union[str, Dict[str, Any]]] = None  # "success" | "warning" | "error" | "info" | expr
+    color: Optional[str] = None
+    actions: List[ConditionalAction] = field(default_factory=list)
+
+
+@dataclass
+class ShowTimeline(Statement):
+    """
+    Timeline component for events, logs, and activity history.
+    
+    Example:
+        show timeline "Order History" from dataset order_events:
+            item:
+                timestamp: "{{ event_time }}"
+                title: "{{ event_title }}"
+                description: "{{ event_description }}"
+                icon: "{{ event_icon }}"
+                status: "{{ event_status }}"
+                actions:
+                    - label: "View Details"
+                      icon: eye
+                      action: view_event
+                      params: "{{ id }}"
+    """
+    title: str
+    source_type: str
+    source: str
+    
+    # Item configuration
+    item: Optional[TimelineItem] = None
+    
+    # Display options
+    variant: str = "default"  # "default" | "compact" | "detailed"
+    show_timestamps: bool = True
+    group_by_date: bool = False
+    
+    # Filtering
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    
+    # Pagination
+    page_size: int = 50
+    enable_pagination: bool = True
+    
+    # Empty state
+    empty_state: Optional[EmptyStateConfig] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class AvatarItem:
+    """Single avatar configuration for avatar groups."""
+    name: Optional[Union[str, Dict[str, Any]]] = None  # Field or expression
+    image_url: Optional[Union[str, Dict[str, Any]]] = None
+    initials: Optional[Union[str, Dict[str, Any]]] = None
+    color: Optional[Union[str, Dict[str, Any]]] = None
+    status: Optional[Union[str, Dict[str, Any]]] = None  # "online" | "offline" | "busy" | "away"
+    tooltip: Optional[Union[str, Dict[str, Any]]] = None
+
+
+@dataclass
+class ShowAvatarGroup(Statement):
+    """
+    Avatar group component for displaying multiple users/agents compactly.
+    
+    Example:
+        show avatar_group "Team Members" from dataset team_members:
+            item:
+                name: "{{ name }}"
+                image_url: "{{ avatar_url }}"
+                initials: "{{ initials }}"
+                status: "{{ online_status }}"
+                tooltip: "{{ name }} - {{ role }}"
+            max_visible: 5
+            size: md
+    """
+    title: Optional[str] = None
+    source_type: str
+    source: str
+    
+    # Item configuration
+    item: Optional[AvatarItem] = None
+    
+    # Display options
+    max_visible: int = 5  # Show "+N more" for additional avatars
+    size: str = "md"  # "xs" | "sm" | "md" | "lg" | "xl"
+    variant: str = "stacked"  # "stacked" | "grid"
+    
+    # Filtering
+    filter_by: Optional[str] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+@dataclass
+class ChartConfig:
+    """Enhanced chart configuration with multi-series support."""
+    variant: str = "line"  # "line" | "bar" | "pie" | "area" | "scatter" | "combo"
+    
+    # Data mapping
+    x_field: str
+    y_fields: List[str] = field(default_factory=list)  # Multiple metrics for multi-series
+    group_by: Optional[str] = None  # For series grouping
+    
+    # Chart styling
+    stacked: bool = False  # For bar/area charts
+    smooth: bool = True  # For line/area charts
+    fill: bool = True  # For area charts
+    
+    # Legend configuration
+    legend: Optional[Dict[str, Any]] = None  # {position: "top"|"bottom"|"left"|"right", show: bool}
+    
+    # Tooltip configuration
+    tooltip: Optional[Dict[str, Any]] = None  # {show: bool, format: str}
+    
+    # Axes configuration
+    x_axis: Optional[Dict[str, Any]] = None  # {label: str, format: str, rotate: number}
+    y_axis: Optional[Dict[str, Any]] = None  # {label: str, format: str}
+    
+    # Color scheme
+    colors: List[str] = field(default_factory=list)
+    color_scheme: Optional[str] = None  # Predefined color scheme name
+
+
+@dataclass
+class ShowDataChart(Statement):
+    """
+    Advanced chart component with multi-series support and variants.
+    
+    Example:
+        show data_chart "Sales Trends" from dataset sales_data:
+            config:
+                variant: line
+                x_field: date
+                y_fields: [revenue, costs, profit]
+                group_by: region
+                smooth: true
+                legend:
+                    position: bottom
+                    show: true
+                tooltip:
+                    show: true
+                    format: currency
+                x_axis:
+                    label: "Date"
+                    format: "MMM YYYY"
+                y_axis:
+                    label: "Amount"
+                    format: currency
+    """
+    title: str
+    source_type: str
+    source: str
+    
+    # Chart configuration
+    config: Optional[ChartConfig] = None
+    
+    # Filtering
+    filter_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    
+    # Empty state
+    empty_state: Optional[EmptyStateConfig] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    height: Optional[Union[str, int]] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+
+
+# =============================================================================
+# Layout Primitives (Stack, Grid, Split, Tabs, Accordion)
+# =============================================================================
+
+@dataclass
+class StackLayout(Statement):
+    """
+    Flexbox-like stack layout for arranging children linearly.
+    
+    Example:
+        layout stack:
+            direction: vertical
+            gap: medium
+            align: center
+            children:
+                - show card "Data" from dataset items
+                - show chart "Trends" from dataset metrics
+    """
+    direction: str = "vertical"  # "vertical" | "horizontal"
+    gap: Union[str, int] = "medium"  # "small" | "medium" | "large" | numeric px value
+    align: str = "stretch"  # "start" | "center" | "end" | "stretch"
+    justify: str = "start"  # "start" | "center" | "end" | "space_between" | "space_around" | "space_evenly"
+    wrap: bool = False
+    
+    # Children can be any page statement (cards, charts, text, nested layouts)
+    children: List['PageStatement'] = field(default_factory=list)
+    
+    # Styling
+    style: Optional[Dict[str, Any]] = None
+    layout: Optional[LayoutMeta] = None
+
+
+@dataclass
+class GridLayout(Statement):
+    """
+    General-purpose grid layout for arranging children in a grid.
+    
+    Example:
+        layout grid:
+            columns: 3
+            gap: large
+            responsive: true
+            min_column_width: 300px
+            children:
+                - show card "Sales" from dataset sales
+                - show card "Leads" from dataset leads
+                - show chart "Growth" from dataset metrics
+    """
+    columns: Union[int, str] = "auto"  # Number of columns or "auto"
+    min_column_width: Optional[str] = None  # "200px" | "12rem" | token name
+    gap: Union[str, int] = "medium"  # "small" | "medium" | "large" | numeric px value
+    responsive: bool = True  # Adapt to viewport using min_column_width
+    
+    # Children
+    children: List['PageStatement'] = field(default_factory=list)
+    
+    # Styling
+    style: Optional[Dict[str, Any]] = None
+    layout: Optional[LayoutMeta] = None
+
+
+@dataclass
+class SplitLayout(Statement):
+    """
+    Split layout with two resizable panes (left/right or top/bottom).
+    
+    Example:
+        layout split:
+            ratio: 0.3
+            resizable: true
+            left:
+                - show table "Orders" from dataset orders
+            right:
+                - show card "Details" from dataset order_details
+    """
+    left: List['PageStatement'] = field(default_factory=list)
+    right: List['PageStatement'] = field(default_factory=list)
+    ratio: float = 0.5  # 0.0 to 1.0, proportion allocated to left pane
+    resizable: bool = False  # Allow user to drag-resize the split
+    orientation: str = "horizontal"  # "horizontal" (left/right) | "vertical" (top/bottom)
+    
+    # Styling
+    style: Optional[Dict[str, Any]] = None
+    layout: Optional[LayoutMeta] = None
+
+
+@dataclass
+class TabItem:
+    """Single tab configuration for TabsLayout."""
+    id: str
+    label: str
+    icon: Optional[str] = None
+    badge: Optional[Union[str, BadgeConfig]] = None
+    content: List['PageStatement'] = field(default_factory=list)
+
+
+@dataclass
+class TabsLayout(Statement):
+    """
+    Tabbed interface for switching between multiple content sections.
+    
+    Example:
+        layout tabs:
+            default_tab: overview
+            tabs:
+                - id: overview
+                  label: "Overview"
+                  icon: home
+                  content:
+                      - show card "Summary" from dataset summary
+                      
+                - id: details
+                  label: "Details"
+                  icon: list
+                  content:
+                      - show table "Data" from dataset items
+    """
+    tabs: List[TabItem] = field(default_factory=list)
+    default_tab: Optional[str] = None  # Must match one of tabs[].id
+    persist_state: bool = True  # Persist active tab in URL or local state
+    
+    # Styling
+    style: Optional[Dict[str, Any]] = None
+    layout: Optional[LayoutMeta] = None
+
+
+@dataclass
+class AccordionItem:
+    """Single accordion item configuration."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    content: List['PageStatement'] = field(default_factory=list)
+    default_open: bool = False
+
+
+@dataclass
+class AccordionLayout(Statement):
+    """
+    Collapsible accordion layout for structured content sections.
+    
+    Example:
+        layout accordion:
+            multiple: true
+            items:
+                - id: section1
+                  title: "Personal Information"
+                  icon: user
+                  default_open: true
+                  content:
+                      - show form "Profile" with fields name, email
+                      
+                - id: section2
+                  title: "Settings"
+                  icon: settings
+                  content:
+                      - show form "Preferences" with fields theme, language
+    """
+    items: List[AccordionItem] = field(default_factory=list)
+    multiple: bool = False  # Allow multiple items to be expanded at once
+    
+    # Styling
+    style: Optional[Dict[str, Any]] = None
+    layout: Optional[LayoutMeta] = None
+
+
 ActionOperationType = Union[
     UpdateOperation,
     ToastOperation,
@@ -270,6 +1055,19 @@ PageStatement = Union[
     ShowTable,
     ShowChart,
     ShowForm,
+    ShowCard,
+    ShowList,
+    ShowDataTable,
+    ShowDataList,
+    ShowStatSummary,
+    ShowTimeline,
+    ShowAvatarGroup,
+    ShowDataChart,
+    StackLayout,
+    GridLayout,
+    SplitLayout,
+    TabsLayout,
+    AccordionLayout,
     Action,
     IfBlock,
     ForLoop,
@@ -292,6 +1090,40 @@ __all__ = [
     "ShowChart",
     "FormField",
     "ShowForm",
+    "ShowCard",
+    "ShowList",
+    "EmptyStateConfig",
+    "BadgeConfig",
+    "FieldValueConfig",
+    "InfoGridItem",
+    "CardSection",
+    "ConditionalAction",
+    "CardHeader",
+    "CardFooter",
+    "CardItemConfig",
+    # Data display components
+    "ColumnConfig",
+    "ToolbarConfig",
+    "ShowDataTable",
+    "ListItemConfig",
+    "ShowDataList",
+    "SparklineConfig",
+    "ShowStatSummary",
+    "TimelineItem",
+    "ShowTimeline",
+    "AvatarItem",
+    "ShowAvatarGroup",
+    "ChartConfig",
+    "ShowDataChart",
+    # Layout primitives
+    "StackLayout",
+    "GridLayout",
+    "SplitLayout",
+    "TabsLayout",
+    "AccordionLayout",
+    "TabItem",
+    "AccordionItem",
+    # Control flow and actions
     "Action",
     "VariableAssignment",
     "IfBlock",
