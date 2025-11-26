@@ -42,6 +42,13 @@
         "path": "./syntaxes/namel3ss.tmLanguage.json"
       }
     ],
+    "iconThemes": [
+      {
+        "id": "namel3ss-icons",
+        "label": "Namel3ss File Icons",
+        "path": "./fileicons/namel3ss-icon-theme.json"
+      }
+    ],
     "commands": [
       {
         "command": "n3.refactor.modernizeLegacy",
