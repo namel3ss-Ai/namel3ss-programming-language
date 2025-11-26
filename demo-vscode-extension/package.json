@@ -3,6 +3,7 @@
   "displayName": "N3 Language Support",
   "description": "Advanced language support for N3 with intelligent refactoring",
   "version": "1.0.0",
+  "publisher": "namel3ss",
   "engines": {
     "vscode": "^1.74.0"
   },
