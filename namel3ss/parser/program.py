@@ -374,16 +374,65 @@ class LegacyProgramParser(
         return names
 
     def _parse_app(self, line: str, line_no: int) -> App:
-        match = re.match(r'app\s+"([^"]+)"(?:\s+connects\s+to\s+\w+\s+"([^"]+)")?\.?$', line.strip())
+        # Support: app "Name" [connects to postgres "ALIAS"] [(theme=X, color_scheme=Y)]
+        # Pattern with optional database connection and design tokens
+        match = re.match(
+            r'app\s+"([^"]+)"(?:\s+connects\s+to\s+\w+\s+"([^"]+)")?\s*(?:\(([^)]+)\))?\s*\.?$',
+            line.strip()
+        )
         if not match:
             raise self._error(
-                'Expected: app "Name" [connects to postgres "ALIAS"].',
+                'Expected: app "Name" [connects to postgres "ALIAS"] [(theme=X, color_scheme=Y)].',
                 line_no,
                 line,
             )
         name = match.group(1)
         database = match.group(2) if match.group(2) else None
-        return App(name=name, database=database)
+        tokens_str = match.group(3) if match.group(3) else None
+        
+        # Parse design tokens if present
+        app_theme = None
+        app_color_scheme = None
+        
+        if tokens_str:
+            # Parse key=value pairs
+            for token_pair in tokens_str.split(','):
+                token_pair = token_pair.strip()
+                if '=' not in token_pair:
+                    continue
+                key, value = token_pair.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if key == 'theme':
+                    from namel3ss.ast.design_tokens import validate_theme
+                    try:
+                        app_theme = validate_theme(value)
+                    except ValueError as e:
+                        raise self._error(
+                            f"Invalid theme value: {value}",
+                            line_no,
+                            line,
+                            hint="Valid themes: light, dark, system"
+                        )
+                elif key == 'color_scheme':
+                    from namel3ss.ast.design_tokens import validate_color_scheme
+                    try:
+                        app_color_scheme = validate_color_scheme(value)
+                    except ValueError as e:
+                        raise self._error(
+                            f"Invalid color_scheme value: {value}",
+                            line_no,
+                            line,
+                            hint="Valid color schemes: blue, green, violet, rose, orange, teal, indigo, slate"
+                        )
+        
+        return App(
+            name=name,
+            database=database,
+            app_theme=app_theme,
+            app_color_scheme=app_color_scheme
+        )
 
     def _ensure_app_initialized(self, line_no: int, line: str) -> None:
         if self.app is not None:

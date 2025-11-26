@@ -47,6 +47,10 @@ def write_client_lib(lib_dir: Path) -> None:
           title: string;
           columns: string[];
           source: DataSourceRef;
+          variant?: string;
+          tone?: string;
+          size?: string;
+          density?: string;
         }
 
         export interface ChartWidgetConfig {

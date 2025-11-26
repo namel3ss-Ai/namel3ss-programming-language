@@ -45,6 +45,17 @@ from namel3ss.ast import (
     UnaryOp,
     WindowFrame,
     WindowOp,
+    validate_variant,
+    validate_tone,
+    validate_density,
+    validate_size,
+    validate_theme,
+    validate_color_scheme,
+    validate_size,
+    VariantType,
+    ToneType,
+    DensityType,
+    SizeType,
 )
 from namel3ss.errors import N3SyntaxError
 from namel3ss.parser.expression_builder import _ExpressionBuilder
@@ -606,6 +617,72 @@ class ParserBase:
         if isinstance(value, Expression):
             return str(value)
         return str(value)
+
+    # ------------------------------------------------------------------
+    # Design token parsing helpers
+    # ------------------------------------------------------------------
+    def _parse_design_token(
+        self, 
+        value_str: str, 
+        token_type: TypingLiteral["variant", "tone", "density", "size"],
+        line_no: int,
+        line: str
+    ) -> Union[VariantType, ToneType, DensityType, SizeType]:
+        """
+        Parse and validate a design token value.
+        
+        Args:
+            value_str: The raw string value from DSL
+            token_type: Type of token being parsed
+            line_no: Line number for error reporting
+            line: Full line text for error context
+            
+        Returns:
+            Validated design token enum value
+            
+        Raises:
+            N3SyntaxError: If value is invalid for the token type
+        """
+        # Remove quotes if present
+        value = value_str.strip()
+        if (value.startswith('"') and value.endswith('"')) or \
+           (value.startswith("'") and value.endswith("'")):
+            value = value[1:-1]
+        
+        try:
+            if token_type == "variant":
+                return validate_variant(value)
+            elif token_type == "tone":
+                return validate_tone(value)
+            elif token_type == "density":
+                return validate_density(value)
+            elif token_type == "size":
+                return validate_size(value)
+            elif token_type == "theme":
+                return validate_theme(value)
+            elif token_type == "color_scheme":
+                return validate_color_scheme(value)
+            else:
+                raise ValueError(f"Unknown token type: {token_type}")
+        except ValueError as e:
+            raise self._error(
+                str(e),
+                line_no,
+                line,
+                hint=self._get_design_token_hint(token_type)
+            )
+    
+    def _get_design_token_hint(self, token_type: str) -> str:
+        """Get helpful hint for design token errors."""
+        hints = {
+            "variant": "Valid variants: elevated, outlined, ghost, subtle",
+            "tone": "Valid tones: neutral, primary, success, warning, danger",
+            "density": "Valid densities: comfortable, compact",
+            "size": "Valid sizes: xs, sm, md, lg, xl",
+            "theme": "Valid themes: light, dark, system",
+            "color_scheme": "Valid color schemes: blue, green, violet, rose, orange, teal, indigo, slate",
+        }
+        return hints.get(token_type, "Invalid design token value")
 
     # ------------------------------------------------------------------
     # Enhanced coercion helpers with contextual error messages

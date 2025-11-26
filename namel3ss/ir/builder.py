@@ -71,7 +71,117 @@ from .spec import (
     IRModal,
     IRModalAction,
     IRToast,
+    # Design token IR specs
+    ComponentDesignTokensIR,
+    AppLevelDesignTokensIR,
 )
+
+
+# =============================================================================
+# Design Token Extraction Helpers
+# =============================================================================
+
+def _extract_component_design_tokens(
+    node,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> Optional[ComponentDesignTokensIR]:
+    """
+    Extract design tokens from AST node with inheritance.
+    
+    Inheritance order: app → page → component
+    Component-specific tokens override page-level, which override app-level.
+    
+    Args:
+        node: AST node (ShowCard, ShowList, ShowTable, ShowForm, etc.)
+        app_tokens: App-level design tokens (theme, color_scheme)
+        page_tokens: Page-level design tokens (theme, color_scheme)
+        
+    Returns:
+        ComponentDesignTokensIR with resolved tokens or None if no tokens
+    """
+    # Extract component-level tokens
+    variant = getattr(node, 'variant', None)
+    tone = getattr(node, 'tone', None)
+    density = getattr(node, 'density', None)
+    size = getattr(node, 'size', None)
+    theme = getattr(node, 'theme', None)
+    color_scheme = getattr(node, 'color_scheme', None)
+    
+    # Convert enums to strings for IR (runtime-agnostic)
+    if variant is not None:
+        variant = variant.value if hasattr(variant, 'value') else str(variant)
+    if tone is not None:
+        tone = tone.value if hasattr(tone, 'value') else str(tone)
+    if density is not None:
+        density = density.value if hasattr(density, 'value') else str(density)
+    if size is not None:
+        size = size.value if hasattr(size, 'value') else str(size)
+    if theme is not None:
+        theme = theme.value if hasattr(theme, 'value') else str(theme)
+    if color_scheme is not None:
+        color_scheme = color_scheme.value if hasattr(color_scheme, 'value') else str(color_scheme)
+    
+    # Implement inheritance: app → page → component (most specific wins)
+    # Theme inheritance
+    if theme is None:
+        if page_tokens and page_tokens.theme:
+            theme = page_tokens.theme
+        elif app_tokens and app_tokens.theme:
+            theme = app_tokens.theme
+    
+    # Color scheme inheritance
+    if color_scheme is None:
+        if page_tokens and page_tokens.color_scheme:
+            color_scheme = page_tokens.color_scheme
+        elif app_tokens and app_tokens.color_scheme:
+            color_scheme = app_tokens.color_scheme
+    
+    # Only create IR if at least one token is present
+    if variant or tone or density or size or theme or color_scheme:
+        return ComponentDesignTokensIR(
+            variant=variant,
+            tone=tone,
+            density=density,
+            size=size,
+            theme=theme,
+            color_scheme=color_scheme
+        )
+    
+    return None
+
+
+def _extract_app_level_design_tokens(node) -> Optional[AppLevelDesignTokensIR]:
+    """
+    Extract app/page-level design tokens (theme, color_scheme).
+    
+    Args:
+        node: AST node (App or Page)
+        
+    Returns:
+        AppLevelDesignTokensIR or None if no tokens
+    """
+    # For App nodes, use app_theme and app_color_scheme
+    # For Page nodes, use theme and color_scheme
+    if hasattr(node, 'app_theme'):
+        # App node
+        theme = getattr(node, 'app_theme', None)
+        color_scheme = getattr(node, 'app_color_scheme', None)
+    else:
+        # Page node or other
+        theme = getattr(node, 'theme', None)
+        color_scheme = getattr(node, 'color_scheme', None)
+    
+    # Convert enums to strings
+    if theme is not None:
+        theme = theme.value if hasattr(theme, 'value') else str(theme)
+    if color_scheme is not None:
+        color_scheme = color_scheme.value if hasattr(color_scheme, 'value') else str(color_scheme)
+    
+    if theme or color_scheme:
+        return AppLevelDesignTokensIR(theme=theme, color_scheme=color_scheme)
+    
+    return None
 
 
 def build_backend_ir(app: App) -> BackendIR:
@@ -108,6 +218,9 @@ def build_backend_ir(app: App) -> BackendIR:
         app_version="1.0.0",
         ir_version="0.1.0",
     )
+    
+    # Build and attach frontend IR
+    ir.frontend = build_frontend_ir(app)
     
     # Extract prompts from state
     ir.prompts = _extract_prompts_from_state(state)
@@ -210,10 +323,14 @@ def build_frontend_ir(app: App) -> FrontendIR:
     
     state = build_backend_state(app)
     
+    # Extract app-level design tokens
+    app_tokens = _extract_app_level_design_tokens(app)
+    
     ir = FrontendIR(
         app_name=app.name,
         app_version="1.0.0",
         ir_version="0.1.0",
+        design_tokens=app_tokens,
     )
     
     # Extract pages from state
@@ -559,18 +676,38 @@ def _extract_endpoints_from_state(state) -> List[EndpointIR]:
 
 
 def _extract_pages_from_state(state) -> List[PageSpec]:
-    """Extract pages from BackendState with component binding metadata"""
+    """Extract pages from BackendState with component binding metadata and design tokens"""
     pages = []
     
     # Access original app to get page AST with ShowTable/ShowChart/ShowForm nodes
     original_app = state.__dict__.get("_original_app")
     
+    # Extract app-level design tokens for inheritance
+    app_tokens = None
+    if original_app:
+        app_tokens = _extract_app_level_design_tokens(original_app)
+    
     for page_spec in state.pages:
         components = []
+        page_tokens = None
         
-        # Extract components from original AST if available
+        # Extract components and page tokens from original AST if available
         if original_app:
-            components = _extract_components_from_page_ast(original_app, page_spec.name, state)
+            # Find the page AST node
+            page_ast = None
+            for page in getattr(original_app, "pages", []):
+                if page.name == page_spec.name:
+                    page_ast = page
+                    break
+            
+            if page_ast:
+                page_tokens = _extract_app_level_design_tokens(page_ast)
+                # If page has no tokens, inherit from app
+                if not page_tokens and app_tokens:
+                    page_tokens = app_tokens
+                components = _extract_components_from_page_ast(
+                    original_app, page_spec.name, state, app_tokens, page_tokens
+                )
         
         pages.append(PageSpec(
             name=page_spec.name,
@@ -578,6 +715,7 @@ def _extract_pages_from_state(state) -> List[PageSpec]:
             title=page_spec.name,
             components=components,
             layout=page_spec.layout.get("type", "default") if page_spec.layout else "default",
+            design_tokens=page_tokens,
             metadata={
                 "route": page_spec.route,
                 "api_path": page_spec.api_path,
@@ -588,8 +726,14 @@ def _extract_pages_from_state(state) -> List[PageSpec]:
     return pages
 
 
-def _extract_components_from_page_ast(app, page_name: str, state) -> List[ComponentSpec]:
-    """Extract ComponentSpec from page AST nodes"""
+def _extract_components_from_page_ast(
+    app,
+    page_name: str,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> List[ComponentSpec]:
+    """Extract ComponentSpec from page AST nodes with design token inheritance"""
     components = []
     
     # Find the page in the app AST
@@ -597,7 +741,7 @@ def _extract_components_from_page_ast(app, page_name: str, state) -> List[Compon
         if page.name == page_name:
             # Process page body statements
             for stmt in getattr(page, "body", []):
-                component = _statement_to_component_spec(stmt, state)
+                component = _statement_to_component_spec(stmt, state, app_tokens, page_tokens)
                 if component:
                     components.append(component)
             break
@@ -605,16 +749,25 @@ def _extract_components_from_page_ast(app, page_name: str, state) -> List[Compon
     return components
 
 
-def _statement_to_component_spec(stmt, state) -> Optional[ComponentSpec]:
-    """Convert AST statement to ComponentSpec"""
+def _statement_to_component_spec(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> Optional[ComponentSpec]:
+    """Convert AST statement to ComponentSpec with design token inheritance"""
     stmt_type = stmt.__class__.__name__
     
-    if stmt_type == "ShowTable":
-        return _show_table_to_component(stmt, state)
+    if stmt_type == "ShowCard":
+        return _show_card_to_component(stmt, state, app_tokens, page_tokens)
+    elif stmt_type == "ShowList":
+        return _show_list_to_component(stmt, state, app_tokens, page_tokens)
+    elif stmt_type == "ShowTable":
+        return _show_table_to_component(stmt, state, app_tokens, page_tokens)
     elif stmt_type == "ShowChart":
-        return _show_chart_to_component(stmt, state)
+        return _show_chart_to_component(stmt, state, app_tokens, page_tokens)
     elif stmt_type == "ShowForm":
-        return _show_form_to_component(stmt, state)
+        return _show_form_to_component(stmt, state, app_tokens, page_tokens)
     # Data display components
     elif stmt_type == "ShowDataTable":
         return _show_data_table_to_component(stmt, state)
@@ -674,8 +827,70 @@ def _statement_to_component_spec(stmt, state) -> Optional[ComponentSpec]:
     return None
 
 
-def _show_table_to_component(stmt, state) -> ComponentSpec:
-    """Convert ShowTable AST node to ComponentSpec with binding"""
+def _show_card_to_component(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> ComponentSpec:
+    """Convert ShowCard AST node to ComponentSpec with design tokens"""
+    # Extract design tokens with inheritance
+    design_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
+    return ComponentSpec(
+        name=stmt.title or "Card",
+        type="card",
+        props={
+            "title": stmt.title,
+            "description": stmt.description,
+            "content": stmt.content,
+            "footer": stmt.footer,
+            "image_url": getattr(stmt, "image_url", None),
+            "badge": getattr(stmt, "badge", None),
+        },
+        design_tokens=design_tokens,
+    )
+
+
+def _show_list_to_component(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> ComponentSpec:
+    """Convert ShowList AST node to ComponentSpec with design tokens"""
+    # Extract design tokens with inheritance
+    design_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
+    # Build list items
+    items = []
+    for item in getattr(stmt, "items", []):
+        items.append({
+            "title": getattr(item, "title", ""),
+            "description": getattr(item, "description", None),
+            "icon": getattr(item, "icon", None),
+            "badge": getattr(item, "badge", None),
+        })
+    
+    return ComponentSpec(
+        name=stmt.title or "List",
+        type="list",
+        props={
+            "title": stmt.title,
+            "items": items,
+            "ordered": getattr(stmt, "ordered", False),
+        },
+        design_tokens=design_tokens,
+    )
+
+
+def _show_table_to_component(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> ComponentSpec:
+    """Convert ShowTable AST node to ComponentSpec with binding and design tokens"""
     from namel3ss.ast.pages import DataBindingConfig
     
     # Build binding spec if binding config present
@@ -720,6 +935,9 @@ def _show_table_to_component(stmt, state) -> ComponentSpec:
             field_mapping=binding_config.field_mapping,
         )
     
+    # Extract design tokens with inheritance
+    design_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
     return ComponentSpec(
         name=stmt.title,
         type="table",
@@ -734,11 +952,17 @@ def _show_table_to_component(stmt, state) -> ComponentSpec:
         },
         data_source=stmt.source,
         binding=binding_spec,
+        design_tokens=design_tokens,
     )
 
 
-def _show_chart_to_component(stmt, state) -> ComponentSpec:
-    """Convert ShowChart AST node to ComponentSpec with binding"""
+def _show_chart_to_component(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> ComponentSpec:
+    """Convert ShowChart AST node to ComponentSpec with binding and design tokens"""
     from namel3ss.ast.pages import DataBindingConfig
     
     binding_spec = None
@@ -763,6 +987,9 @@ def _show_chart_to_component(stmt, state) -> ComponentSpec:
             cache_ttl=binding_config.cache_ttl,
         )
     
+    # Extract design tokens with inheritance
+    design_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
     return ComponentSpec(
         name=stmt.heading,
         type="chart",
@@ -779,14 +1006,20 @@ def _show_chart_to_component(stmt, state) -> ComponentSpec:
         },
         data_source=stmt.source,
         binding=binding_spec,
+        design_tokens=design_tokens,
     )
 
 
-def _show_form_to_component(stmt, state) -> ComponentSpec:
-    """Convert ShowForm AST node to ComponentSpec with IRForm specification"""
+def _show_form_to_component(
+    stmt,
+    state,
+    app_tokens: Optional[AppLevelDesignTokensIR] = None,
+    page_tokens: Optional[AppLevelDesignTokensIR] = None
+) -> ComponentSpec:
+    """Convert ShowForm AST node to ComponentSpec with IRForm specification and design tokens"""
     
-    # Build IRForm from AST
-    ir_form = _build_ir_form_from_ast(stmt, state)
+    # Build IRForm from AST with design token cascade
+    ir_form = _build_ir_form_from_ast(stmt, state, app_tokens, page_tokens)
     
     # Build binding spec for data loading if needed
     binding_spec = None
@@ -808,6 +1041,9 @@ def _show_form_to_component(stmt, state) -> ComponentSpec:
             enable_delete=False,
         )
     
+    # Extract design tokens with inheritance
+    design_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
     return ComponentSpec(
         name=stmt.title,
         type="form",
@@ -816,16 +1052,20 @@ def _show_form_to_component(stmt, state) -> ComponentSpec:
         },
         data_source=ir_form.initial_values_binding,
         binding=binding_spec,
+        design_tokens=design_tokens,
     )
 
 
-def _build_ir_form_from_ast(stmt, state) -> IRForm:
+def _build_ir_form_from_ast(stmt, state, app_tokens=None, page_tokens=None) -> IRForm:
     """Build IRForm specification from ShowForm AST node"""
     
-    # Convert fields
+    # Extract form-level design tokens
+    form_tokens = _extract_component_design_tokens(stmt, app_tokens, page_tokens)
+    
+    # Convert fields with design token cascade
     ir_fields = []
     for field in stmt.fields:
-        ir_field = _build_ir_form_field_from_ast(field)
+        ir_field = _build_ir_form_field_from_ast(field, app_tokens, page_tokens, form_tokens)
         ir_fields.append(ir_field)
     
     # Determine submit action details
@@ -875,8 +1115,8 @@ def _build_ir_form_from_ast(stmt, state) -> IRForm:
     )
 
 
-def _build_ir_form_field_from_ast(field) -> IRFormField:
-    """Build IRFormField from FormField AST node"""
+def _build_ir_form_field_from_ast(field, app_tokens=None, page_tokens=None, form_tokens=None) -> IRFormField:
+    """Build IRFormField from FormField AST node with design token inheritance"""
     
     # Build validation dict
     validation = {}
@@ -903,6 +1143,41 @@ def _build_ir_form_field_from_ast(field) -> IRFormField:
         component_config["max_file_size"] = field.max_file_size
     if field.upload_endpoint:
         component_config["upload_endpoint"] = field.upload_endpoint
+    
+    # Extract field-level design tokens with inheritance:
+    # Field tokens override form/component tokens, which override page tokens, which override app tokens
+    variant = getattr(field, 'variant', None)
+    tone = getattr(field, 'tone', None)
+    size = getattr(field, 'size', None)
+    density = getattr(field, 'density', None)
+    theme = getattr(field, 'theme', None)
+    color_scheme = getattr(field, 'color_scheme', None)
+    
+    # Convert enums to strings
+    if variant is not None:
+        variant = variant.value if hasattr(variant, 'value') else str(variant)
+    if tone is not None:
+        tone = tone.value if hasattr(tone, 'value') else str(tone)
+    if size is not None:
+        size = size.value if hasattr(size, 'value') else str(size)
+    if density is not None:
+        density = density.value if hasattr(density, 'value') else str(density)
+    if theme is not None:
+        theme = theme.value if hasattr(theme, 'value') else str(theme)
+    if color_scheme is not None:
+        color_scheme = color_scheme.value if hasattr(color_scheme, 'value') else str(color_scheme)
+    
+    # Create design tokens IR only if at least one token is present
+    field_design_tokens = None
+    if variant or tone or size or density or theme or color_scheme:
+        field_design_tokens = ComponentDesignTokensIR(
+            variant=variant,
+            tone=tone,
+            size=size,
+            density=density,
+            theme=theme,
+            color_scheme=color_scheme
+        )
     
     # Convert expressions to strings (only if they exist and are not boolean literals)
     # For boolean literals, convert to string representation
@@ -954,6 +1229,7 @@ def _build_ir_form_field_from_ast(field) -> IRFormField:
         disabled_expr=disabled_expr_str,
         visible_expr=visible_expr_str,
         component_config=component_config,
+        design_tokens=field_design_tokens,
         metadata={
             "field_type": field.field_type,  # Backward compatibility
         }

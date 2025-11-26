@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .base import Theme
+from .design_tokens import ThemeType, ColorSchemeType
 from .ai import (
     AIModel,
     Chain,
@@ -49,6 +50,8 @@ class Page:
         style: Page-level styling
         reactive: Whether page has reactive data binding
         refresh_policy: Auto-refresh configuration
+        theme: Page-level theme override (light/dark/system)
+        color_scheme: Page-level color scheme (blue/green/violet/etc.)
         
     Note: 'statements' is an alias for 'body' for backward compatibility.
     """
@@ -61,6 +64,10 @@ class Page:
     style: Optional[Dict[str, Any]] = None
     reactive: bool = False
     refresh_policy: Optional[RefreshPolicy] = None
+    
+    # Design tokens (page-level)
+    theme: Optional[ThemeType] = None
+    color_scheme: Optional[ColorSchemeType] = None
     
     # Backward compatibility alias
     @property
@@ -113,6 +120,11 @@ class App:
     name: str
     database: Optional[str] = None
     theme: Theme = field(default_factory=Theme)
+    
+    # App-level design tokens
+    app_theme: Optional[ThemeType] = None  # Theme mode (light/dark/system)
+    app_color_scheme: Optional[ColorSchemeType] = None  # Brand color (blue/green/violet/etc.)
+    
     variables: List[VariableAssignment] = field(default_factory=list)
     datasets: List[Dataset] = field(default_factory=list)
     frames: List[Frame] = field(default_factory=list)

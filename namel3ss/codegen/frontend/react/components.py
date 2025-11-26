@@ -164,6 +164,7 @@ def write_table_widget(components_dir: Path) -> None:
     content = textwrap.dedent(
         """
         import type { TableWidgetConfig } from "../lib/n3Client";
+        import { mapTableClasses } from "../lib/designTokens";
 
         interface TableWidgetProps {
           widget: TableWidgetConfig;
@@ -174,12 +175,20 @@ def write_table_widget(components_dir: Path) -> None:
           const rows = Array.isArray((data as any)?.rows) ? (data as any).rows as Record<string, unknown>[] : [];
           const columns = widget.columns && widget.columns.length ? widget.columns : rows.length ? Object.keys(rows[0]) : [];
 
+          // Apply design tokens to table
+          const tableClass = mapTableClasses(
+            widget.variant || 'elevated',
+            widget.tone || 'neutral',
+            widget.size || 'md',
+            widget.density || 'comfortable'
+          );
+
           return (
             <section className="n3-widget">
               <h3>{widget.title}</h3>
               {rows.length ? (
                 <div style={{ overflowX: "auto" }}>
-                  <table className="n3-table">
+                  <table className={tableClass}>
                     <thead>
                       <tr>
                         {columns.map((column) => (
@@ -216,6 +225,7 @@ def write_form_widget(components_dir: Path) -> None:
         import { FormEvent, useState, ChangeEvent, useEffect } from "react";
         import type { FormWidgetConfig } from "../lib/n3Client";
         import { useToast } from "./Toast";
+        import { mapFormClasses, mapButtonClasses, mapInputClasses } from "../lib/designTokens";
 
         interface FormWidgetProps {
           widget: FormWidgetConfig;
@@ -246,6 +256,11 @@ def write_form_widget(components_dir: Path) -> None:
           max_file_size?: number;
           upload_endpoint?: string;
           multiple?: boolean;
+          // Design tokens
+          variant?: string;
+          tone?: string;
+          size?: string;
+          density?: string;
         }
 
         export default function FormWidget({ widget, pageSlug }: FormWidgetProps) {
@@ -407,12 +422,12 @@ def write_form_widget(components_dir: Path) -> None:
               marginBottom: error ? '0.5rem' : undefined,
             };
 
-            const inputStyle: React.CSSProperties = {
-              padding: '0.55rem 0.75rem',
-              borderRadius: '0.5rem',
-              border: `1px solid ${error ? '#ef4444' : 'rgba(15,23,42,0.18)'}`,
-              width: '100%',
-            };
+            // Apply design tokens to input fields
+            const inputClass = mapInputClasses(
+              field.variant || widget.variant as any,
+              field.tone || widget.tone as any,
+              field.size || widget.size as any
+            );
 
             const labelStyle: React.CSSProperties = {
               fontWeight: 600,
@@ -440,7 +455,8 @@ def write_form_widget(components_dir: Path) -> None:
                     onBlur={() => handleBlur(field.name)}
                     placeholder={field.placeholder}
                     disabled={disabled}
-                    style={inputStyle}
+                    className={inputClass}
+                    style={{ borderColor: error ? '#ef4444' : undefined }}
                   />
                   {field.help_text && <span style={{ fontSize: '0.875rem', color: '#64748b' }}>{field.help_text}</span>}
                   {error && <span style={{ fontSize: '0.875rem', color: '#ef4444' }}>{error}</span>}
@@ -692,64 +708,69 @@ def write_form_widget(components_dir: Path) -> None:
               ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }
               : { display: 'grid', gap: '0.75rem' };
 
+          // Apply design tokens to form container
+          const formContainerClass = mapFormClasses(
+            widget.variant as any,
+            widget.tone as any,
+            widget.size as any
+          );
+
+          // Apply design tokens to submit button
+          const submitButtonClass = mapButtonClasses(
+            widget.variant as any || 'elevated',
+            widget.tone as any || 'primary',
+            widget.size as any
+          );
+
           return (
             <section className="n3-widget">
               <h3>{widget.title}</h3>
-              <form onSubmit={handleSubmit} style={{ maxWidth: widget.layout_mode === 'vertical' ? '420px' : undefined }}>
-                <div style={layoutStyle}>
-                  {(widget.fields || []).map((field: any) => renderField(field))}
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
-                  <button 
-                    type="submit" 
-                    disabled={submitting} 
-                    style={{ 
-                      padding: '0.65rem 1.25rem', 
-                      borderRadius: '0.65rem', 
-                      border: 'none', 
-                      background: 'var(--primary, #2563eb)', 
-                      color: '#fff', 
-                      fontWeight: 600,
-                      cursor: submitting ? 'not-allowed' : 'pointer',
-                      opacity: submitting ? 0.6 : 1,
-                    }}
-                  >
-                    {submitting ? (widget.loading_text || "Submitting...") : (widget.submit_button_text || "Submit")}
-                  </button>
-                  {widget.reset_button && (
+              <div className={formContainerClass}>
+                <form onSubmit={handleSubmit} style={{ maxWidth: widget.layout_mode === 'vertical' ? '420px' : undefined }}>
+                  <div style={layoutStyle}>
+                    {(widget.fields || []).map((field: any) => renderField(field))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
                     <button 
-                      type="button" 
-                      onClick={() => {
-                        const initial: Record<string, any> = {};
-                        (widget.fields || []).forEach((field: any) => {
-                          if (field.default !== undefined) {
-                            initial[field.name] = field.default;
-                          } else if (field.component === 'checkbox' || field.component === 'switch') {
-                            initial[field.name] = false;
-                          } else if (field.component === 'multiselect') {
-                            initial[field.name] = [];
-                          } else {
-                            initial[field.name] = '';
-                          }
-                        });
-                        setFormData(initial);
-                        setErrors({});
-                        setTouched({});
-                      }}
+                      type="submit" 
+                      disabled={submitting} 
+                      className={submitButtonClass}
                       style={{ 
-                        padding: '0.65rem 1.25rem', 
-                        borderRadius: '0.65rem', 
-                        border: '1px solid rgba(15,23,42,0.18)', 
-                        background: '#fff', 
-                        fontWeight: 600,
-                        cursor: 'pointer',
+                        cursor: submitting ? 'not-allowed' : 'pointer',
+                        opacity: submitting ? 0.6 : 1,
                       }}
                     >
-                      Reset
+                      {submitting ? (widget.loading_text || "Submitting...") : (widget.submit_button_text || "Submit")}
                     </button>
-                  )}
-                </div>
-              </form>
+                    {widget.reset_button && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const initial: Record<string, any> = {};
+                          (widget.fields || []).forEach((field: any) => {
+                            if (field.default !== undefined) {
+                              initial[field.name] = field.default;
+                            } else if (field.component === 'checkbox' || field.component === 'switch') {
+                              initial[field.name] = false;
+                            } else if (field.component === 'multiselect') {
+                              initial[field.name] = [];
+                            } else {
+                              initial[field.name] = '';
+                            }
+                          });
+                          setFormData(initial);
+                          setErrors({});
+                          setTouched({});
+                        }}
+                        className={mapButtonClasses('outlined', 'neutral', widget.size as any)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
             </section>
           );
         }

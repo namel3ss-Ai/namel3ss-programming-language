@@ -33,6 +33,7 @@ from .hooks import write_realtime_hook
 from .client import write_client_lib
 from .dataset_client import write_dataset_client_lib
 from .bound_components import generate_bound_components
+from .design_tokens_utils import write_design_tokens_util
 from .pages import (
     ReactPage,
     build_placeholder_page,
@@ -158,6 +159,7 @@ def generate_react_vite_site(
     # Generate hooks and client library
     write_realtime_hook(lib_dir)
     write_client_lib(lib_dir)
+    write_design_tokens_util(lib_dir)  # Design token utilities
     
     # Generate dataset client if backend_ir provided
     if backend_ir:

@@ -12,6 +12,8 @@ from namel3ss.ast import (
     Page,
     PageStatement, 
     RefreshPolicy,
+    validate_theme,
+    validate_color_scheme,
 )
 from namel3ss.lang import (
     PAGE_STATEMENT_KEYWORDS,
@@ -70,9 +72,11 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
         remainder = (match.group(2) or '').strip()
         route: Optional[str] = None
         reactive_flag = False
-
-        # Parse optional modifiers (at "route", reactive, static, kind reactive/static)
-        while remainder:
+        theme = None
+        color_scheme = None
+        
+        # Parse optional modifiers (at "route", reactive, static, kind reactive/static, design tokens)
+        while remainder.strip():
             lowered = remainder.lower()
             if lowered.startswith('at '):
                 route_match = re.match(r'at\s+"([^"]+)"(.*)', remainder, flags=re.IGNORECASE)
@@ -85,6 +89,33 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
                     )
                 route = route_match.group(1)
                 remainder = (route_match.group(2) or '').strip()
+                continue
+            if remainder.startswith('('):
+                # Parse design tokens from (theme=X, color_scheme=Y)
+                paren_end = remainder.find(')')
+                if paren_end == -1:
+                    raise self._error(
+                        'Unclosed parentheses in page design tokens',
+                        line_no,
+                        line,
+                        hint='Expected: page "Name" (theme=X, color_scheme=Y)'
+                    )
+                tokens_str = remainder[1:paren_end].strip()
+                remainder = remainder[paren_end+1:].strip()
+                
+                # Parse key=value pairs
+                for token_pair in tokens_str.split(','):
+                    token_pair = token_pair.strip()
+                    if '=' not in token_pair:
+                        continue
+                    key, value = token_pair.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    if key == 'theme':
+                        theme = self._parse_design_token(value, 'theme', line_no, line)
+                    elif key == 'color_scheme':
+                        color_scheme = self._parse_design_token(value, 'color_scheme', line_no, line)
                 continue
             if lowered.startswith('kind '):
                 remainder = remainder[5:].strip()
@@ -129,7 +160,7 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
         if route is None:
             route = self._default_page_route(name)
 
-        page = Page(name=name, route=route, reactive=reactive_flag)
+        page = Page(name=name, route=route, reactive=reactive_flag, theme=theme, color_scheme=color_scheme)
         
         # Parse page body with centralized indentation validation
         while self.pos < len(self.lines):
@@ -233,6 +264,43 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
                         "direction", "spacing", "width", "height", "variant", "align", "emphasis"
                     }},
                 )
+                continue
+            
+            # Parse design tokens (theme, color_scheme)
+            if lowered.startswith('theme:'):
+                theme_value = stripped.split(':', 1)[1].strip()
+                # Remove quotes if present
+                if (theme_value.startswith('"') and theme_value.endswith('"')) or \
+                   (theme_value.startswith("'") and theme_value.endswith("'")):
+                    theme_value = theme_value[1:-1]
+                try:
+                    page.theme = validate_theme(theme_value)
+                except ValueError as e:
+                    raise self._error(
+                        str(e),
+                        nxt_line_no,
+                        nxt,
+                        hint='Valid themes: light, dark, system'
+                    )
+                self._advance()
+                continue
+            
+            if lowered.startswith('color_scheme:') or lowered.startswith('color-scheme:'):
+                color_value = stripped.split(':', 1)[1].strip()
+                # Remove quotes if present
+                if (color_value.startswith('"') and color_value.endswith('"')) or \
+                   (color_value.startswith("'") and color_value.endswith("'")):
+                    color_value = color_value[1:-1]
+                try:
+                    page.color_scheme = validate_color_scheme(color_value)
+                except ValueError as e:
+                    raise self._error(
+                        str(e),
+                        nxt_line_no,
+                        nxt,
+                        hint='Valid color schemes: blue, green, violet, rose, orange, teal, indigo, slate'
+                    )
+                self._advance()
                 continue
             
             # Parse page statement

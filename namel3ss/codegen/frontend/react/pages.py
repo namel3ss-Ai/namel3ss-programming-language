@@ -155,6 +155,10 @@ def build_page_definition(
         else:
             primary_route = route
 
+    # Design tokens with inheritance from app level
+    page_theme = page.theme.value if page.theme else (app.app_theme.value if app.app_theme else None)
+    page_color_scheme = page.color_scheme.value if page.color_scheme else (app.app_color_scheme.value if app.app_color_scheme else None)
+    
     definition = {
         "slug": backend_slug,
         "route": route,
@@ -164,6 +168,9 @@ def build_page_definition(
         "realtime": bool(enable_realtime and page.reactive),
         "widgets": widgets,
         "preview": preview_map,
+        # Design tokens - theme and color scheme (with app-level inheritance)
+        "theme": page_theme,
+        "colorScheme": page_color_scheme,
     }
 
     return ReactPage(
@@ -255,6 +262,13 @@ def collect_widgets(
                         "name": statement.source,
                     },
                     "columns": statement.columns or preview.get("columns", []),
+                    # Design tokens
+                    "variant": statement.variant.value if statement.variant else None,
+                    "tone": statement.tone.value if statement.tone else None,
+                    "size": statement.size.value if statement.size else None,
+                    "density": statement.density.value if statement.density else None,
+                    "theme": statement.theme.value if statement.theme else None,
+                    "color_scheme": statement.color_scheme.value if statement.color_scheme else None,
                 }
             )
         elif isinstance(statement, ShowChart):
@@ -274,6 +288,10 @@ def collect_widgets(
                     },
                     "x": statement.x,
                     "y": statement.y,
+                    # Design tokens
+                    "variant": statement.variant.value if statement.variant else None,
+                    "tone": statement.tone.value if statement.tone else None,
+                    "size": statement.size.value if statement.size else None,
                 }
             )
         elif isinstance(statement, ShowForm):
@@ -337,6 +355,16 @@ def collect_widgets(
                     if field.multiple:
                         field_config["multiple"] = field.multiple
                 
+                # Field-level design tokens
+                if hasattr(field, 'variant') and field.variant:
+                    field_config["variant"] = field.variant.value if hasattr(field.variant, 'value') else str(field.variant)
+                if hasattr(field, 'tone') and field.tone:
+                    field_config["tone"] = field.tone.value if hasattr(field.tone, 'value') else str(field.tone)
+                if hasattr(field, 'size') and field.size:
+                    field_config["size"] = field.size.value if hasattr(field.size, 'value') else str(field.size)
+                if hasattr(field, 'density') and field.density:
+                    field_config["density"] = field.density.value if hasattr(field.density, 'value') else str(field.density)
+                
                 form_fields.append(field_config)
             
             # Get success message from on_submit_ops
@@ -357,6 +385,20 @@ def collect_widgets(
                 "success_message": statement.success_message or success_message,
                 "error_message": statement.error_message,
             }
+            
+            # Add design tokens if present
+            if hasattr(statement, 'variant') and statement.variant:
+                form_spec["variant"] = statement.variant.value if hasattr(statement.variant, 'value') else str(statement.variant)
+            if hasattr(statement, 'tone') and statement.tone:
+                form_spec["tone"] = statement.tone.value if hasattr(statement.tone, 'value') else str(statement.tone)
+            if hasattr(statement, 'size') and statement.size:
+                form_spec["size"] = statement.size.value if hasattr(statement.size, 'value') else str(statement.size)
+            if hasattr(statement, 'density') and statement.density:
+                form_spec["density"] = statement.density.value if hasattr(statement.density, 'value') else str(statement.density)
+            if hasattr(statement, 'theme') and statement.theme:
+                form_spec["theme"] = statement.theme.value if hasattr(statement.theme, 'value') else str(statement.theme)
+            if hasattr(statement, 'color_scheme') and statement.color_scheme:
+                form_spec["color_scheme"] = statement.color_scheme.value if hasattr(statement.color_scheme, 'value') else str(statement.color_scheme)
             
             preview_map[widget_id] = {
                 "fields": [
@@ -384,6 +426,10 @@ def collect_widgets(
                     "kind": statement.source_type,
                     "name": statement.source,
                 },
+                # Design tokens
+                "variant": statement.variant.value if statement.variant else None,
+                "tone": statement.tone.value if statement.tone else None,
+                "size": statement.size.value if statement.size else None,
             }
             if statement.empty_state:
                 widget_config["emptyState"] = serialize_empty_state(statement.empty_state)
@@ -411,6 +457,11 @@ def collect_widgets(
                     "kind": statement.source_type,
                     "name": statement.source,
                 },
+                # Design tokens
+                "variant": statement.variant.value if statement.variant else None,
+                "tone": statement.tone.value if statement.tone else None,
+                "size": statement.size.value if statement.size else None,
+                "density": statement.density.value if statement.density else None,
             }
             if statement.list_type:
                 widget_config["listType"] = statement.list_type
@@ -1368,6 +1419,7 @@ def write_page_component(pages_dir: Path, build: ReactPage) -> None:
         import { NAV_LINKS } from "../lib/navigation";
         import { PageDefinition, resolveWidgetData, usePageData } from "../lib/n3Client";
         import { useRealtimePage } from "../lib/realtime";
+        import { getThemeClassName, useSystemTheme, getColorSchemeStyles, ThemeType, ColorSchemeType } from "../lib/designTokens";
 
         const PAGE_DEFINITION: PageDefinition = __DEFINITION__ as const;
 
@@ -1542,6 +1594,18 @@ def write_page_component(pages_dir: Path, build: ReactPage) -> None:
           const { data, loading, error } = usePageData(PAGE_DEFINITION);
           useRealtimePage(PAGE_DEFINITION);
 
+          // Extract theme and color scheme from page definition
+          const theme = (PAGE_DEFINITION as any).theme as ThemeType | undefined;
+          const colorScheme = (PAGE_DEFINITION as any).colorScheme as ColorSchemeType | undefined;
+          
+          // Get theme class name (with system theme support)
+          const themeClass = theme === 'system' 
+            ? useSystemTheme(theme)
+            : getThemeClassName(theme);
+          
+          // Get color scheme CSS variables
+          const colorSchemeStyles = getColorSchemeStyles(colorScheme);
+
           return (
             <Layout title={PAGE_DEFINITION.title} description={PAGE_DEFINITION.description} navLinks={NAV_LINKS}>
               {loading ? (
@@ -1549,7 +1613,10 @@ def write_page_component(pages_dir: Path, build: ReactPage) -> None:
               ) : error ? (
                 <p role="alert">Failed to load page: {error}</p>
               ) : (
-                <div style={{ display: "grid", gap: "1.25rem" }}>
+                <div 
+                  className={themeClass} 
+                  style={{ display: "grid", gap: "1.25rem", ...colorSchemeStyles }}
+                >
                   {PAGE_DEFINITION.widgets.map((widget) => renderWidget(widget, data))}
                 </div>
               )}

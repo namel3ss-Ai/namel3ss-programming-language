@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Literal, Union, TYPE_CHECKING, Set
 
 from .base import Expression, LogStatement
+from .design_tokens import VariantType, ToneType, DensityType, SizeType
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from .models import InferenceTarget
@@ -96,6 +97,14 @@ class ShowTable(Statement):
     
     # Data binding configuration
     binding: Optional[DataBindingConfig] = None
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    density: Optional[DensityType] = None
+    size: Optional[SizeType] = None
+    theme: Optional[ThemeType] = None
+    color_scheme: Optional[ColorSchemeType] = None
 
 
 @dataclass
@@ -158,6 +167,11 @@ class FormField:
     
     # Backward compatibility
     field_type: Optional[str] = None  # Deprecated: use 'component' instead
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    size: Optional[SizeType] = None
 
 
 @dataclass
@@ -244,6 +258,14 @@ class ShowForm(Statement):
     layout: Optional[LayoutSpec] = None  # Deprecated: use layout_mode
     effects: Set[str] = field(default_factory=set)
     binding: Optional[DataBindingConfig] = None
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    density: Optional[DensityType] = None
+    size: Optional[SizeType] = None
+    theme: Optional[ThemeType] = None
+    color_scheme: Optional[ColorSchemeType] = None
 
 
 @dataclass
@@ -334,10 +356,15 @@ class BadgeConfig:
     """Badge configuration for displaying metadata on cards."""
     field: Optional[str] = None  # Field name to display
     text: Optional[str] = None  # Static text (overrides field)
-    style: Optional[str] = None  # CSS class name
+    style: Optional[str] = None  # CSS class name - DEPRECATED, use design tokens
     transform: Optional[Union[str, Dict[str, Any]]] = None  # Transform to apply (e.g., "humanize", {"format": "..."})
     icon: Optional[str] = None
     condition: Optional[str] = None  # Expression to evaluate for conditional display
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    size: Optional[SizeType] = None
 
 
 @dataclass
@@ -384,11 +411,16 @@ class ConditionalAction:
     """Action button with optional conditional display."""
     label: str
     icon: Optional[str] = None
-    style: Optional[str] = None  # "primary" | "secondary" | "danger"
+    style: Optional[str] = None  # "primary" | "secondary" | "danger" - DEPRECATED, use tone
     action: Optional[str] = None  # Action name to invoke
     link: Optional[str] = None  # Navigation link
     params: Optional[str] = None  # Parameters to pass (can include templates)
     condition: Optional[str] = None  # Expression for conditional display
+    
+    # Design tokens (for button styling)
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    size: Optional[SizeType] = None
 
 
 @dataclass
@@ -441,6 +473,9 @@ class ShowCard(Statement):
     
     Example:
         show card "Appointments" from dataset appointments:
+            variant: elevated
+            tone: primary
+            size: md
             empty_state:
                 icon: calendar
                 title: "No appointments"
@@ -474,6 +509,12 @@ class ShowCard(Statement):
     
     # Data binding
     binding: Optional[DataBindingConfig] = None
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    density: Optional[DensityType] = None
+    size: Optional[SizeType] = None
 
 
 @dataclass
@@ -498,6 +539,26 @@ class ShowList(Statement):
     filters: List[Dict[str, Any]] = field(default_factory=list)
     
     # Pagination
+    page_size: int = 50
+    
+    # Grouping and sorting
+    group_by: Optional[str] = None
+    sort_by: Optional[str] = None
+    limit: Optional[int] = None
+    
+    # Layout and styling
+    layout: Optional[LayoutMeta] = None
+    style: Optional[Dict[str, Any]] = None
+    columns: Optional[int] = None
+    
+    # Data binding
+    binding: Optional[DataBindingConfig] = None
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    density: Optional[DensityType] = None
+    size: Optional[SizeType] = None
     page_size: int = 50
     enable_pagination: bool = True
     
@@ -1233,8 +1294,13 @@ class ModalAction:
     """Action button in a modal dialog."""
     label: str
     action: Optional[str] = None  # Action name to trigger
-    variant: Optional[Literal["default", "primary", "destructive", "ghost", "link"]] = "default"
+    variant: Optional[Literal["default", "primary", "destructive", "ghost", "link"]] = "default"  # DEPRECATED, use tone
     close: bool = True  # Whether clicking closes modal
+    
+    # Design tokens (for button styling)
+    button_variant: Optional[VariantType] = None
+    button_tone: Optional[ToneType] = None
+    button_size: Optional[SizeType] = None
 
 
 @dataclass
@@ -1253,9 +1319,14 @@ class Modal(Statement):
     description: Optional[str] = None
     content: List[Statement] = field(default_factory=list)  # Content inside modal
     actions: List[ModalAction] = field(default_factory=list)  # Footer buttons
-    size: Literal["sm", "md", "lg", "xl", "full"] = "md"
+    size: Literal["sm", "md", "lg", "xl", "full"] = "md"  # DEPRECATED, use design token size
     dismissible: bool = True  # Can close with ESC or backdrop click
     trigger: Optional[str] = None  # Action name that opens modal
+    
+    # Design tokens
+    variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None
+    modal_size: Optional[SizeType] = None  # XS/SM/MD/LG/XL
 
 
 @dataclass
@@ -1272,12 +1343,17 @@ class Toast(Statement):
     id: str  # Unique identifier
     title: str
     description: Optional[str] = None
-    variant: Literal["default", "success", "error", "warning", "info"] = "default"
+    variant: Literal["default", "success", "error", "warning", "info"] = "default"  # DEPRECATED, use tone
     duration: int = 3000  # Auto-dismiss after ms (0 = manual dismiss only)
     action_label: Optional[str] = None  # Optional action button
     action: Optional[str] = None  # Action to trigger on button click
     position: Literal["top", "top-right", "top-left", "bottom", "bottom-right", "bottom-left"] = "top-right"
     trigger: Optional[str] = None  # Action name that shows toast
+    
+    # Design tokens
+    toast_variant: Optional[VariantType] = None
+    tone: Optional[ToneType] = None  # Replaces variant (success/error/warning/info → success/danger/warning/primary)
+    size: Optional[SizeType] = None
 
 
 # =============================================================================

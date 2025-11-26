@@ -4,6 +4,12 @@ import re
 import shlex
 from typing import Any, Dict, List, Optional, Union
 
+from namel3ss.ast.design_tokens import (
+    validate_variant,
+    validate_tone,
+    validate_density,
+    validate_size,
+)
 from namel3ss.ast import (
     AccordionItem,
     AccordionLayout,
@@ -170,24 +176,72 @@ class ComponentParserMixin(ActionParserMixin):
         """
         Parse a table display component.
         
-        Syntax: show table "Title" from table|dataset|frame SOURCE
+        Syntax: 
+          show table "Title" from table|dataset|frame|model SOURCE
+          show table "Title" from table|dataset|frame|model SOURCE (token=value, ...)
+          show table from model "SOURCE" (token=value, ...)  # title auto-generated from model
         
         Supports columns, filtering, sorting, styling, and layout configuration.
         """
+        # Try to match with title first
         match = re.match(
-            r'show\s+table\s+"([^\"]+)"\s+from\s+(table|dataset|frame)\s+([^\s]+)\s*$',
+            r'show\s+table\s+"([^\"]+)"\s+from\s+(table|dataset|frame|model)\s+"?([^\s\("]+)"?\s*(?:\(([^)]+)\))?\s*$',
             line.strip(),
         )
+        
+        # Try without title (model-based syntax)
         if not match:
-            raise self._error(
-                "Expected: show table \"Title\" from table|dataset|frame SOURCE",
-                self.pos,
-                line,
-                hint='Table components require a title and data source, e.g., show table "Sales" from dataset sales'
+            match_notitle = re.match(
+                r'show\s+table\s+from\s+model\s+"([^\"]+)"\s*(?:\(([^)]+)\))?\s*$',
+                line.strip(),
             )
-        title = match.group(1)
-        source_type = match.group(2)
-        source = match.group(3)
+            if match_notitle:
+                source = match_notitle.group(1)
+                title = source.capitalize() + "s"  # Auto-generate title (e.g., "User" -> "Users")
+                source_type = "model"
+                inline_tokens_str = match_notitle.group(2) if match_notitle.group(2) else None
+            else:
+                raise self._error(
+                    "Expected: show table \"Title\" from table|dataset|frame|model SOURCE or show table from model \"SOURCE\"",
+                    self.pos,
+                    line,
+                    hint='Table components require a title and data source, e.g., show table "Sales" from dataset sales'
+                )
+        else:
+            title = match.group(1)
+            source_type = match.group(2)
+            source = match.group(3)
+            inline_tokens_str = match.group(4) if match.group(4) else None
+        
+        # Parse inline tokens if present
+        variant = None
+        tone = None
+        density = None
+        size = None
+        theme = None
+        color_scheme = None
+        
+        if inline_tokens_str:
+            # Parse comma-separated token=value pairs
+            for token_pair in inline_tokens_str.split(','):
+                token_pair = token_pair.strip()
+                if '=' in token_pair:
+                    key, value = token_pair.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key == 'variant':
+                        variant = self._parse_design_token(value, 'variant', self.pos + 1, line)
+                    elif key == 'tone':
+                        tone = self._parse_design_token(value, 'tone', self.pos + 1, line)
+                    elif key == 'density':
+                        density = self._parse_design_token(value, 'density', self.pos + 1, line)
+                    elif key == 'size':
+                        size = self._parse_design_token(value, 'size', self.pos + 1, line)
+                    elif key == 'theme':
+                        theme = self._parse_design_token(value, 'theme', self.pos + 1, line)
+                    elif key == 'color_scheme':
+                        color_scheme = self._parse_design_token(value, 'color_scheme', self.pos + 1, line)
+        
         columns: Optional[List[str]] = None
         filter_by: Optional[str] = None
         sort_by: Optional[str] = None
@@ -195,6 +249,8 @@ class ComponentParserMixin(ActionParserMixin):
         style_block: Optional[Dict[str, Any]] = None
         layout_meta: Optional[LayoutMeta] = None
         insight_name: Optional[str] = None
+        
+        # Continue parsing block-style tokens (can override inline tokens)
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -235,6 +291,22 @@ class ComponentParserMixin(ActionParserMixin):
                 else:
                     insight_name = None
                 self._advance()
+            elif stripped.startswith('variant:'):
+                value = stripped[len('variant:'):].strip()
+                variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('tone:'):
+                value = stripped[len('tone:'):].strip()
+                tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('density:'):
+                value = stripped[len('density:'):].strip()
+                density = self._parse_design_token(value, "density", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('size:'):
+                value = stripped[len('size:'):].strip()
+                size = self._parse_design_token(value, "size", self.pos + 1, nxt)
+                self._advance()
             else:
                 match_style = re.match(r'([\w\s]+):\s*(.+)', stripped)
                 if not match_style:
@@ -242,7 +314,7 @@ class ComponentParserMixin(ActionParserMixin):
                         "Expected table property ('columns:', 'filter by:', 'sort by:' or style)",
                         self.pos + 1,
                         nxt,
-                        hint='Valid table properties: columns, filter by, sort by, style, layout, insight'
+                        hint='Valid table properties: columns, filter by, sort by, style, layout, insight, variant, tone, density, size'
                     )
                 key = match_style.group(1).strip()
                 value = self._coerce_scalar(match_style.group(2).strip())
@@ -264,6 +336,12 @@ class ComponentParserMixin(ActionParserMixin):
             style=style_payload,
             layout=layout_meta,
             insight=insight_name,
+            variant=variant,
+            tone=tone,
+            density=density,
+            size=size,
+            theme=theme,
+            color_scheme=color_scheme,
         )
 
     def _parse_show_chart(self, line: str, base_indent: int) -> ShowChart:
@@ -431,7 +509,7 @@ class ComponentParserMixin(ActionParserMixin):
         Parse a production-grade form component.
         
         Syntax: 
-            show form "Title":
+            show form "Title" [(variant=X, tone=Y, size=Z)]:
                 fields: [...]
                 layout: vertical|horizontal|inline
                 submit_action: action_name
@@ -439,15 +517,50 @@ class ComponentParserMixin(ActionParserMixin):
                 
         Supports semantic field components with validation, bindings, and conditional rendering.
         """
-        match = re.match(r'show\s+form\s+"([^\"]+)"\s*:?', line.strip())
+        # Updated regex to handle optional design tokens in parentheses
+        match = re.match(r'show\s+form\s+"([^\"]+)"\s*(\([^)]*\))?\s*:?', line.strip())
         if not match:
             raise self._error(
-                "Expected: show form \"Title\":",
+                "Expected: show form \"Title\" [(design tokens)]:",
                 self.pos,
                 line,
-                hint='Form components require a title in quotes, e.g., show form "User Registration":'
+                hint='Form components require a title in quotes, e.g., show form "User Registration" (variant=outlined):'
             )
         title = match.group(1)
+        tokens_str = match.group(2)  # e.g., "(variant=outlined, tone=success)"
+        
+        # Parse design tokens from header if present
+        variant = None
+        tone = None
+        density = None
+        size = None
+        theme = None
+        color_scheme = None
+        
+        if tokens_str:
+            # Remove parentheses and parse key=value pairs
+            tokens_str = tokens_str.strip('()').strip()
+            for token_pair in tokens_str.split(','):
+                token_pair = token_pair.strip()
+                if '=' not in token_pair:
+                    continue
+                key, value = token_pair.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if key == 'variant':
+                    variant = self._parse_design_token(value, 'variant', self.pos + 1, line)
+                elif key == 'tone':
+                    tone = self._parse_design_token(value, 'tone', self.pos + 1, line)
+                elif key == 'density':
+                    density = self._parse_design_token(value, 'density', self.pos + 1, line)
+                elif key == 'size':
+                    size = self._parse_design_token(value, 'size', self.pos + 1, line)
+                elif key == 'theme':
+                    theme = self._parse_design_token(value, 'theme', self.pos + 1, line)
+                elif key == 'color_scheme':
+                    color_scheme = self._parse_design_token(value, 'color_scheme', self.pos + 1, line)
+        
         fields: List[FormField] = []
         on_submit_ops: List[ActionOperationType] = []
         styles: Dict[str, str] = {}
@@ -550,6 +663,24 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('error_message:'):
                 error_message = stripped[len('error_message:'):].strip().strip('"\'')
                 self._advance()
+            
+            # Parse design tokens
+            elif stripped.startswith('variant:'):
+                value = stripped[len('variant:'):].strip()
+                variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('tone:'):
+                value = stripped[len('tone:'):].strip()
+                tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('density:'):
+                value = stripped[len('density:'):].strip()
+                density = self._parse_design_token(value, "density", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('size:'):
+                value = stripped[len('size:'):].strip()
+                size = self._parse_design_token(value, "size", self.pos + 1, nxt)
+                self._advance()
                 
             # Parse legacy on submit operations
             elif stripped.startswith('on submit:'):
@@ -595,13 +726,19 @@ class ComponentParserMixin(ActionParserMixin):
             error_message=error_message,
             styles=styles,
             layout=layout_spec,
+            variant=variant,
+            tone=tone,
+            density=density,
+            size=size,
+            theme=theme,
+            color_scheme=color_scheme,
         )
     
     def _parse_form_fields_block(self, parent_indent: int) -> List[FormField]:
         """
         Parse a fields block with declarative field definitions.
         
-        Syntax:
+        Syntax 1 (List style):
             fields:
               - name: email
                 component: text_input
@@ -611,6 +748,12 @@ class ComponentParserMixin(ActionParserMixin):
               - name: role
                 component: select
                 options_binding: datasets.roles
+                
+        Syntax 2 (Inline style with tokens):
+            fields:
+              username: text
+              email: text (size=md, tone=primary)
+              password: password (variant=outlined)
         """
         fields = []
         
@@ -627,15 +770,74 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= parent_indent:
                 break
                 
-            # Check for field start (either "- name:" or "{ name:")
+            # Check for list style field start (either "- name:" or "{ name:")
             if stripped.startswith('-') or stripped.startswith('{'):
                 field = self._parse_form_field_definition(indent)
                 if field:
                     fields.append(field)
+            # Check for inline style: "fieldname: type" or "fieldname: type (tokens)"
+            elif ':' in stripped and not stripped.startswith('-'):
+                field = self._parse_inline_field_with_tokens(stripped, indent)
+                if field:
+                    fields.append(field)
+                self._advance()
             else:
                 break
                 
         return fields
+    
+    def _parse_inline_field_with_tokens(self, line: str, indent: int) -> Optional[FormField]:
+        """
+        Parse inline field syntax: fieldname: type or fieldname: type (token=value, ...)
+        
+        Examples:
+            username: text
+            email: text (size=md, tone=primary)
+            password: password (variant=outlined, size=lg)
+        """
+        import re
+        
+        # Match: fieldname: type [(token=value, ...)]
+        match = re.match(r'([a-z_][a-z0-9_]*):\s*([a-z_][a-z0-9_]*)(?:\s*\(([^)]+)\))?', line.strip())
+        if not match:
+            return None
+        
+        field_name = match.group(1)
+        field_type = match.group(2)
+        tokens_str = match.group(3) if match.group(3) else None
+        
+        # Parse design tokens if present
+        variant = None
+        tone = None
+        size = None
+        density = None
+        
+        if tokens_str:
+            for token_pair in tokens_str.split(','):
+                token_pair = token_pair.strip()
+                if '=' not in token_pair:
+                    continue
+                key, value = token_pair.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if key == 'variant':
+                    variant = self._parse_design_token(value, 'variant', self.pos + 1, line)
+                elif key == 'tone':
+                    tone = self._parse_design_token(value, 'tone', self.pos + 1, line)
+                elif key == 'size':
+                    size = self._parse_design_token(value, 'size', self.pos + 1, line)
+                elif key == 'density':
+                    density = self._parse_design_token(value, 'density', self.pos + 1, line)
+        
+        return FormField(
+            name=field_name,
+            component=field_type,
+            field_type=field_type,
+            variant=variant,
+            tone=tone,
+            size=size,
+        )
     
     def _parse_form_field_definition(self, field_indent: int) -> Optional[FormField]:
         """Parse a single field definition from declarative syntax."""
@@ -782,6 +984,18 @@ class ComponentParserMixin(ActionParserMixin):
         """Build FormField instance from parsed dictionary."""
         if 'name' not in field_dict:
             raise ValueError("Field must have a 'name' property")
+        
+        # Parse design tokens if present
+        variant = None
+        tone = None
+        size = None
+        
+        if 'variant' in field_dict:
+            variant = self._parse_design_token(str(field_dict['variant']), "variant", self.pos, "field definition")
+        if 'tone' in field_dict:
+            tone = self._parse_design_token(str(field_dict['tone']), "tone", self.pos, "field definition")
+        if 'size' in field_dict:
+            size = self._parse_design_token(str(field_dict['size']), "size", self.pos, "field definition")
             
         return FormField(
             name=field_dict.get('name'),
@@ -807,6 +1021,9 @@ class ComponentParserMixin(ActionParserMixin):
             max_file_size=field_dict.get('max_file_size'),
             upload_endpoint=field_dict.get('upload_endpoint'),
             field_type=field_dict.get('field_type'),  # Backward compatibility
+            variant=variant,
+            tone=tone,
+            size=size,
         )
 
     def _parse_show_card(self, line: str, base_indent: int) -> ShowCard:
@@ -840,6 +1057,10 @@ class ComponentParserMixin(ActionParserMixin):
         sort_by: Optional[str] = None
         layout: Optional[str] = None
         binding: Optional[str] = None
+        variant = None
+        tone = None
+        density = None
+        size = None
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -876,12 +1097,28 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('binding:'):
                 binding = stripped[len('binding:'):].strip()
                 self._advance()
+            elif stripped.startswith('variant:'):
+                value = stripped[len('variant:'):].strip()
+                variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('tone:'):
+                value = stripped[len('tone:'):].strip()
+                tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('density:'):
+                value = stripped[len('density:'):].strip()
+                density = self._parse_design_token(value, "density", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('size:'):
+                value = stripped[len('size:'):].strip()
+                size = self._parse_design_token(value, "size", self.pos + 1, nxt)
+                self._advance()
             else:
                 raise self._error(
-                    "Expected card property (empty_state, item, group_by, filter_by, sort_by, layout, or binding)",
+                    "Expected card property (empty_state, item, group_by, filter_by, sort_by, layout, binding, variant, tone, density, or size)",
                     self.pos + 1,
                     nxt,
-                    hint='Valid card properties: empty_state, item, group_by, filter_by, sort_by, layout, binding'
+                    hint='Valid card properties: empty_state, item, group_by, filter_by, sort_by, layout, binding, variant, tone, density, size'
                 )
         
         return ShowCard(
@@ -895,6 +1132,10 @@ class ComponentParserMixin(ActionParserMixin):
             sort_by=sort_by,
             layout=layout,
             binding=binding,
+            variant=variant,
+            tone=tone,
+            density=density,
+            size=size,
         )
 
     def _parse_show_list(self, line: str, base_indent: int) -> ShowList:
@@ -929,6 +1170,10 @@ class ComponentParserMixin(ActionParserMixin):
         group_by: Optional[str] = None
         filter_by: Optional[str] = None
         sort_by: Optional[str] = None
+        variant = None
+        tone = None
+        density = None
+        size = None
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -976,12 +1221,28 @@ class ComponentParserMixin(ActionParserMixin):
                 key_len = len('sort_by:') if stripped.startswith('sort_by:') else len('sort by:')
                 sort_by = stripped[key_len:].strip()
                 self._advance()
+            elif stripped.startswith('variant:'):
+                value = stripped[len('variant:'):].strip()
+                variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('tone:'):
+                value = stripped[len('tone:'):].strip()
+                tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('density:'):
+                value = stripped[len('density:'):].strip()
+                density = self._parse_design_token(value, "density", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('size:'):
+                value = stripped[len('size:'):].strip()
+                size = self._parse_design_token(value, "size", self.pos + 1, nxt)
+                self._advance()
             else:
                 raise self._error(
-                    "Expected list property (list_type, empty_state, item, enable_search, columns, group_by, filter_by, or sort_by)",
+                    "Expected list property (list_type, empty_state, item, enable_search, columns, group_by, filter_by, sort_by, variant, tone, density, or size)",
                     self.pos + 1,
                     nxt,
-                    hint='Valid list properties: list_type, empty_state, item, enable_search, columns, group_by, filter_by, sort_by'
+                    hint='Valid list properties: list_type, empty_state, item, enable_search, columns, group_by, filter_by, sort_by, variant, tone, density, size'
                 )
         
         return ShowList(
@@ -997,6 +1258,10 @@ class ComponentParserMixin(ActionParserMixin):
             group_by=group_by,
             filter_by=filter_by,
             sort_by=sort_by,
+            variant=variant,
+            tone=tone,
+            density=density,
+            size=size,
         )
 
     # =============================================================================
@@ -2625,6 +2890,9 @@ class ComponentParserMixin(ActionParserMixin):
         transform: Optional[Any] = None
         icon: Optional[str] = None
         condition: Optional[str] = None
+        variant = None
+        tone = None
+        size = None
         
         # First line starts with '-'
         line = self._peek()
@@ -2673,6 +2941,12 @@ class ComponentParserMixin(ActionParserMixin):
                     icon = value
                 elif key == 'condition':
                     condition = value
+                elif key == 'variant':
+                    variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                elif key == 'tone':
+                    tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                elif key == 'size':
+                    size = self._parse_design_token(value, "size", self.pos + 1, nxt)
                 self._advance()
             else:
                 break
@@ -2684,6 +2958,9 @@ class ComponentParserMixin(ActionParserMixin):
             transform=transform,
             icon=icon,
             condition=condition,
+            variant=variant,
+            tone=tone,
+            size=size,
         )
 
     def _parse_card_sections(self, base_indent: int) -> List[CardSection]:
@@ -2977,6 +3254,9 @@ class ComponentParserMixin(ActionParserMixin):
         link: Optional[str] = None
         params: Optional[str] = None
         condition: Optional[str] = None
+        variant = None
+        tone = None
+        size = None
         
         # First line starts with '-'
         line = self._peek()
@@ -3022,6 +3302,18 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('condition:'):
                 condition = stripped[len('condition:'):].strip().strip('"')
                 self._advance()
+            elif stripped.startswith('variant:'):
+                value = stripped[len('variant:'):].strip()
+                variant = self._parse_design_token(value, "variant", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('tone:'):
+                value = stripped[len('tone:'):].strip()
+                tone = self._parse_design_token(value, "tone", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('size:'):
+                value = stripped[len('size:'):].strip()
+                size = self._parse_design_token(value, "size", self.pos + 1, nxt)
+                self._advance()
             else:
                 break
         
@@ -3033,6 +3325,9 @@ class ComponentParserMixin(ActionParserMixin):
             link=link,
             params=params,
             condition=condition,
+            variant=variant,
+            tone=tone,
+            size=size,
         )
 
     def _parse_card_footer(self, base_indent: int) -> CardFooter:
@@ -4417,6 +4712,9 @@ class ComponentParserMixin(ActionParserMixin):
         trigger = None
         content: List[Statement] = []
         actions: List[ModalAction] = []
+        variant = None
+        tone = None
+        modal_size = None
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -4448,6 +4746,15 @@ class ComponentParserMixin(ActionParserMixin):
                 )
             elif stripped.startswith('trigger:'):
                 trigger = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('variant:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                variant = self._parse_design_token(value, "variant", self.pos, nxt)
+            elif stripped.startswith('tone:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                tone = self._parse_design_token(value, "tone", self.pos, nxt)
+            elif stripped.startswith('modal_size:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                modal_size = self._parse_design_token(value, "size", self.pos, nxt)
             elif stripped.startswith('content:'):
                 # Parse nested statements using helper
                 content = self._parse_children_list(indent)
@@ -4490,7 +4797,10 @@ class ComponentParserMixin(ActionParserMixin):
             actions=actions,
             size=size,
             dismissible=dismissible,
-            trigger=trigger
+            trigger=trigger,
+            variant=variant,
+            tone=tone,
+            modal_size=modal_size,
         )
     
     def _parse_modal_action(self, line: str) -> ModalAction:
@@ -4579,6 +4889,9 @@ class ComponentParserMixin(ActionParserMixin):
         action_name = None
         position = "top-right"
         trigger = None
+        toast_variant = None
+        tone = None
+        size = None
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -4611,12 +4924,21 @@ class ComponentParserMixin(ActionParserMixin):
                 position = stripped.split(':', 1)[1].strip().strip('"')
             elif stripped.startswith('trigger:'):
                 trigger = stripped.split(':', 1)[1].strip().strip('"')
+            elif stripped.startswith('toast_variant:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                toast_variant = self._parse_design_token(value, "variant", self.pos, nxt)
+            elif stripped.startswith('tone:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                tone = self._parse_design_token(value, "tone", self.pos, nxt)
+            elif stripped.startswith('size:'):
+                value = stripped.split(':', 1)[1].strip().strip('"')
+                size = self._parse_design_token(value, "size", self.pos, nxt)
             else:
                 raise self._error(
                     f"Unknown toast property: {stripped.split(':')[0]}",
                     self.pos - 1,
                     stripped,
-                    hint='Valid properties: title, description, variant, duration, action_label, action, position, trigger'
+                    hint='Valid properties: title, description, variant, duration, action_label, action, position, trigger, toast_variant, tone, size'
                 )
         
         return Toast(
@@ -4628,7 +4950,10 @@ class ComponentParserMixin(ActionParserMixin):
             action_label=action_label,
             action=action_name,
             position=position,
-            trigger=trigger
+            trigger=trigger,
+            toast_variant=toast_variant,
+            tone=tone,
+            size=size,
         )
 
     # =============================================================================

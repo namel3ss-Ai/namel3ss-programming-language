@@ -20,6 +20,26 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
+# Import design tokens for IR-level type safety
+try:
+    from namel3ss.ast.design_tokens import (
+        VariantType,
+        ToneType,
+        DensityType,
+        SizeType,
+        ThemeType,
+        ColorSchemeType,
+    )
+    HAS_DESIGN_TOKENS = True
+except ImportError:
+    HAS_DESIGN_TOKENS = False
+    VariantType = None
+    ToneType = None
+    DensityType = None
+    SizeType = None
+    ThemeType = None
+    ColorSchemeType = None
+
 # Import security and parallel execution types for IR metadata
 try:
     from namel3ss.ast.security import PermissionLevel, SecurityPolicy
@@ -65,6 +85,37 @@ class CacheStrategy(str, Enum):
     TTL = "ttl"
     LRU = "lru"
     FIFO = "fifo"
+
+
+# =============================================================================
+# DESIGN TOKENS (IR Level)
+# =============================================================================
+
+@dataclass
+class ComponentDesignTokensIR:
+    """
+    Design tokens for UI components at the IR level.
+    
+    These are runtime-agnostic and will be mapped to concrete design system
+    implementations (Tailwind, Material-UI, etc.) during codegen.
+    """
+    variant: Optional[str] = None  # "elevated" | "outlined" | "ghost" | "subtle"
+    tone: Optional[str] = None  # "neutral" | "primary" | "success" | "warning" | "danger"
+    density: Optional[str] = None  # "comfortable" | "compact"
+    size: Optional[str] = None  # "xs" | "sm" | "md" | "lg" | "xl"
+    theme: Optional[str] = None  # "light" | "dark" | "system" (component-level override)
+    color_scheme: Optional[str] = None  # "blue" | "green" | "violet" | etc. (component-level override)
+
+
+@dataclass
+class AppLevelDesignTokensIR:
+    """
+    App-level design tokens at the IR level.
+    
+    These affect the entire application and cascade to child components.
+    """
+    theme: Optional[str] = None  # "light" | "dark" | "system"
+    color_scheme: Optional[str] = None  # "blue" | "green" | "violet" | "rose" | etc.
 
 
 # =============================================================================
@@ -383,6 +434,9 @@ class BackendIR:
     app_name: str
     app_version: str = "1.0.0"
     
+    # Frontend IR (pages, routes, UI components)
+    frontend: Optional['FrontendIR'] = None
+    
     # API specifications
     endpoints: List[EndpointIR] = field(default_factory=list)
     
@@ -539,6 +593,9 @@ class IRFormField:
     
     # Component-specific configuration
     component_config: Dict[str, Any] = field(default_factory=dict)  # multiple, accept, max_file_size, etc.
+    
+    # Field-level design tokens
+    design_tokens: Optional[ComponentDesignTokensIR] = None
     
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -818,6 +875,9 @@ class ComponentSpec:
     # Data binding configuration
     binding: Optional[DataBindingSpec] = None
     
+    # Design tokens
+    design_tokens: Optional[ComponentDesignTokensIR] = None
+    
     children: List[ComponentSpec] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -869,6 +929,9 @@ class IRDataTable:
     
     # Toolbar configuration
     toolbar: Optional[IRToolbarConfig] = None
+    
+    # Design tokens
+    design_tokens: Optional[ComponentDesignTokensIR] = None
     
     # Filtering and sorting
     filter_by: Optional[str] = None  # SQL WHERE clause or filter expression
@@ -1701,6 +1764,9 @@ class PageSpec:
     components: List[ComponentSpec] = field(default_factory=list)
     layout: str = "default"
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    # App-level design tokens (cascade to children)
+    design_tokens: Optional[AppLevelDesignTokensIR] = None
 
 
 @dataclass
@@ -1719,6 +1785,9 @@ class FrontendIR:
     
     # Configuration
     theme: Dict[str, Any] = field(default_factory=dict)
+    
+    # App-level design tokens
+    design_tokens: Optional[AppLevelDesignTokensIR] = None
     api_base_url: str = "/api"
     
     # Metadata
