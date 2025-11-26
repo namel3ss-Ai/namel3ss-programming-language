@@ -1,0 +1,1 @@
+{"version":3,"file":"testingProvider.d.ts","sourceRoot":"","sources":["../../src/providers/testingProvider.ts"],"names":[],"mappings":"AAAA;;GAEG;AAEH,OAAO,KAAK,MAAM,MAAM,QAAQ,CAAC;AACjC,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAC;AAE1C,qBAAa,eAAe;IACZ,OAAO,CAAC,UAAU;gBAAV,UAAU,EAAE,UAAU;IAEpC,aAAa,CAAC,QAAQ,EAAE,MAAM,CAAC,YAAY,GAAG,OAAO,CAAC,IAAI,CAAC;YA2BnD,cAAc;CA4B/B"}

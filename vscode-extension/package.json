@@ -258,6 +258,6 @@
   "dependencies": {
     "axios": "^1.4.0",
     "openai": "^4.0.0",
-    "anthropic": "^0.24.0"
+    "@anthropic-ai/sdk": "^0.9.0"
   }
 }

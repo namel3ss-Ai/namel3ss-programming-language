@@ -29,8 +29,8 @@
         ],
         "configuration": "./language-configuration.json",
         "icon": {
-          "light": "../vscode-extension/images/namel3ss_128_icon.svg",
-          "dark": "../vscode-extension/images/namel3ss_128_icon.svg"
+          "light": "./images/namel3ss_128_icon.svg",
+          "dark": "./images/namel3ss_128_icon.svg"
         }
       }
     ],
