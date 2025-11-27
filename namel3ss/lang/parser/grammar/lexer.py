@@ -9,6 +9,9 @@ from enum import Enum, auto
 from typing import List, Optional, Iterator
 import re
 
+from namel3ss.ast.comments import Comment
+from namel3ss.lang.parser.comment_utils import comment_error_for_line, parse_comment_metadata
+
 
 class TokenType(Enum):
     """Token types for N3 language."""
@@ -234,6 +237,7 @@ class Lexer:
         self.line = 1
         self.column = 1
         self.tokens: List[Token] = []
+        self.comments: List[Comment] = []
         
         # Track indentation levels for INDENT/DEDENT
         self.indent_stack = [0]
@@ -279,15 +283,27 @@ class Lexer:
             self.advance()
     
     def skip_comment(self) -> None:
-        """Skip line comments starting with # or //."""
-        if self.peek() == '#':
-            while self.peek() and self.peek() != '\n':
-                self.advance()
-        elif self.peek() == '/' and self.peek(1) == '/':
-            self.advance()  # /
-            self.advance()  # /
-            while self.peek() and self.peek() != '\n':
-                self.advance()
+        """Skip line comments starting with # and record metadata."""
+        if self.peek() != '#':
+            return
+
+        line_end = self.source.find('\n', self.pos)
+        if line_end == -1:
+            line_end = len(self.source)
+        fragment = self.source[self.pos:line_end]
+
+        reason = comment_error_for_line(fragment)
+        if reason:
+            raise self.error(reason)
+
+        try:
+            metadata = parse_comment_metadata(fragment, self.line, self.column)
+            self.comments.append(metadata)
+        except ValueError as exc:
+            raise self.error(str(exc))
+
+        while self.peek() and self.peek() != '\n':
+            self.advance()
     
     def read_string(self) -> str:
         """Read a string literal."""
@@ -396,9 +412,11 @@ class Lexer:
                 break
             
             # Skip comments
-            if self.peek() in ('#',) or (self.peek() == '/' and self.peek(1) == '/'):
+            if self.peek() == '#':
                 self.skip_comment()
                 continue
+            if self.peek() == '/' and self.peek(1) in ('/', '*'):
+                raise self.error("Only '# <text>' comments are supported; replace '//' or '/* */' with '# 💬 ...'")
             
             char = self.peek()
             
@@ -544,7 +562,7 @@ class Lexer:
             self.advance()
         
         # Skip blank lines and comments
-        if self.peek() in ('\n', '#', None) or (self.peek() == '/' and self.peek(1) == '/'):
+        if self.peek() in ('\n', '#', None):
             return
         
         current_indent = self.indent_stack[-1]

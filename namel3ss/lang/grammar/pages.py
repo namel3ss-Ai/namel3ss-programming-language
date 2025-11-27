@@ -49,7 +49,7 @@ class PagesParserMixin:
                 break
             stripped = line.text.strip()
             indent = self._indent(line.text)
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, line.number, line.text):
                 self._advance()
                 continue
             if indent <= parent_indent:
@@ -169,7 +169,7 @@ class PagesParserMixin:
                 break
             stripped = line.text.strip()
             indent = self._indent(line.text)
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, line.number, line.text):
                 self._advance()
                 continue
             if indent <= parent_indent:

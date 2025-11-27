@@ -46,9 +46,10 @@ class PluginAwareCodegen:
     functionality, including dependency resolution and runtime integration.
     """
     
-    def __init__(self, plugin_manager: PluginManager):
+    def __init__(self, plugin_manager: PluginManager, *, emit_comments: bool = False):
         self.plugin_manager = plugin_manager
         self.resolved_plugins: Dict[str, Any] = {}
+        self.emit_comments = emit_comments
         
     def generate_backend(
         self,
@@ -576,7 +577,7 @@ router = APIRouter()
     ) -> str:
         """Generate plugin initialization code."""
         if not plugins:
-            return f"{indent}# No {'optional' if optional else 'required'} plugins"
+            return "" if not self.emit_comments else f"{indent}# No {'optional' if optional else 'required'} plugins"
             
         lines = []
         error_handling = "logger.warning" if optional else "logger.error"
@@ -600,6 +601,13 @@ router = APIRouter()
         
     def _generate_plugin_requirements(self, requirements: PluginRequirementSpec) -> str:
         """Generate pip requirements for plugins."""
+        if not requirements.required_plugins and not requirements.optional_plugins:
+            return ""
+
+        if not self.emit_comments:
+            names = [plugin.name for plugin in requirements.required_plugins + requirements.optional_plugins]
+            return "\n".join(names)
+        
         lines = ["# Plugin dependencies"]
         
         for plugin in requirements.required_plugins + requirements.optional_plugins:
@@ -619,7 +627,9 @@ router = APIRouter()
             config = {}  # Extract from plugin_config fields
             lines.append(f'    "{plugin.name}": {config},')
             
-        return "\n".join(lines) if lines else "    # No plugin configurations"
+        if lines:
+            return "\n".join(lines)
+        return "" if not self.emit_comments else "    # No plugin configurations"
         
     def _get_required_plugin_names(self, ir: BackendIRWithPlugins) -> str:
         """Get set literal of required plugin names."""
@@ -629,24 +639,24 @@ router = APIRouter()
     def _generate_endpoint_implementations(self, ir: BackendIRWithPlugins) -> str:
         """Generate FastAPI endpoint implementations."""
         # This would iterate through ir.endpoints and generate FastAPI routes
-        return "# Generated endpoints will be added here"
+        return "" if not self.emit_comments else "# Generated endpoints will be added here"
         
     def _generate_serverless_routing(self, ir: BackendIRWithPlugins) -> str:
         """Generate serverless routing logic."""
-        return "    # Generated routing logic will be added here"
+        return "" if not self.emit_comments else "    # Generated routing logic will be added here"
         
     def _generate_serverless_handlers(self, ir: BackendIRWithPlugins) -> str:
         """Generate serverless handler functions."""
-        return "# Generated handlers will be added here"
+        return "" if not self.emit_comments else "# Generated handlers will be added here"
         
     def _generate_endpoint_handlers(self, ir: BackendIRWithPlugins) -> str:
         """Generate endpoint handler functions with plugin integration."""
-        return "# Generated endpoint handlers with plugin support"
+        return "" if not self.emit_comments else "# Generated endpoint handlers with plugin support"
 
 
-def create_plugin_aware_codegen(plugin_manager: PluginManager) -> PluginAwareCodegen:
+def create_plugin_aware_codegen(plugin_manager: PluginManager, *, emit_comments: bool = False) -> PluginAwareCodegen:
     """Factory function for plugin-aware codegen."""
-    return PluginAwareCodegen(plugin_manager)
+    return PluginAwareCodegen(plugin_manager, emit_comments=emit_comments)
 
 
 __all__ = [

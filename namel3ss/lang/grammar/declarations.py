@@ -47,7 +47,7 @@ class DeclarationsParserMixin:
                 if nxt_stripped and indent <= base_indent:
                     break
                 
-                if not nxt_stripped or nxt_stripped.startswith('#') or nxt_stripped.startswith('//'):
+                if self._should_skip_comment(nxt_stripped, nxt.number, nxt.text):
                     self._advance()
                     continue
                 
@@ -115,7 +115,7 @@ class DeclarationsParserMixin:
                 break
             stripped = next_line.text.strip()
             indent = self._indent(next_line.text)
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, next_line.number, next_line.text):
                 self._advance()
                 continue
             if indent <= base_indent:
@@ -160,7 +160,7 @@ class DeclarationsParserMixin:
                 break
             stripped = next_line.text.strip()
             indent = self._indent(next_line.text)
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, next_line.number, next_line.text):
                 self._advance()
                 continue
             if indent <= base_indent:

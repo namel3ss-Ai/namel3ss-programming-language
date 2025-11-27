@@ -22,17 +22,11 @@ contexts:
     - include: functions
 
   comments:
-    - match: '#.*$'
-      scope: comment.line.number-sign.namel3ss
-    - match: '//.*$'
-      scope: comment.line.double-slash.namel3ss
-    - match: '/\*'
-      scope: punctuation.definition.comment.begin.namel3ss
-      push:
-        - meta_scope: comment.block.namel3ss
-        - match: '\*/'
-          scope: punctuation.definition.comment.end.namel3ss
-          pop: true
+    - match: '^\s*(#)\s(?:([\p{Emoji_Presentation}\p{Emoji}\p{Extended_Pictographic}])\s?)?(\S.*)$'
+      captures:
+        1: punctuation.definition.comment.namel3ss
+        2: constant.other.emoji.namel3ss
+        3: comment.line.namel3ss
 
   keywords:
     - match: '\b(app|page|action|if|else|for|while|in|llm|prompt|memory|frame|dataset)\b'

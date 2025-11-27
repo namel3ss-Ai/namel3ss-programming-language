@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from .modules import Import
+from .comments import Comment
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Module:
     imports: List[Import] = field(default_factory=list)
     body: List[Any] = field(default_factory=list)
     has_explicit_app: bool = False
+    comments: List[Comment] = field(default_factory=list)
 
 
 @dataclass

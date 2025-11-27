@@ -1,0 +1,39 @@
+# 🎯 Comment System Demo
+# This file demonstrates the single-# comment system in Namel3ss
+
+app "Comment Demo".
+
+# 📝 Basic Comments
+# Comments must start with '# ' followed by text
+# Emoji prefixes are optional but encouraged for visual organization
+
+# 🚀 Application Structure
+page "Home" at "/":
+  # 🎨 UI Components
+  show text "Welcome to Namel3ss!"
+  
+  # 💡 Tip: Use emojis to categorize comments
+  show text "Comments support emoji prefixes for better readability"
+
+# ⚠️ Important Rules
+# - Only single-line comments with '#' are supported
+# - Must have a space after the '#' marker
+# - Double-slash '//' comments are NOT allowed
+# - Block comments '/* */' are NOT allowed
+
+# 🔧 Code Examples
+page "Examples" at "/examples":
+  # 📊 Data display
+  show text "The parser extracts comment metadata:"
+  show text "- Raw text"
+  show text "- Emoji prefix (if present)"
+  show text "- Line number"
+  show text "- Column position"
+  
+  # ✨ Benefits
+  # 1. Consistent syntax across all .ai files
+  # 2. Better editor support (VS Code, JetBrains, Vim, etc.)
+  # 3. Structured metadata for documentation
+  # 4. Emoji-friendly visual organization
+
+# 🎉 End of Demo

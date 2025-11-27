@@ -9,6 +9,7 @@ from namel3ss.ast import (
     App, Page, Chain, Prompt, Dataset, Model, Action, ShowForm, 
     Statement, ChainStep, Expression, NameRef
 )
+from namel3ss.lang.parser.comment_utils import comment_error_for_line, has_emoji_prefix, is_comment_text
 from .rules import LintRule
 from .core import LintContext, LintFinding, LintSeverity
 
@@ -307,9 +308,49 @@ class PerformanceRule(LintRule):
         return findings
 
 
-def get_default_rules() -> List[LintRule]:
+class CommentStyleRule(LintRule):
+    """Optionally enforce the single-marker comment style."""
+    
+    def __init__(self, require_emoji: bool = False):
+        super().__init__(
+            rule_id="comment-style",
+            description="Enforce '# <emoji?> <text>' comment style"
+        )
+        self.require_emoji = require_emoji
+    
+    def check(self, context: LintContext) -> List[LintFinding]:
+        findings: List[LintFinding] = []
+        for idx, line in enumerate(context.get_lines(), start=1):
+            stripped = line.lstrip()
+            if not stripped.startswith("#") and not stripped.startswith("//") and not stripped.startswith("/*"):
+                continue
+            
+            reason = comment_error_for_line(stripped)
+            if reason:
+                findings.append(LintFinding(
+                    rule_id=self.rule_id,
+                    message=reason,
+                    severity=LintSeverity.ERROR,
+                    line=idx,
+                    suggestion="Use '# 💬 your note' with a space after #"
+                ))
+                continue
+            
+            if self.require_emoji and stripped.startswith("#") and not has_emoji_prefix(stripped):
+                findings.append(LintFinding(
+                    rule_id=self.rule_id,
+                    message="Comments should start with an emoji to communicate intent",
+                    severity=LintSeverity.WARNING,
+                    line=idx,
+                    suggestion="Prefix comments with 💬, ⚠️, 🔒, or 🧪"
+                ))
+        
+        return findings
+
+
+def get_default_rules(strict_comment_style: bool = False) -> List[LintRule]:
     """Get the default set of lint rules."""
-    return [
+    rules: List[LintRule] = [
         UnusedDefinitionRule(),
         EffectViolationRule(),
         NamingConventionRule(),
@@ -317,3 +358,6 @@ def get_default_rules() -> List[LintRule]:
         SecurityRule(),
         PerformanceRule(),
     ]
+    if strict_comment_style:
+        rules.append(CommentStyleRule(require_emoji=True))
+    return rules

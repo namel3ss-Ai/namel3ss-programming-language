@@ -1,0 +1,40 @@
+{
+  "name": "Namel3ss Comment Accents",
+  "type": "dark",
+  "colors": {},
+  "tokenColors": [
+    {
+      "scope": [
+        "comment.line.namel3ss",
+        "comment.line.text.namel3ss"
+      ],
+      "settings": {
+        "foreground": "#9CA3AF",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": [
+        "punctuation.definition.comment.namel3ss"
+      ],
+      "settings": {
+        "foreground": "#9CA3AF",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": [
+        "constant.character.emoji.namel3ss"
+      ],
+      "settings": {
+        "foreground": "#f59e0b"
+      }
+    }
+  ],
+  "semanticTokenColors": {
+    "comment": {
+      "foreground": "#9CA3AF",
+      "fontStyle": "italic"
+    }
+  }
+}

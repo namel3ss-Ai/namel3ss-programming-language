@@ -1,0 +1,10 @@
+Namel3ss:
+  type: programming
+  extensions:
+    - .ai
+    - .n3
+  tm_scope: source.namel3ss
+  ace_mode: text
+  color: "#3B82F6"
+  comment_style:
+    line_comment: "# "

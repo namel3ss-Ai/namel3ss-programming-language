@@ -1,0 +1,23 @@
+{
+  "name": "Namel3ss Comment Accent",
+  "variables": {
+    "namel3ssComment": "#9CA3AF",
+    "namel3ssEmoji": "#f59e0b"
+  },
+  "rules": [
+    {
+      "scope": "comment.line.namel3ss",
+      "foreground": "var(namel3ssComment)",
+      "font_style": "italic"
+    },
+    {
+      "scope": "punctuation.definition.comment.namel3ss",
+      "foreground": "var(namel3ssComment)",
+      "font_style": "italic"
+    },
+    {
+      "scope": "constant.other.emoji.namel3ss",
+      "foreground": "var(namel3ssEmoji)"
+    }
+  ]
+}

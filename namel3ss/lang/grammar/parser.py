@@ -103,12 +103,13 @@ class _GrammarModuleParser(
     # High-level driver
     def parse(self) -> Module:
         """Parse the entire module."""
+        self._scan_comments_if_needed()
         while self._cursor < len(self._lines):
             line = self._peek_line()
             if line is None:
                 break
             stripped = line.text.strip()
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, line.number, line.text):
                 self._advance()
                 continue
             indent = self._indent(line.text)
@@ -239,6 +240,7 @@ class _GrammarModuleParser(
             imports=list(self._imports),
             body=body,
             has_explicit_app=self._explicit_app_declared,
+            comments=list(self._comments),
         )
 
 

@@ -33,6 +33,7 @@ from namel3ss.ast import (
     BinaryOp,
     CallExpression,
     CachePolicy,
+    Comment,
     ContextValue,
     Expression,
     LayoutMeta,
@@ -58,6 +59,11 @@ from namel3ss.ast import (
     SizeType,
 )
 from namel3ss.errors import N3SyntaxError
+from namel3ss.lang.parser.comment_utils import (
+    comment_error_for_line,
+    is_comment_text,
+    parse_comment_metadata,
+)
 from namel3ss.parser.expression_builder import _ExpressionBuilder
 
 
@@ -113,6 +119,8 @@ class ParserBase:
         self.language_version: Optional[str] = None
         self._allow_implicit_app = module_name is not None
         self.source_path: str = path
+        self._comments: List[Comment] = []
+        self._comments_scanned: bool = False
 
     # ------------------------------------------------------------------
     # Cursor helpers
@@ -128,6 +136,73 @@ class ParserBase:
         line = self._peek()
         self.pos += 1
         return line
+
+    # ------------------------------------------------------------------
+    # Comment handling
+    # ------------------------------------------------------------------
+    def _record_comment(self, comment: Comment) -> None:
+        """Deduplicate and store comment metadata."""
+        if any(c.line == comment.line and c.column == comment.column for c in self._comments):
+            return
+        self._comments.append(comment)
+
+    def _scan_comments_if_needed(self) -> None:
+        """One-pass validator to enforce comment style before parsing."""
+        if self._comments_scanned:
+            return
+        for idx, raw in enumerate(self.lines, start=1):
+            stripped = raw.lstrip()
+            if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
+                reason = comment_error_for_line(stripped)
+                if reason:
+                    raise self._error(
+                        reason,
+                        idx,
+                        raw,
+                        hint="Use '# 💬 comment text' with a space after #",
+                    )
+                try:
+                    comment = parse_comment_metadata(raw, idx)
+                    self._record_comment(comment)
+                except ValueError as exc:
+                    raise self._error(str(exc), idx, raw)
+        self._comments_scanned = True
+
+    def _validate_and_record_comment(self, line: str, line_no: int) -> None:
+        """Validate comment style and capture metadata for downstream tooling."""
+        stripped = line.lstrip()
+        reason = comment_error_for_line(stripped)
+        if reason:
+            raise self._error(
+                reason,
+                line_no,
+                line,
+                hint="Use '# 💬 comment text' with a space after #",
+            )
+        try:
+            comment = parse_comment_metadata(line, line_no)
+        except ValueError as exc:
+            raise self._error(str(exc), line_no, line)
+        self._record_comment(comment)
+
+    def _should_skip_comment(self, stripped: str, line_no: int, line: str, *, record: bool = True) -> bool:
+        """Return True if the line is blank or a valid comment (and optionally record it)."""
+        if not stripped:
+            return True
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
+            if record:
+                self._validate_and_record_comment(line, line_no)
+            else:
+                reason = comment_error_for_line(line.lstrip())
+                if reason:
+                    raise self._error(
+                        reason,
+                        line_no,
+                        line,
+                        hint="Use '# 💬 comment text' with a space after #",
+                    )
+            return True
+        return False
 
     # ========================================================================
     # Indentation Analysis and Validation
@@ -248,7 +323,7 @@ class ParserBase:
         stripped = line.strip()
         
         # Skip empty lines and comments
-        if not stripped or stripped.startswith('#'):
+        if self._should_skip_comment(stripped, line_no, line):
             return info
         
         # Check for mixed indentation
@@ -315,7 +390,7 @@ class ParserBase:
         stripped = line.strip()
         
         # Skip empty lines and comments
-        if not stripped or stripped.startswith('#'):
+        if self._should_skip_comment(stripped, line_no, line):
             return info
         
         # Check for mixed indentation
@@ -380,9 +455,9 @@ class ParserBase:
         has_spaces = False
         indent_levels: Set[int] = set()
         
-        for line in lines:
+        for idx, line in enumerate(lines, start=1):
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if self._should_skip_comment(stripped, idx, line, record=False):
                 continue
             
             info = self._compute_indent_details(line)
@@ -933,7 +1008,7 @@ class ParserBase:
                 break
             
             indent = self._indent(line)
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, line):
                 self._advance()
                 continue
             if indent <= parent_indent or stripped.startswith('-'):
@@ -962,7 +1037,7 @@ class ParserBase:
                 break
             indent = self._indent(line)
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if self._should_skip_comment(stripped, self.pos + 1, line):
                 self._advance()
                 continue
             if indent <= parent_indent:
@@ -987,7 +1062,7 @@ class ParserBase:
         while idx < len(self.lines):
             line = self.lines[idx]
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if self._should_skip_comment(stripped, idx + 1, line, record=False):
                 idx += 1
                 continue
             return line

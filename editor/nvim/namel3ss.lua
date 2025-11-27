@@ -21,6 +21,11 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.bo.textwidth = 120
     vim.wo.number = true
     vim.wo.foldmethod = "syntax"
+    -- Comment styling
+    vim.cmd([[syntax match Namel3ssComment /^\s*#\s\zs\S.*$/ contains=Namel3ssCommentEmoji]])
+    vim.cmd([[syntax match Namel3ssCommentEmoji /\v#\s\zs\S/ contained]])
+    vim.api.nvim_set_hl(0, "Namel3ssComment", { fg = "#9CA3AF", italic = true })
+    vim.api.nvim_set_hl(0, "Namel3ssCommentEmoji", { fg = "#f59e0b", italic = false })
   end,
 })
 

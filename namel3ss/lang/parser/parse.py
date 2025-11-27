@@ -41,7 +41,7 @@ try:
 except ImportError:
     Policy = None
 
-from .grammar.lexer import Token, TokenType, tokenize
+from .grammar.lexer import Lexer, Token, TokenType, tokenize
 from .errors import (
     N3SyntaxError, N3SemanticError, N3IndentationError,
     N3DuplicateDeclarationError, N3ReferenceError,
@@ -67,8 +67,10 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         self.path = path
         self.module_name_override = module_name
         
-        # Tokenize source
-        self.tokens = tokenize(source, path)
+        # Tokenize source and capture comment metadata
+        lexer = Lexer(source, path)
+        self.tokens = lexer.tokenize()
+        self.comments = lexer.comments
         self.pos = 0
         
         # Parser state
@@ -518,6 +520,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             imports=self.imports,
             language_version=self.language_version,
             has_explicit_app=self.explicit_app,
+            comments=self.comments,
         )
     
     def _ensure_app(self) -> App:

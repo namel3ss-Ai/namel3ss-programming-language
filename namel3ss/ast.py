@@ -17,6 +17,7 @@ from .ast.base import (  # noqa: E402
     Theme,
     UnaryOp,
 )
+from .ast.comments import Comment  # noqa: E402
 from .ast.ai import (  # noqa: E402
     AIModel,
     Chain,
@@ -164,6 +165,7 @@ __all__ = [
     "App",
     "Page",
     "Theme",
+    "Comment",
     "Expression",
     "Literal",
     "NameRef",

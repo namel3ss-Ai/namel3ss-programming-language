@@ -58,7 +58,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, nxt.number, nxt.text):
                 self._advance()
                 continue
             
@@ -119,7 +119,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, nxt.number, nxt.text):
                 self._advance()
                 continue
             
@@ -175,7 +175,7 @@ class PromptsParserMixin:
                 break
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, nxt.number, nxt.text):
                 self._advance()
                 continue
             
@@ -232,7 +232,7 @@ class PromptsParserMixin:
             stripped = nxt.text.strip()
             
             # Skip empty lines and comments
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, nxt.number, nxt.text):
                 self._advance()
                 continue
             

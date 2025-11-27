@@ -2,6 +2,7 @@
 
 import pytest
 from namel3ss.linter import SemanticLinter, LintSeverity, get_default_rules
+from namel3ss.linter.core import LintContext
 from namel3ss.linter.builtin_rules import (
     UnusedDefinitionRule,
     EffectViolationRule, 
@@ -9,6 +10,7 @@ from namel3ss.linter.builtin_rules import (
     EmptyBlockRule,
     SecurityRule,
     PerformanceRule,
+    CommentStyleRule,
 )
 
 
@@ -261,6 +263,34 @@ invalid syntax here
         # Should have findings from multiple rules
         rule_ids = {f.rule_id for f in result.findings}
         assert len(rule_ids) > 1  # Multiple different rules triggered
+
+    def test_comment_style_rule(self):
+        """Ensure comment style rule flags invalid or non-emoji comments when configured."""
+        no_emoji_comment = '''# Plain comment
+app "TestApp" {
+    prompt "greeting" {
+        model: "gpt-4"
+        template: "Hello {{name}}"
+    }
+    
+    chain "support_flow" {
+        prompt "greeting"
+    }
+    
+    page "/home" {
+        action "greet" {
+            run chain: support_flow
+        }
+    }
+}'''
+        context = LintContext(
+            source_text=no_emoji_comment,
+            file_path="comment-style.ai",
+            ast=None,  # Not needed by the comment rule
+            effect_analyzer=None,
+        )
+        findings = CommentStyleRule(require_emoji=True).check(context)
+        assert any(f.rule_id == "comment-style" and f.severity == LintSeverity.WARNING for f in findings)
     
     def test_rule_failure_handling(self):
         """Test handling of rule failures."""

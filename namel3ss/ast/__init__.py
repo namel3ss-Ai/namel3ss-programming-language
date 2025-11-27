@@ -38,6 +38,7 @@ from .base import (
     Theme,
     UnaryOp,
 )
+from .comments import Comment
 from .expressions import (
     LiteralExpr,
     VarExpr,
@@ -298,6 +299,7 @@ __all__ = [
     "App",
     "Page",
     "Theme",
+    "Comment",
     "SourceLocation",
     "Expression",
     "Literal",

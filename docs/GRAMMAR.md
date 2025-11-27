@@ -17,10 +17,10 @@ This document defines the complete formal grammar for the Namel3ss programming l
 WHITESPACE      = ( " " | "\t" | "\r" | "\n" )+ ;
 
 (* Comments *)
-LINE_COMMENT    = ( "#" | "//" ) , { ANY_CHAR - "\n" } , "\n" ;
-BLOCK_COMMENT   = "/*" , { ANY_CHAR } , "*/" ;
+LINE_COMMENT    = "#" , " " , [ Emoji ] , [ " " ] , NON_SPACE , { ANY_CHAR - "\n" } , "\n" ;
+COMMENT         = LINE_COMMENT ;
 
-COMMENT         = LINE_COMMENT | BLOCK_COMMENT ;
+Valid comment lines match `^#\s\S.*` (or `^#\s[\p{Emoji}]?\s?.*` when prefixed with an emoji).
 ```
 
 ### 1.2 Identifiers and Keywords

@@ -1,0 +1,16 @@
+<scheme name="Namel3ssComment" version="142" parent_scheme="Default">
+  <attributes>
+    <option name="NAMELESS_COMMENT">
+      <value>
+        <option name="FOREGROUND" value="9CA3AF" />
+        <option name="FONT_TYPE" value="2" />
+      </value>
+    </option>
+    <option name="NAMELESS_COMMENT_EMOJI">
+      <value>
+        <option name="FOREGROUND" value="F59E0B" />
+        <option name="FONT_TYPE" value="0" />
+      </value>
+    </option>
+  </attributes>
+</scheme>

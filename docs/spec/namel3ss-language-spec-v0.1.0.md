@@ -25,7 +25,7 @@ Identifiers consist of letters, digits, and underscores, starting with a letter.
 
 ### 2.3 Comments
 
-Lines beginning with `#` are treated as comments.
+Lines beginning with `# ` (optionally `# <emoji> `) are treated as comments. Valid form: `# <emoji?> <text>`.
 
 ## 3. Modules & Imports
 

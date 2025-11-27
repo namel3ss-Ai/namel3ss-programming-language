@@ -69,6 +69,7 @@ class LegacyProgramParser(
     """
 
     def parse(self) -> Module:
+        self._scan_comments_if_needed()
         imports_allowed = True
         language_version_declared = False
         extra_nodes: List[Any] = []
@@ -79,7 +80,7 @@ class LegacyProgramParser(
                 break
             line = raw.rstrip('\n')
             stripped = line.strip()
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, line_no, line):
                 continue
             indent = self._indent(line)
             if indent != 0:
@@ -333,6 +334,7 @@ class LegacyProgramParser(
             imports=list(self.module_imports),
             body=body,
             has_explicit_app=self._explicit_app_declared,
+            comments=list(self._comments),
         )
         return module
 
@@ -470,7 +472,7 @@ class LegacyProgramParser(
                 break
             indent = self._indent(line)
             stripped = line.strip()
-            if not stripped or stripped.startswith('#'):
+            if self._should_skip_comment(stripped, self.pos + 1, line):
                 self._advance()
                 continue
             if indent <= base_indent:
@@ -519,7 +521,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -589,7 +591,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -635,7 +637,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -699,7 +701,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -753,7 +755,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -817,7 +819,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -886,7 +888,7 @@ class LegacyProgramParser(
                 break
             stripped = nxt.strip()
             
-            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+            if self._should_skip_comment(stripped, self.pos + 1, nxt):
                 self._advance()
                 continue
             
@@ -905,4 +907,3 @@ class LegacyProgramParser(
 
 
 __all__ = ["LegacyProgramParser"]
-

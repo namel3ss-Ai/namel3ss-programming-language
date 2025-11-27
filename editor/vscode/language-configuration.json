@@ -21,7 +21,7 @@
     ["{", "}"]
   ],
   "indentationRules": {
-    "increaseIndentPattern": ".*:(\s*#.*)?$",
-    "decreaseIndentPattern": "^\s*(end|else|elif|)$"
+    "increaseIndentPattern": ".*:(\\s*#\\s\\S.*)?$",
+    "decreaseIndentPattern": "^\\s*(end|else|elif|)$"
   }
 }

@@ -5,7 +5,7 @@ This directory contains syntax highlighting definitions for Namel3ss (.ai and .n
 ## Features
 
 The syntax highlighting includes:
-- **Comments**: `#`, `//`, and `/* */` block comments
+- **Comments**: single-line `# <emoji?> <text>` comments (regex `^#\s\S.*`)
 - **Keywords**: Control flow (if, else, for, while), declarations (app, page, action), AI primitives (llm, prompt, memory, dataset)
 - **UI Components**: show_text, show_table, show_form, stack, grid, modal, toast, etc.
 - **AI Components**: chat_thread, agent_panel, tool_call_view, log_view, evaluation_result, diff_view
@@ -36,13 +36,13 @@ Copy the syntax files to your Vim runtime directory:
 ```bash
 # Unix/Linux/macOS
 mkdir -p ~/.vim/syntax ~/.vim/ftdetect
-cp .vim/syntax/namel3ss.vim ~/.vim/syntax/
-cp .vim/ftdetect/namel3ss.vim ~/.vim/ftdetect/
+cp editor-support/vim/syntax/namel3ss.vim ~/.vim/syntax/
+cp editor/vim/ftdetect/namel3ss.vim ~/.vim/ftdetect/
 
 # Windows
 mkdir %USERPROFILE%\vimfiles\syntax %USERPROFILE%\vimfiles\ftdetect
-copy .vim\syntax\namel3ss.vim %USERPROFILE%\vimfiles\syntax\
-copy .vim\ftdetect\namel3ss.vim %USERPROFILE%\vimfiles\ftdetect\
+copy editor-support\vim\syntax\namel3ss.vim %USERPROFILE%\vimfiles\syntax\
+copy editor\vim\ftdetect\namel3ss.vim %USERPROFILE%\vimfiles\ftdetect\
 ```
 
 ### Neovim (Treesitter)
@@ -52,11 +52,11 @@ Copy the highlights to your Neovim config:
 ```bash
 # Unix/Linux/macOS
 mkdir -p ~/.config/nvim/queries/namel3ss
-cp .config/nvim/queries/namel3ss/highlights.scm ~/.config/nvim/queries/namel3ss/
+cp editor-support/nvim/queries/namel3ss/highlights.scm ~/.config/nvim/queries/namel3ss/
 
 # Windows
 mkdir %LOCALAPPDATA%\nvim\queries\namel3ss
-copy .config\nvim\queries\namel3ss\highlights.scm %LOCALAPPDATA%\nvim\queries\namel3ss\
+copy editor-support\nvim\queries\namel3ss\highlights.scm %LOCALAPPDATA%\nvim\queries\namel3ss\
 ```
 
 Add to your `init.lua` or `init.vim`:
@@ -98,7 +98,7 @@ The syntax uses standard TextMate/Sublime scopes that work with most color schem
 | Strings | `string.quoted` | Green/Orange |
 | Numbers | `constant.numeric` | Teal/Cyan |
 | Booleans | `constant.language` | Purple/Magenta |
-| Comments | `comment.line` | Gray/Muted |
+| Comments | `comment.line.namel3ss` | Italic gray (#9CA3AF) with bright emoji |
 | Operators | `keyword.operator` | White/Default |
 | Functions | `entity.name.function` | Yellow/Bold |
 

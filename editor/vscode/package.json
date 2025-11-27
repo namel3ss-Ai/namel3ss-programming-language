@@ -32,6 +32,13 @@
         "path": "./syntaxes/namel3ss.tmLanguage.json"
       }
     ],
+    "themes": [
+      {
+        "label": "Namel3ss Comment Accents",
+        "uiTheme": "vs-dark",
+        "path": "./themes/namel3ss-comments-color-theme.json"
+      }
+    ],
     "commands": [
       {
         "command": "namel3ss.restartLanguageServer",

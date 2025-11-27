@@ -10,8 +10,13 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.number-sign.namel3ss",
-          "match": "#.*$"
+          "name": "comment.line.namel3ss",
+          "match": "^(\\s*)(#)(\\s)([\\p{Emoji_Presentation}\\p{Emoji}\\p{Extended_Pictographic}]\\s?)?(\\S.*)$",
+          "captures": {
+            "2": { "name": "punctuation.definition.comment.namel3ss" },
+            "4": { "name": "constant.character.emoji.namel3ss" },
+            "5": { "name": "comment.line.text.namel3ss" }
+          }
         }
       ]
     },
