@@ -8,6 +8,8 @@ Unlike frameworks that bolt AI onto existing languages, Namel3ss treats **prompt
 
 For all documentation, follow the shared [Style Guide](docs/STYLE_GUIDE.md) and link glossary terms on first use via [docs/reference/GLOSSARY.md](docs/reference/GLOSSARY.md). Documentation should target experienced engineers and use consistent terms such as [N3](docs/reference/GLOSSARY.md#n3), [Agent](docs/reference/GLOSSARY.md#agent), [Runtime](docs/reference/GLOSSARY.md#runtime), and [Compilation](docs/reference/GLOSSARY.md#compilation).
 
+
+
 ## What Makes Namel3ss an AI Language?
 
 Namel3ss is designed from the ground up for AI-first development:
@@ -23,6 +25,8 @@ Namel3ss is designed from the ground up for AI-first development:
 - **Observability Built-In**: Automatic tracing, metrics, and monitoring for all AI operations
 
 All of these features compile down to optimized FastAPI backends with `/api/ai/*` endpoints, runtime type safety, and deterministic testing infrastructure—no library dependencies or framework gymnastics required.
+
+
 
 ## Quick Example: AI-Native Application
 
@@ -207,6 +211,417 @@ prompt "PrivateChat":
 # namel3ss deploy local start local_chat
 # namel3ss run prompt PrivateChat --input '{"message": "Hello!"}'
 ```
+
+
+
+## Installation
+
+Namel3ss requires **Python 3.10 or newer**.
+
+### Core Installation (Lightweight)
+
+The core installation includes only the essentials for parsing, code generation, and CLI:
+
+```bash
+pip install namel3ss
+```
+
+> **⚠️ Important:** Ensure you get the latest version (0.6.0+). If you encounter issues:
+> ```bash
+> pip uninstall namel3ss -y
+> pip cache purge
+> pip install namel3ss==0.6.0
+> ```
+> 
+> Verify installation: `namel3ss --version` should show `0.6.0` or newer
+
+This minimal installation (~10MB) provides:
+- ✅ `.n3` file parsing and AST generation
+- ✅ FastAPI backend code generation  
+- ✅ Frontend site generation (static HTML, React)
+- ✅ CLI commands: `build`, `run`, `test`, `lint`
+- ✅ Language Server Protocol (LSP) support
+- ✅ Template engine for code generation
+
+**Perfect for**: CI/CD pipelines, code compilation, static analysis, development tools.
+
+### Optional Features (Extras)
+
+Install only the features you need:
+
+#### AI & LLM Providers
+
+```bash
+# All AI providers (including local models)
+pip install namel3ss[ai]
+
+# Or individual providers
+pip install namel3ss[openai]      # OpenAI (GPT-4, etc.)
+pip install namel3ss[anthropic]   # Anthropic (Claude)
+pip install namel3ss[local-models] # vLLM, Ollama, LocalAI
+
+# Specific local model engines
+pip install namel3ss[vllm]        # vLLM (high-performance)
+pip install namel3ss[ollama]      # Ollama (easy setup)
+pip install namel3ss[localai]     # LocalAI (multi-format)
+```
+
+**Enables**: Structured prompts, model adapters, token counting, AI chains, local model deployment
+
+#### Databases
+
+```bash
+# All SQL databases
+pip install namel3ss[sql]
+
+# Or specific databases
+pip install namel3ss[postgres]    # PostgreSQL (asyncpg + psycopg3)
+pip install namel3ss[mysql]       # MySQL (aiomysql)
+pip install namel3ss[mongo]       # MongoDB (motor + pymongo)
+```
+
+**Enables**: SQL datasets, database connectors, ORM models
+
+#### Caching & Queues
+
+```bash
+pip install namel3ss[redis]       # Redis caching and pub/sub
+```
+
+**Enables**: Redis adapters, queue systems (RQ), caching layers
+
+#### Real-time Features
+
+```bash
+pip install namel3ss[realtime]    # WebSockets + Redis
+pip install namel3ss[websockets]  # WebSockets only
+```
+
+**Enables**: WebSocket endpoints, real-time data streaming, pub/sub
+
+#### Observability
+
+```bash
+pip install namel3ss[otel]        # OpenTelemetry instrumentation
+```
+
+**Enables**: Distributed tracing, metrics, FastAPI auto-instrumentation
+
+#### Everything
+
+```bash
+pip install namel3ss[all]         # All optional features
+```
+
+### Installation Examples
+
+**Typical web app with database**:
+```bash
+pip install namel3ss[postgres]
+```
+
+**AI-powered application with external APIs**:
+```bash
+pip install namel3ss[ai,postgres,redis]
+```
+
+**Local AI application with private models**:
+```bash
+pip install namel3ss[local-models,postgres]
+```
+
+**Development with Ollama**:
+```bash
+pip install namel3ss[ollama,postgres]
+```
+
+**Production with vLLM**:
+```bash
+pip install namel3ss[vllm,postgres,redis,otel]
+```
+
+**Full-featured setup**:
+```bash
+pip install namel3ss[all]
+```
+
+### Feature Detection
+
+Namel3ss gracefully handles missing dependencies with helpful error messages:
+
+```python
+# If OpenAI not installed
+n3 run app.ai
+# Error: OpenAI integration requires the 'openai' extra.
+# Install with: pip install 'namel3ss[openai]'
+# Or for all AI providers: pip install 'namel3ss[ai]'
+```
+
+Check available features:
+```bash
+python -c "from namel3ss.features import print_feature_status; print_feature_status()"
+```
+
+Verify installation:
+
+```bash
+namel3ss --help
+namel3ss --version  # Should show: namel3ss 0.6.0 (language 0.1.0)
+```
+
+
+
+## Local Model Deployment
+
+Namel3ss provides production-grade support for deploying and managing local LLM models using industry-standard engines like vLLM, Ollama, and LocalAI. This enables private, cost-effective, and low-latency AI applications without relying on external APIs.
+
+### Supported Local Model Engines
+
+#### vLLM - High-Performance Production Inference
+- **Best for**: Production workloads requiring maximum throughput
+- **Features**: GPU optimization, continuous batching, tensor parallelism
+- **Models**: Any HuggingFace model with supported architectures
+- **Installation**: `pip install namel3ss[vllm]`
+
+#### Ollama - Easy Development & Deployment  
+- **Best for**: Development, prototyping, and simple deployment scenarios
+- **Features**: Automatic model pulling, easy setup, CPU/GPU support
+- **Models**: Pre-optimized models from Ollama library (Llama, Mistral, etc.)
+- **Installation**: `pip install namel3ss[ollama]`
+
+#### LocalAI - Multi-Format Model Support
+- **Best for**: Diverse model formats and experimental models
+- **Features**: OpenAI-compatible API, multiple model formats, Docker deployment
+- **Models**: GGML, GGUF, HuggingFace, custom models
+- **Installation**: `pip install namel3ss[localai]`
+
+### Quick Local Model Setup
+
+1. **Install local model support**:
+   ```bash
+   pip install namel3ss[local-models]  # All engines
+   # OR
+   pip install namel3ss[ollama]        # Just Ollama
+   ```
+
+2. **Define a model in your `.ai` file**:
+   ```text
+   model "chat_model" using local_engine:
+     engine_type: "ollama"
+     model_name: "llama3.2:latest"
+     deployment:
+       port: 11434
+       gpu_layers: -1
+       context_length: 4096
+   ```
+
+3. **Deploy the model**:
+   ```bash
+   namel3ss deploy local start chat_model
+   ```
+
+4. **Use in your application**:
+   ```text
+   prompt "ChatWithLocal":
+     input: message: text
+     output: response: text  
+     using model "chat_model":
+       "You are a helpful assistant. {{message}}"
+   ```
+
+### Model Configuration Examples
+
+#### vLLM Configuration (Production)
+```text
+model "production_model" using local_engine:
+  engine_type: "vllm"
+  model_name: "microsoft/DialoGPT-large"
+  deployment:
+    port: 8000
+    host: "0.0.0.0"
+    gpu_memory_utilization: 0.9
+    tensor_parallel_size: 2
+    max_model_len: 4096
+    served_model_name: "gpt-3.5-turbo"  # OpenAI-compatible name
+  health_check:
+    endpoint: "/health"
+    timeout: 30
+```
+
+#### Ollama Configuration (Development)
+```text
+model "dev_model" using local_engine:
+  engine_type: "ollama" 
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    host: "127.0.0.1"
+    gpu_layers: -1  # Use all GPU layers
+    num_ctx: 4096   # Context length
+    temperature: 0.7
+  health_check:
+    endpoint: "/api/health"
+    timeout: 60
+```
+
+#### LocalAI Configuration (Multi-format)
+```text
+model "localai_model" using local_engine:
+  engine_type: "localai"
+  model_name: "ggml-gpt4all-j.bin"
+  deployment:
+    port: 8080
+    deployment_type: "docker"  # or "binary"
+    models_path: "./models"
+    threads: 4
+    context_size: 4096
+  health_check:
+    endpoint: "/readiness"
+    timeout: 45
+```
+
+### Deployment Management
+
+```bash
+# Start models
+namel3ss deploy local start chat_model
+namel3ss deploy local start --all  # Start all defined models
+
+# Monitor status
+namel3ss deploy local status       # All models
+namel3ss deploy local status chat_model  # Specific model
+
+# Manage running models  
+namel3ss deploy local stop chat_model
+namel3ss deploy local restart chat_model
+
+# Health monitoring
+namel3ss deploy local health chat_model
+namel3ss deploy local logs chat_model
+
+# Configuration
+namel3ss deploy local list         # List available models
+namel3ss deploy local config chat_model  # Show configuration
+```
+
+### Production Considerations
+
+- **Resource Requirements**: Each model requires significant RAM/VRAM
+- **Port Management**: Ensure ports don't conflict between models  
+- **Health Monitoring**: Built-in health checks for reliability
+- **Deployment Automation**: Integrates with Docker and orchestration tools
+- **OpenAI Compatibility**: All engines support OpenAI-compatible APIs
+
+See `examples/local-model-chat/` for a complete working application demonstrating local model deployment with all three engines.
+
+
+## Quick Start
+
+### 1. Initialize a new project
+
+```bash
+# Create a new Namel3ss project with scaffolding
+namel3ss init my-ai-app
+cd my-ai-app
+
+# Or initialize in current directory
+namel3ss init .
+
+# View project structure:
+# my-ai-app/
+#   ├── app.ai              # Main application file
+#   ├── requirements.txt    # Python dependencies (auto-generated)
+#   ├── package.json        # NPM dependencies (auto-generated)
+#   ├── backend/
+#   │   └── custom/         # Custom Python code
+#   └── frontend/
+#       └── assets/         # Static assets
+```
+
+### 2. Auto-manage dependencies
+
+```bash
+# Namel3ss automatically detects features from your .ai files
+# and generates/updates dependency files
+
+# Preview what dependencies would be added
+namel3ss sync-deps --preview
+
+# Synchronize dependencies for entire project
+namel3ss sync-deps
+
+# Sync dependencies for specific file
+namel3ss sync-deps --file app.ai
+
+# List all available features and their dependencies
+namel3ss sync-deps --list-features
+```
+
+When you use features in your `.ai` files, `sync-deps` automatically adds the required packages:
+- Using `llm` with OpenAI? → Adds `openai`, `tiktoken`
+- Using `dataset from table`? → Adds SQL database drivers
+- Using `agent`? → Adds AI provider packages
+- Using `chat_thread` component? → Adds React dependencies
+
+### 3. Create your first AI application
+
+```bash
+# Edit app.ai with your application
+echo 'app "MyApp"' > app.ai
+echo 'page "home" { show text "Hello World" }' >> app.ai
+
+# Sync dependencies (detects features and updates requirements.txt/package.json)
+namel3ss sync-deps
+
+# Build the application
+namel3ss build app.ai
+
+# For local model examples
+cp -r examples/local-model-chat .
+cd local-model-chat
+
+# Sync dependencies first
+namel3ss sync-deps
+
+namel3ss build app.ai
+```
+
+### 4. Install dependencies and run
+
+```bash
+cd out/backend
+pip install -r requirements.txt
+
+# For local models, also install model engines
+pip install namel3ss[local-models]  # All engines
+# OR specific engines:
+pip install namel3ss[ollama]        # Just Ollama
+pip install namel3ss[vllm]          # Just vLLM
+pip install namel3ss[localai]       # Just LocalAI
+
+uvicorn main:app --reload
+```
+
+### 5. Deploy local models (optional)
+
+```bash
+# Start a local model (if using local model example)
+namel3ss deploy local start your_model_name
+
+# Check status
+namel3ss deploy local status
+```
+
+### 6. Open the frontend
+
+Open `out/frontend/index.html` in your browser or serve with:
+
+```bash
+cd out/frontend
+python -m http.server 8080
+```
+
+
 
 ## Recent Additions (November 2025)
 
@@ -634,6 +1049,8 @@ toast "deleted":
 
 **Benefits**: Declarative syntax, consistent styling, better UX, customizable, event-driven, accessible, mobile-friendly.
 
+
+
 ## Language Features
 
 ### Core Application Structure
@@ -772,111 +1189,58 @@ prompt "LocalChat":
     "You are a helpful assistant. {{message}}"
 ```
 
-## Quick Start
 
-### 1. Initialize a new project
 
-```bash
-# Create a new Namel3ss project with scaffolding
-namel3ss init my-ai-app
-cd my-ai-app
+## Examples
 
-# Or initialize in current directory
-namel3ss init .
+### Production Examples
 
-# View project structure:
-# my-ai-app/
-#   ├── app.ai              # Main application file
-#   ├── requirements.txt    # Python dependencies (auto-generated)
-#   ├── package.json        # NPM dependencies (auto-generated)
-#   ├── backend/
-#   │   └── custom/         # Custom Python code
-#   └── frontend/
-#       └── assets/         # Static assets
-```
+- **[AI Customer Support Console](docs/examples/ai-customer-support-console.md)** - Professional support agent workspace demonstrating chrome navigation (sidebar, navbar, breadcrumbs), dynamic routing, and dataset integration. A complete example showing best practices for production Namel3ss applications. **Status: ✅ Parsing & IR generation working**
+  
+  **Key Learnings:**
+  - Dataset declarations must use `dataset "name" from table table_name` syntax (no `columns:` or `fields:` blocks)
+  - Namel3ss requires **4-space indentation** (not 2-space)
+  - Chrome components (sidebar, navbar, breadcrumbs) must be declared before page content
+  - Dataset names must be quoted strings, not bare identifiers
+  - Working examples (like `chrome_demo_clean.ai`) are the authoritative syntax reference
 
-### 2. Auto-manage dependencies
+- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - **✨ Enhanced with v0.6.0 parser improvements!** Production-grade RAG system showcasing tool/agent/vector_store definitions, chrome+tabs combination, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. Includes comprehensive citation tracking, multi-column info grids, and deeply nested card sections. **Status: ✅ All tests passing (13/13)**
+  
+  **v0.6.0 Enhancements:**
+  - ✅ **3 Tool definitions** with typed parameters (search, rerank, summarize)
+  - ✅ **Agent definition** with GPT-4, tool integration, and conversational config
+  - ✅ **Vector store config** for pgvector with 1536-dimensional embeddings
+  - ✅ **Chrome + tabs** - Navbar with 3-tab interface (Chat, Tools, Logs)
+  - ✅ **`condition:` property** for intuitive card filtering
+  - Multi-column info_grid layouts (2, 3, 4 columns) work correctly
+  - Deeply nested cards (3-4 levels) parse successfully: `card → sections → info_grid → items`
+  - Multiple badges and actions per card item are supported
+  - `group_by:` property enables data grouping in card displays
 
-```bash
-# Namel3ss automatically detects features from your .ai files
-# and generates/updates dependency files
+### AI Examples
 
-# Preview what dependencies would be added
-namel3ss sync-deps --preview
+- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - **NEW in v0.6.0!** Minimal example demonstrating all 5 parser improvements: tool definition, agent definition, vector_store config, chrome+tabs combination, and `condition:` property alias. Perfect starting point for RAG system development.
 
-# Synchronize dependencies for entire project
-namel3ss sync-deps
+- `examples/llm_benchmark_lab/benchmark.ai` - LLM Benchmark & Experiment Lab ([docs](examples/llm_benchmark_lab/README.md))
+- `examples/ai_demo.ai` - Complete AI application
+- `examples/text_classification.n3` - Classification with prompts
+- `examples/rag_qa.n3` - RAG question answering
+- `examples/experiment_comparison.n3` - A/B testing models
+- `examples/memory_chat_demo.n3` - Stateful conversation
 
-# Sync dependencies for specific file
-namel3ss sync-deps --file app.ai
+### Traditional Examples
 
-# List all available features and their dependencies
-namel3ss sync-deps --list-features
-```
+- `examples/app.ai` - Full-stack CRUD application
+- `examples/control_flow_demo.n3` - Conditionals and loops
 
-When you use features in your `.ai` files, `sync-deps` automatically adds the required packages:
-- Using `llm` with OpenAI? → Adds `openai`, `tiktoken`
-- Using `dataset from table`? → Adds SQL database drivers
-- Using `agent`? → Adds AI provider packages
-- Using `chat_thread` component? → Adds React dependencies
-
-### 3. Create your first AI application
+Run any example:
 
 ```bash
-# Edit app.ai with your application
-echo 'app "MyApp"' > app.ai
-echo 'page "home" { show text "Hello World" }' >> app.ai
-
-# Sync dependencies (detects features and updates requirements.txt/package.json)
-namel3ss sync-deps
-
-# Build the application
-namel3ss build app.ai
-
-# For local model examples
-cp -r examples/local-model-chat .
-cd local-model-chat
-
-# Sync dependencies first
-namel3ss sync-deps
-
-namel3ss build app.ai
+namel3ss generate examples/ai_demo.ai demo_output
+cd demo_output/backend && uvicorn main:app --reload
 ```
 
-### 4. Install dependencies and run
 
-```bash
-cd out/backend
-pip install -r requirements.txt
-
-# For local models, also install model engines
-pip install namel3ss[local-models]  # All engines
-# OR specific engines:
-pip install namel3ss[ollama]        # Just Ollama
-pip install namel3ss[vllm]          # Just vLLM
-pip install namel3ss[localai]       # Just LocalAI
-
-uvicorn main:app --reload
-```
-
-### 5. Deploy local models (optional)
-
-```bash
-# Start a local model (if using local model example)
-namel3ss deploy local start your_model_name
-
-# Check status
-namel3ss deploy local status
-```
-
-### 6. Open the frontend
-
-Open `out/frontend/index.html` in your browser or serve with:
-
-```bash
-cd out/frontend
-python -m http.server 8080
-```
 
 ## CLI Reference
 
@@ -972,6 +1336,57 @@ namel3ss doctor
 namel3ss validate my_app.ai
 ```
 
+
+
+## Architecture
+
+### Compilation Pipeline
+
+```
+.n3 source
+    ↓
+Parser (ANTLR4 grammar)
+    ↓
+AST (typed nodes)
+    ↓
+Resolver (semantic analysis)
+    ↓
+Code Generator
+    ↓
+FastAPI backend + Frontend assets
+```
+
+### Generated Backend Structure
+
+```
+out/backend/
+├── main.py                 # FastAPI app entry
+├── database.py            # SQLAlchemy models
+├── schemas.py             # Pydantic schemas
+├── requirements.txt       # Dependencies
+├── generated/             # Generated routers
+│   ├── pages.py
+│   ├── datasets.py
+│   └── ai/                # AI-specific endpoints
+│       ├── prompts.py
+│       ├── chains.py
+│       ├── memory.py
+│       └── agents.py
+└── custom/                # User customizations (preserved)
+    └── custom_api.py
+```
+
+### Runtime Features
+
+- **Dataset Registry**: Cached execution with pagination
+- **Memory Manager**: Scoped storage with TTL and eviction
+- **Prompt Engine**: Schema validation and template rendering
+- **Chain Orchestrator**: Step execution with context management
+- **Agent Runtime**: Multi-agent graphs with tool calling
+- **Observability**: OpenTelemetry tracing and Prometheus metrics
+
+
+
 ## Production Deployment
 
 ### Environment Variables
@@ -1048,6 +1463,8 @@ Generated backends include:
 - `GET /api/ai/prompts` - List all prompts
 - `GET /api/ai/memory/stats` - Memory system statistics
 
+
+
 ## Testing
 
 Run the complete test suite:
@@ -1081,6 +1498,8 @@ Run with coverage:
 ```bash
 pytest --cov=namel3ss --cov-report=html
 ```
+
+
 
 ## Conformance & Governance
 
@@ -1142,6 +1561,8 @@ Namel3ss follows an RFC (Request for Comments) process for language changes:
 
 See [GOVERNANCE.md](GOVERNANCE.md) for the complete process and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
+
+
 ## Documentation
 
 Comprehensive documentation is available in the `docs/` directory:
@@ -1159,207 +1580,7 @@ Comprehensive documentation is available in the `docs/` directory:
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines with conformance requirements
 - **[tests/conformance/SPEC.md](tests/conformance/SPEC.md)** - Conformance test specification
 
-## Architecture
 
-### Compilation Pipeline
-
-```
-.n3 source
-    ↓
-Parser (ANTLR4 grammar)
-    ↓
-AST (typed nodes)
-    ↓
-Resolver (semantic analysis)
-    ↓
-Code Generator
-    ↓
-FastAPI backend + Frontend assets
-```
-
-### Generated Backend Structure
-
-```
-out/backend/
-├── main.py                 # FastAPI app entry
-├── database.py            # SQLAlchemy models
-├── schemas.py             # Pydantic schemas
-├── requirements.txt       # Dependencies
-├── generated/             # Generated routers
-│   ├── pages.py
-│   ├── datasets.py
-│   └── ai/                # AI-specific endpoints
-│       ├── prompts.py
-│       ├── chains.py
-│       ├── memory.py
-│       └── agents.py
-└── custom/                # User customizations (preserved)
-    └── custom_api.py
-```
-
-### Runtime Features
-
-- **Dataset Registry**: Cached execution with pagination
-- **Memory Manager**: Scoped storage with TTL and eviction
-- **Prompt Engine**: Schema validation and template rendering
-- **Chain Orchestrator**: Step execution with context management
-- **Agent Runtime**: Multi-agent graphs with tool calling
-- **Observability**: OpenTelemetry tracing and Prometheus metrics
-
-## Installation
-
-Namel3ss requires **Python 3.10 or newer**.
-
-### Core Installation (Lightweight)
-
-The core installation includes only the essentials for parsing, code generation, and CLI:
-
-```bash
-pip install namel3ss
-```
-
-> **⚠️ Important:** Ensure you get the latest version (0.6.0+). If you encounter issues:
-> ```bash
-> pip uninstall namel3ss -y
-> pip cache purge
-> pip install namel3ss==0.6.0
-> ```
-> 
-> Verify installation: `namel3ss --version` should show `0.6.0` or newer
-
-This minimal installation (~10MB) provides:
-- ✅ `.n3` file parsing and AST generation
-- ✅ FastAPI backend code generation  
-- ✅ Frontend site generation (static HTML, React)
-- ✅ CLI commands: `build`, `run`, `test`, `lint`
-- ✅ Language Server Protocol (LSP) support
-- ✅ Template engine for code generation
-
-**Perfect for**: CI/CD pipelines, code compilation, static analysis, development tools.
-
-### Optional Features (Extras)
-
-Install only the features you need:
-
-#### AI & LLM Providers
-
-```bash
-# All AI providers (including local models)
-pip install namel3ss[ai]
-
-# Or individual providers
-pip install namel3ss[openai]      # OpenAI (GPT-4, etc.)
-pip install namel3ss[anthropic]   # Anthropic (Claude)
-pip install namel3ss[local-models] # vLLM, Ollama, LocalAI
-
-# Specific local model engines
-pip install namel3ss[vllm]        # vLLM (high-performance)
-pip install namel3ss[ollama]      # Ollama (easy setup)
-pip install namel3ss[localai]     # LocalAI (multi-format)
-```
-
-**Enables**: Structured prompts, model adapters, token counting, AI chains, local model deployment
-
-#### Databases
-
-```bash
-# All SQL databases
-pip install namel3ss[sql]
-
-# Or specific databases
-pip install namel3ss[postgres]    # PostgreSQL (asyncpg + psycopg3)
-pip install namel3ss[mysql]       # MySQL (aiomysql)
-pip install namel3ss[mongo]       # MongoDB (motor + pymongo)
-```
-
-**Enables**: SQL datasets, database connectors, ORM models
-
-#### Caching & Queues
-
-```bash
-pip install namel3ss[redis]       # Redis caching and pub/sub
-```
-
-**Enables**: Redis adapters, queue systems (RQ), caching layers
-
-#### Real-time Features
-
-```bash
-pip install namel3ss[realtime]    # WebSockets + Redis
-pip install namel3ss[websockets]  # WebSockets only
-```
-
-**Enables**: WebSocket endpoints, real-time data streaming, pub/sub
-
-#### Observability
-
-```bash
-pip install namel3ss[otel]        # OpenTelemetry instrumentation
-```
-
-**Enables**: Distributed tracing, metrics, FastAPI auto-instrumentation
-
-#### Everything
-
-```bash
-pip install namel3ss[all]         # All optional features
-```
-
-### Installation Examples
-
-**Typical web app with database**:
-```bash
-pip install namel3ss[postgres]
-```
-
-**AI-powered application with external APIs**:
-```bash
-pip install namel3ss[ai,postgres,redis]
-```
-
-**Local AI application with private models**:
-```bash
-pip install namel3ss[local-models,postgres]
-```
-
-**Development with Ollama**:
-```bash
-pip install namel3ss[ollama,postgres]
-```
-
-**Production with vLLM**:
-```bash
-pip install namel3ss[vllm,postgres,redis,otel]
-```
-
-**Full-featured setup**:
-```bash
-pip install namel3ss[all]
-```
-
-### Feature Detection
-
-Namel3ss gracefully handles missing dependencies with helpful error messages:
-
-```python
-# If OpenAI not installed
-n3 run app.ai
-# Error: OpenAI integration requires the 'openai' extra.
-# Install with: pip install 'namel3ss[openai]'
-# Or for all AI providers: pip install 'namel3ss[ai]'
-```
-
-Check available features:
-```bash
-python -c "from namel3ss.features import print_feature_status; print_feature_status()"
-```
-
-Verify installation:
-
-```bash
-namel3ss --help
-namel3ss --version  # Should show: namel3ss 0.6.0 (language 0.1.0)
-```
 
 ## 📚 Documentation
 
@@ -1451,197 +1672,7 @@ pip install -e ".[dev]"
 ./scripts/run_tests.sh
 ```
 
-## Local Model Deployment
 
-Namel3ss provides production-grade support for deploying and managing local LLM models using industry-standard engines like vLLM, Ollama, and LocalAI. This enables private, cost-effective, and low-latency AI applications without relying on external APIs.
-
-### Supported Local Model Engines
-
-#### vLLM - High-Performance Production Inference
-- **Best for**: Production workloads requiring maximum throughput
-- **Features**: GPU optimization, continuous batching, tensor parallelism
-- **Models**: Any HuggingFace model with supported architectures
-- **Installation**: `pip install namel3ss[vllm]`
-
-#### Ollama - Easy Development & Deployment  
-- **Best for**: Development, prototyping, and simple deployment scenarios
-- **Features**: Automatic model pulling, easy setup, CPU/GPU support
-- **Models**: Pre-optimized models from Ollama library (Llama, Mistral, etc.)
-- **Installation**: `pip install namel3ss[ollama]`
-
-#### LocalAI - Multi-Format Model Support
-- **Best for**: Diverse model formats and experimental models
-- **Features**: OpenAI-compatible API, multiple model formats, Docker deployment
-- **Models**: GGML, GGUF, HuggingFace, custom models
-- **Installation**: `pip install namel3ss[localai]`
-
-### Quick Local Model Setup
-
-1. **Install local model support**:
-   ```bash
-   pip install namel3ss[local-models]  # All engines
-   # OR
-   pip install namel3ss[ollama]        # Just Ollama
-   ```
-
-2. **Define a model in your `.ai` file**:
-   ```text
-   model "chat_model" using local_engine:
-     engine_type: "ollama"
-     model_name: "llama3.2:latest"
-     deployment:
-       port: 11434
-       gpu_layers: -1
-       context_length: 4096
-   ```
-
-3. **Deploy the model**:
-   ```bash
-   namel3ss deploy local start chat_model
-   ```
-
-4. **Use in your application**:
-   ```text
-   prompt "ChatWithLocal":
-     input: message: text
-     output: response: text  
-     using model "chat_model":
-       "You are a helpful assistant. {{message}}"
-   ```
-
-### Model Configuration Examples
-
-#### vLLM Configuration (Production)
-```text
-model "production_model" using local_engine:
-  engine_type: "vllm"
-  model_name: "microsoft/DialoGPT-large"
-  deployment:
-    port: 8000
-    host: "0.0.0.0"
-    gpu_memory_utilization: 0.9
-    tensor_parallel_size: 2
-    max_model_len: 4096
-    served_model_name: "gpt-3.5-turbo"  # OpenAI-compatible name
-  health_check:
-    endpoint: "/health"
-    timeout: 30
-```
-
-#### Ollama Configuration (Development)
-```text
-model "dev_model" using local_engine:
-  engine_type: "ollama" 
-  model_name: "llama3.2:latest"
-  deployment:
-    port: 11434
-    host: "127.0.0.1"
-    gpu_layers: -1  # Use all GPU layers
-    num_ctx: 4096   # Context length
-    temperature: 0.7
-  health_check:
-    endpoint: "/api/health"
-    timeout: 60
-```
-
-#### LocalAI Configuration (Multi-format)
-```text
-model "localai_model" using local_engine:
-  engine_type: "localai"
-  model_name: "ggml-gpt4all-j.bin"
-  deployment:
-    port: 8080
-    deployment_type: "docker"  # or "binary"
-    models_path: "./models"
-    threads: 4
-    context_size: 4096
-  health_check:
-    endpoint: "/readiness"
-    timeout: 45
-```
-
-### Deployment Management
-
-```bash
-# Start models
-namel3ss deploy local start chat_model
-namel3ss deploy local start --all  # Start all defined models
-
-# Monitor status
-namel3ss deploy local status       # All models
-namel3ss deploy local status chat_model  # Specific model
-
-# Manage running models  
-namel3ss deploy local stop chat_model
-namel3ss deploy local restart chat_model
-
-# Health monitoring
-namel3ss deploy local health chat_model
-namel3ss deploy local logs chat_model
-
-# Configuration
-namel3ss deploy local list         # List available models
-namel3ss deploy local config chat_model  # Show configuration
-```
-
-### Production Considerations
-
-- **Resource Requirements**: Each model requires significant RAM/VRAM
-- **Port Management**: Ensure ports don't conflict between models  
-- **Health Monitoring**: Built-in health checks for reliability
-- **Deployment Automation**: Integrates with Docker and orchestration tools
-- **OpenAI Compatibility**: All engines support OpenAI-compatible APIs
-
-See `examples/local-model-chat/` for a complete working application demonstrating local model deployment with all three engines.
-
-## Examples
-
-### Production Examples
-
-- **[AI Customer Support Console](docs/examples/ai-customer-support-console.md)** - Professional support agent workspace demonstrating chrome navigation (sidebar, navbar, breadcrumbs), dynamic routing, and dataset integration. A complete example showing best practices for production Namel3ss applications. **Status: ✅ Parsing & IR generation working**
-  
-  **Key Learnings:**
-  - Dataset declarations must use `dataset "name" from table table_name` syntax (no `columns:` or `fields:` blocks)
-  - Namel3ss requires **4-space indentation** (not 2-space)
-  - Chrome components (sidebar, navbar, breadcrumbs) must be declared before page content
-  - Dataset names must be quoted strings, not bare identifiers
-  - Working examples (like `chrome_demo_clean.ai`) are the authoritative syntax reference
-
-- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - **✨ Enhanced with v0.6.0 parser improvements!** Production-grade RAG system showcasing tool/agent/vector_store definitions, chrome+tabs combination, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. Includes comprehensive citation tracking, multi-column info grids, and deeply nested card sections. **Status: ✅ All tests passing (13/13)**
-  
-  **v0.6.0 Enhancements:**
-  - ✅ **3 Tool definitions** with typed parameters (search, rerank, summarize)
-  - ✅ **Agent definition** with GPT-4, tool integration, and conversational config
-  - ✅ **Vector store config** for pgvector with 1536-dimensional embeddings
-  - ✅ **Chrome + tabs** - Navbar with 3-tab interface (Chat, Tools, Logs)
-  - ✅ **`condition:` property** for intuitive card filtering
-  - Multi-column info_grid layouts (2, 3, 4 columns) work correctly
-  - Deeply nested cards (3-4 levels) parse successfully: `card → sections → info_grid → items`
-  - Multiple badges and actions per card item are supported
-  - `group_by:` property enables data grouping in card displays
-
-### AI Examples
-
-- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - **NEW in v0.6.0!** Minimal example demonstrating all 5 parser improvements: tool definition, agent definition, vector_store config, chrome+tabs combination, and `condition:` property alias. Perfect starting point for RAG system development.
-
-- `examples/llm_benchmark_lab/benchmark.ai` - LLM Benchmark & Experiment Lab ([docs](examples/llm_benchmark_lab/README.md))
-- `examples/ai_demo.ai` - Complete AI application
-- `examples/text_classification.n3` - Classification with prompts
-- `examples/rag_qa.n3` - RAG question answering
-- `examples/experiment_comparison.n3` - A/B testing models
-- `examples/memory_chat_demo.n3` - Stateful conversation
-
-### Traditional Examples
-
-- `examples/app.ai` - Full-stack CRUD application
-- `examples/control_flow_demo.n3` - Conditionals and loops
-
-Run any example:
-
-```bash
-namel3ss generate examples/ai_demo.ai demo_output
-cd demo_output/backend && uvicorn main:app --reload
-```
 
 ## Repository Structure
 
@@ -1701,6 +1732,8 @@ namel3ss-programming-language/
    namel3ss run examples/minimal/app.ai
    ```
 
+
+
 ## Why Namel3ss for AI Development?
 
 ### Compared to LangChain/LlamaIndex
@@ -1718,6 +1751,8 @@ namel3ss-programming-language/
 - **AI-native constructs**: Prompts and chains are language primitives
 - **Natural language syntax**: Write apps in structured English
 - **Zero boilerplate**: No Flask/FastAPI setup, routes auto-generated
+
+
 
 ## Contributing
 
@@ -1746,6 +1781,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for complete details on:
 - Conformance test requirements
 - Code style and PR guidelines
 
+
+
 ## Migration Notice
 
 **⚠️ Breaking Change**: As of the latest version, Namel3ss source files now use `.ai` extensions instead of `.n3`. If you have existing `.n3` files, please rename them to `.ai`:
@@ -1760,9 +1797,13 @@ for file in *.n3; do mv "$file" "${file%.n3}.ai"; done
 
 All documentation, examples, and CLI commands now use `.ai` extensions. The `.n3` extension is no longer supported.
 
+
+
 ## License
 
 [MIT License](LICENSE)
+
+
 
 ## Community
 
@@ -1773,3 +1814,4 @@ All documentation, examples, and CLI commands now use `.ai` extensions. The `.n3
 ---
 
 **Namel3ss** — The programming language where AI developers write in prompts, memory, agents, and chains.
+
