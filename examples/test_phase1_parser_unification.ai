@@ -1,0 +1,78 @@
+# Test Phase 1: Parser Unification - Tool and Agent Syntax
+# This file tests that both quoted and unquoted names work
+
+app "Phase 1 Test"
+
+# Test 1: Unquoted tool names (legacy syntax compatible)
+tool generate_quiz {
+    description: "Generate quiz questions"
+    parameters: {
+        topic: {
+            type: "string",
+            required: true
+        }
+    }
+}
+
+# Test 2: Quoted tool names (modern syntax)
+tool "grade_answer" {
+    description: "Grade student answers"
+    parameters: {
+        answer: {
+            type: "string",
+            required: true
+        }
+    }
+}
+
+# Test 3: Unquoted agent names
+agent quiz_maker {
+    llm: "gpt-4"
+    tools: ["generate_quiz"]
+    system_prompt: "You are an educator"
+    temperature: 0.7
+}
+
+# Test 4: Quoted agent names  
+agent "grading_agent" {
+    llm: "gpt-4"
+    tools: ["grade_answer"]
+    system_prompt: "You are a grader"
+    temperature: 0.3
+}
+
+# Test 5: Unquoted LLM names
+llm my_llm {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+}
+
+# Test 6: Quoted LLM names
+llm "another_llm" {
+    provider: "anthropic"
+    model: "claude-3"
+}
+
+# Test 7: Unquoted memory names
+memory conversation_history {
+    type: "conversation"
+    max_turns: 10
+}
+
+# Test 8: Quoted memory names
+memory "quiz_context" {
+    type: "semantic"
+}
+
+# Test 9: Unquoted prompt names
+prompt quiz_generation {
+    model: "gpt-4"
+    template: "Generate a quiz on {{topic}}"
+}
+
+# Test 10: Quoted prompt names
+prompt "grading_rubric" {
+    model: "gpt-4"
+    template: "Grade this answer: {{answer}}"
+}

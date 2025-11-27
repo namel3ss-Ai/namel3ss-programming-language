@@ -29,6 +29,10 @@ from .commands import (
     _lazy_import_enhanced_cli,
 )
 
+# Import project management commands
+from .commands.init import add_init_command
+from .commands.sync_deps import add_sync_deps_command
+
 # Import lazy loaders for optional commands
 from .lazy_imports import (
     lazy_cmd_eval,
@@ -298,6 +302,12 @@ def main(argv: Optional[list] = None) -> None:
         help='Set environment variable for backend generation (may be provided multiple times)'
     )
     build_parser.set_defaults(func=cmd_build)
+    
+    # Init subcommand - Project scaffolding
+    add_init_command(subparsers)
+    
+    # Sync-deps subcommand - Dependency management
+    add_sync_deps_command(subparsers)
     
     # Run subcommand
     run_parser = subparsers.add_parser(

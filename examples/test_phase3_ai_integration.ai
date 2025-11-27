@@ -1,0 +1,217 @@
+app "AI Integration Phase 3" {
+    description: "Phase 3 - AI Tools, Agents, and Prompts"
+}
+
+# Phase 3: AI Integration Testing
+# This file validates that tools, agents, and prompts parse correctly
+
+# === LLM Definitions ===
+llm gpt4 {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+    max_tokens: 2000
+}
+
+llm claude {
+    provider: "anthropic"
+    model: "claude-3-sonnet"
+    temperature: 0.5
+}
+
+# === Memory Definitions ===
+memory conversation_history {
+    type: "short_term"
+    capacity: 100
+}
+
+memory quiz_context {
+    type: "long_term"
+    capacity: 1000
+}
+
+# === Tool Definitions ===
+tool generate_quiz {
+    description: "Generate quiz questions based on topic and difficulty"
+    parameters: {
+        topic: {
+            type: "string"
+            required: true
+            description: "The subject matter for the quiz"
+        }
+        difficulty: {
+            type: "string"
+            enum: ["easy", "medium", "hard"]
+            required: true
+        }
+        num_questions: {
+            type: "integer"
+            default: 10
+            min: 1
+            max: 50
+        }
+    }
+    returns: {
+        questions: {
+            type: "array"
+            description: "Generated quiz questions"
+        }
+    }
+}
+
+tool grade_submission {
+    description: "Grade student submission using rubric"
+    parameters: {
+        submission_id: {
+            type: "integer"
+            required: true
+        }
+        rubric_id: {
+            type: "integer"
+            required: true
+        }
+        student_answer: {
+            type: "string"
+            required: true
+        }
+        correct_answer: {
+            type: "string"
+            required: true
+        }
+    }
+    returns: {
+        score: {
+            type: "float"
+            description: "Score from 0-100"
+        }
+        feedback: {
+            type: "string"
+            description: "Detailed feedback for student"
+        }
+    }
+}
+
+tool explain_concept {
+    description: "Provide detailed explanation of a concept"
+    parameters: {
+        concept: {
+            type: "string"
+            required: true
+        }
+        difficulty_level: {
+            type: "string"
+            default: "medium"
+        }
+    }
+}
+
+tool analyze_performance {
+    description: "Analyze student performance across quizzes"
+    parameters: {
+        student_id: {
+            type: "integer"
+            required: true
+        }
+        time_range: {
+            type: "string"
+            default: "30days"
+        }
+    }
+}
+
+# === Prompt Definitions ===
+prompt quiz_generation {
+    role: "system"
+    content: "You are an expert educator creating quiz questions. Generate questions that are clear, educational, and appropriate for the specified difficulty level."
+}
+
+prompt grading_rubric {
+    role: "system"
+    content: "You are a fair and constructive grader. Evaluate student answers based on accuracy, completeness, and understanding. Provide helpful feedback."
+}
+
+prompt tutoring_assistant {
+    role: "system"
+    content: "You are a patient tutor helping students understand concepts. Break down complex ideas into simple explanations with examples."
+}
+
+# === Agent Definitions ===
+agent quiz_maker {
+    llm: gpt4
+    tools: [generate_quiz, analyze_performance]
+    memory: quiz_context
+    temperature: 0.7
+    system_prompt: quiz_generation
+    description: "AI agent that creates educational quizzes"
+}
+
+agent grading_agent {
+    llm: claude
+    tools: [grade_submission]
+    memory: conversation_history
+    temperature: 0.3
+    system_prompt: grading_rubric
+    description: "AI agent that grades student submissions"
+}
+
+agent explanation_tutor {
+    llm: gpt4
+    tools: [explain_concept]
+    memory: conversation_history
+    temperature: 0.8
+    system_prompt: tutoring_assistant
+    description: "AI tutor that explains concepts to students"
+}
+
+agent performance_analyzer {
+    llm: claude
+    tools: [analyze_performance]
+    temperature: 0.5
+    description: "AI agent analyzing student performance trends"
+}
+
+# === Test Pages Using AI Components ===
+dataset students from table students
+dataset quizzes from table quizzes
+dataset submissions from table submissions
+
+page "Quiz Generator" at "/generate" {
+    show text {
+        content: "AI-Powered Quiz Generator"
+        size: "large"
+    }
+    
+    show form {
+        title: "Generate New Quiz"
+        agent: quiz_maker
+        submit_label: "Generate with AI"
+    }
+}
+
+page "Grading Dashboard" at "/grade" {
+    show text {
+        content: "AI Grading Assistant"
+        size: "large"
+    }
+    
+    show data_table {
+        source: submissions
+        agent: grading_agent
+    }
+}
+
+page "Tutoring Chat" at "/tutor" {
+    show text {
+        content: "AI Tutor - Ask Any Question"
+        size: "large"
+    }
+}
+
+page "Performance Analytics" at "/analytics" {
+    show chart {
+        type: "line"
+        title: "Student Progress"
+        data_source: students
+        agent: performance_analyzer
+    }
+}

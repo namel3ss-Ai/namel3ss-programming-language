@@ -1,0 +1,87 @@
+# Education Quiz Generator + Grader Suite
+# SIMPLE VERSION - Works with current parser
+# See education-quiz-suite-FULL.ai for complex version with tools/agents
+
+app "Education Quiz Suite"
+
+# Datasets
+dataset "quizzes" from table quizzes
+dataset "questions" from table questions
+dataset "students" from table students
+dataset "submissions" from table submissions
+dataset "analytics" from table analytics
+
+# Quiz Builder page
+page "Quiz Builder" at "/quiz-builder":
+    sidebar:
+        item "Quiz Builder" at "/quiz-builder" icon "📝"
+        item "Submit Quiz" at "/submit" icon "✍️"
+        item "Analytics" at "/analytics" icon "📊"
+        item "Grading" at "/grading" icon "✅"
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Quiz Builder"
+        action "New Quiz" icon "+" type "button"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Quiz Builder"
+    
+    show text "Quiz Builder - Create and manage quizzes"
+
+# Submit Quiz page
+page "Student Submission" at "/submit":
+    sidebar:
+        item "Quiz Builder" at "/quiz-builder" icon "📝"
+        item "Submit Quiz" at "/submit" icon "✍️"
+        item "Analytics" at "/analytics" icon "📊"
+        item "Grading" at "/grading" icon "✅"
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Submit Quiz"
+    
+    show text "Submit your quiz answers"
+
+# Analytics Dashboard page
+page "Analytics Dashboard" at "/analytics":
+    sidebar:
+        item "Quiz Builder" at "/quiz-builder" icon "📝"
+        item "Submit Quiz" at "/submit" icon "✍️"
+        item "Analytics" at "/analytics" icon "📊"
+        item "Grading" at "/grading" icon "✅"
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Analytics"
+    
+    show text "Quiz performance analytics"
+
+# Grading Review page
+page "Grading Review" at "/grading":
+    sidebar:
+        item "Quiz Builder" at "/quiz-builder" icon "📝"
+        item "Submit Quiz" at "/submit" icon "✍️"
+        item "Analytics" at "/analytics" icon "📊"
+        item "Grading" at "/grading" icon "✅"
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Grading Review"
+    
+    show text "Review student submissions"
+
+# Quiz Library page
+page "Quiz Library" at "/library":
+    sidebar:
+        item "Quiz Builder" at "/quiz-builder" icon "📝"
+        item "Submit Quiz" at "/submit" icon "✍️"
+        item "Analytics" at "/analytics" icon "📊"
+        item "Grading" at "/grading" icon "✅"
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Quiz Library"
+    
+    show text "Browse all quizzes"
