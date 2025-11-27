@@ -1,5 +1,27 @@
 {
   "files.associations": {
     "*.ai": "n3"
+  },
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": [
+          "comment.line.namel3ss",
+          "comment.line.text.namel3ss",
+          "punctuation.definition.comment.namel3ss"
+        ],
+        "settings": {
+          "foreground": "#9CA3AF",
+          "fontStyle": "italic"
+        }
+      },
+      {
+        "scope": "constant.character.emoji.namel3ss",
+        "settings": {
+          "foreground": "#f59e0b",
+          "fontStyle": ""
+        }
+      }
+    ]
   }
 }
