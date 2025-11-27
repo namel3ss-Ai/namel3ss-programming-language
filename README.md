@@ -1,6 +1,6 @@
 # Namel3ss (N3) – The AI Programming Language
 
-> **✨ Latest**: Syntax Highlighting & AI Semantic Components now available - [See Recent Additions](#recent-additions-november-2025)
+> **✨ Latest Release v0.6.0**: Parser enhancements enable intuitive RAG development with tool/agent definitions, chrome+tabs, and flexible filtering - [See Recent Additions](#recent-additions-november-2025)
 
 **Namel3ss** is a declarative AI programming language that compiles English-like specifications into production-ready applications with LLM integration, memory systems, multi-agent orchestration, and intelligent workflows built directly into the language.
 
@@ -209,6 +209,103 @@ prompt "PrivateChat":
 ```
 
 ## Recent Additions (November 2025)
+
+### 🚀 Parser Enhancements (v0.6.0 - Nov 27, 2025)
+
+**Major parser improvements** removing three critical limitations that previously required workarounds. RAG system development is now significantly more intuitive with first-class support for tools, agents, and vector stores.
+
+#### What's New
+
+**1. Tool Definitions with Parameters**
+```namel3ss
+tool search_collection:
+  description: "Search documents in a collection"
+  parameters:
+    - name: query
+      type: string
+      description: "Search query text"
+      required: true
+    - name: collection_id
+      type: integer
+      description: "ID of the collection to search"
+      required: true
+    - name: limit
+      type: integer
+      description: "Maximum number of results"
+      required: false
+```
+
+**2. Agent Definitions with LLM Configuration**
+```namel3ss
+agent rag_assistant:
+  llm_name: "gpt-4"
+  tool_names:
+    - search_collection
+    - rerank_results
+    - summarize_chunks
+  goal: "Help users find and understand information from documents"
+  system_prompt: "You are a helpful research assistant..."
+  max_turns: 10
+  temperature: 0.7
+```
+
+**3. Vector Store Configuration**
+```namel3ss
+vector_store main_vector_store:
+  type: "pgvector"
+  table: "document_embeddings"
+  dimension: 1536
+  similarity_metric: "cosine"
+```
+
+**4. Chrome + Tabs Combination**
+```namel3ss
+page "Assistant" at "/assistant":
+  navbar:
+    logo: "/logo.png"
+    title: "RAG Assistant"
+  
+  show tabs:
+    tab "Chat":
+      show chat_thread "conversation"
+    
+    tab "Tools":
+      show tool_call_view "tools"
+    
+    tab "Logs":
+      show log_view "system_logs"
+```
+
+**5. Flexible Filtering with `condition:` Alias**
+```namel3ss
+show card "Recent Queries" from dataset queries:
+  condition: "created_at > now() - interval '24 hours'"  # Alternative to filter_by
+  title_from: query_text
+  description_from: created_at
+```
+
+#### Benefits
+
+- **✅ More intuitive syntax** - Aligns with developer expectations
+- **✅ Better RAG development** - Define complete RAG systems declaratively
+- **✅ Simplified chrome layouts** - Simple `tab "Name":` syntax instead of verbose YAML
+- **✅ Flexible filtering** - Use `condition:` or `filter_by:` interchangeably
+- **✅ Production-ready** - All enhancements fully tested with 21+ tests passing
+
+#### Enhanced Examples
+
+- **[RAG Document Assistant](examples/rag-document-assistant.ai)** - Now uses tool/agent/vector_store definitions with chrome+tabs
+- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - Demonstrates all 5 new features
+- **[LLM Benchmark Lab](examples/llm_benchmark_lab/benchmark.ai)** - Production example validating parser robustness
+
+#### Documentation
+
+- **[Parser Capabilities Reference](docs/PARSER_CAPABILITIES.md)** - Complete guide to all parser features
+- **[RAG Document Assistant Guide](examples/rag-document-assistant-and-citation-explorer.md)** - 6,400+ line comprehensive guide
+
+**Upgrade:** `pip install --upgrade namel3ss==0.6.0`
+
+---
 
 ### 🎨 Comprehensive Syntax Highlighting
 
@@ -640,14 +737,14 @@ The core installation includes only the essentials for parsing, code generation,
 pip install namel3ss
 ```
 
-> **⚠️ Important:** Ensure you get the latest version (0.5.1). If you encounter issues:
+> **⚠️ Important:** Ensure you get the latest version (0.6.0+). If you encounter issues:
 > ```bash
 > pip uninstall namel3ss -y
 > pip cache purge
-> pip install namel3ss==0.5.1
+> pip install namel3ss==0.6.0
 > ```
 > 
-> Verify installation: `namel3ss --version` should show `0.5.1`
+> Verify installation: `namel3ss --version` should show `0.6.0` or newer
 
 This minimal installation (~10MB) provides:
 - ✅ `.n3` file parsing and AST generation
@@ -780,7 +877,7 @@ Verify installation:
 
 ```bash
 namel3ss --help
-namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
+namel3ss --version  # Should show: namel3ss 0.6.0 (language 0.1.0)
 ```
 
 ## 📚 Documentation
@@ -1384,26 +1481,22 @@ out/backend/
   - Dataset names must be quoted strings, not bare identifiers
   - Working examples (like `chrome_demo_clean.ai`) are the authoritative syntax reference
 
-- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - Production-grade RAG system showcasing complex nested UI patterns: multi-column info grids, deeply nested card sections, tabs with chrome components, and comprehensive citation tracking. Demonstrates tool/agent definitions, vector store configuration, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. **Status: ✅ All tests passing (13/13) + Enhanced with parser improvements!**
+- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - **✨ Enhanced with v0.6.0 parser improvements!** Production-grade RAG system showcasing tool/agent/vector_store definitions, chrome+tabs combination, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. Includes comprehensive citation tracking, multi-column info grids, and deeply nested card sections. **Status: ✅ All tests passing (13/13)**
   
-  **Key Learnings:**
-  - ✅ **Chrome components now work with `show tabs`!** Use simple `tab "Name":` syntax
-  - ✅ **Tool definitions fully supported:** Define tools with parameters and descriptions
-  - ✅ **Agent definitions fully supported:** Configure agents with LLM, tools, and goals
-  - ✅ **Vector store configuration supported:** Define pgvector stores with dimensions
-  - ✅ **`condition:` works as alias for `filter_by:`** - Use whichever you prefer
+  **v0.6.0 Enhancements:**
+  - ✅ **3 Tool definitions** with typed parameters (search, rerank, summarize)
+  - ✅ **Agent definition** with GPT-4, tool integration, and conversational config
+  - ✅ **Vector store config** for pgvector with 1536-dimensional embeddings
+  - ✅ **Chrome + tabs** - Navbar with 3-tab interface (Chat, Tools, Logs)
+  - ✅ **`condition:` property** for intuitive card filtering
   - Multi-column info_grid layouts (2, 3, 4 columns) work correctly
   - Deeply nested cards (3-4 levels) parse successfully: `card → sections → info_grid → items`
   - Multiple badges and actions per card item are supported
   - `group_by:` property enables data grouping in card displays
-  
-  **Parser Enhancements (Nov 26, 2025):**
-  All three previously-documented limitations are now fixed! 🎉
-  1. ✅ Chrome + tabs combination works
-  2. ✅ Tool/agent/vector_store definitions parse correctly
-  3. ✅ `condition:` property supported as filter_by alias
 
 ### AI Examples
+
+- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - **NEW in v0.6.0!** Minimal example demonstrating all 5 parser improvements: tool definition, agent definition, vector_store config, chrome+tabs combination, and `condition:` property alias. Perfect starting point for RAG system development.
 
 - `examples/llm_benchmark_lab/benchmark.ai` - LLM Benchmark & Experiment Lab ([docs](examples/llm_benchmark_lab/README.md))
 - `examples/ai_demo.ai` - Complete AI application
