@@ -11,4 +11,4 @@ page "Contact" at "/contact":
         component: textarea
         label: "Message"
     layout: vertical
-    submit_action: send_message
+    submit_action: send_message 
