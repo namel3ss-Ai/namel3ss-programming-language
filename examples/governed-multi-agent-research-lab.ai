@@ -1,0 +1,428 @@
+# Governed Multi-Agent Research Lab
+# Enterprise-grade multi-agent collaboration platform with AI governance, policy enforcement,
+# safety monitoring, and comprehensive audit trails for research and debate sessions.
+# This example demonstrates:
+# - Multi-agent orchestration with specialist roles
+# - Central governance agent enforcing policies and safety
+# - Real-time logging and evaluation of agent interactions
+# - Policy compliance checking and risk assessment
+# - Enterprise AI safety and governance workflows
+
+app "Governed Multi-Agent Research Lab"
+
+# =============================================================================
+# LLM Configurations - Multiple models for different agent roles
+# =============================================================================
+
+llm gpt4 {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+    max_tokens: 3000
+}
+
+llm gpt4_precise {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.2
+    max_tokens: 2000
+}
+
+llm claude {
+    provider: "anthropic"
+    model: "claude-3-sonnet"
+    temperature: 0.6
+    max_tokens: 3000
+}
+
+llm gpt35_fast {
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    temperature: 0.5
+    max_tokens: 2000
+}
+
+# =============================================================================
+# Memory Systems - Context management for agents and sessions
+# =============================================================================
+
+memory debate_session_history {
+    type: "short_term"
+    capacity: 100
+}
+
+memory governance_decisions {
+    type: "long_term"
+    capacity: 1000
+}
+
+memory policy_violations_log {
+    type: "long_term"
+    capacity: 500
+}
+
+memory agent_performance_metrics {
+    type: "long_term"
+    capacity: 2000
+}
+
+memory research_context {
+    type: "short_term"
+    capacity: 50
+}
+
+memory conversation_history {
+    type: "short_term"
+    capacity: 20
+}
+
+# =============================================================================
+# AI Prompts - System prompts for agent roles
+# =============================================================================
+
+prompt researcher_role {
+    role: "system"
+    content: "You are a research specialist agent. Your role is to investigate questions thoroughly, propose well-reasoned answers backed by logic and evidence, identify key assumptions, and present findings clearly. Be precise, cite your reasoning steps, and acknowledge uncertainties. Work collaboratively with other agents while maintaining intellectual rigor."
+}
+
+prompt critic_role {
+    role: "system"
+    content: "You are a critical analysis agent. Your role is to examine arguments for logical flaws, identify unsupported claims, question assumptions, point out missing evidence, and suggest improvements. Be constructive but rigorous. Focus on strengthening the overall reasoning quality, not just finding faults. Provide specific examples of issues and concrete suggestions for improvement."
+}
+
+prompt explainer_role {
+    role: "system"
+    content: "You are a knowledge translation agent. Your role is to take complex research findings or technical arguments and explain them clearly for different audiences. Maintain accuracy while improving accessibility. Use analogies, examples, and structured explanations. Identify jargon and provide definitions. Create summaries at multiple complexity levels."
+}
+
+prompt retriever_role {
+    role: "system"
+    content: "You are an information retrieval and synthesis agent. Your role is to find relevant information, extract key facts, synthesize knowledge from multiple sources, and provide context. Present information accurately with source attribution. Highlight connections between ideas and identify gaps in available information."
+}
+
+prompt governance_role {
+    role: "system"
+    content: "You are a governance and policy auditor agent. Your critical role is to supervise all other agents, enforce policies, assess risks, and ensure safe, high-quality outputs. Evaluate responses for: policy compliance, factual accuracy, potential harms, bias, reasoning quality, and appropriateness. You have authority to approve, request revisions, or block outputs. Provide clear explanations for all governance decisions. Prioritize safety and quality over speed."
+}
+
+prompt safety_reviewer_role {
+    role: "system"
+    content: "You are a safety review specialist. Evaluate outputs for potential harms, security risks, privacy violations, bias, misinformation, and ethical concerns. Classify risk levels as: SAFE, LOW_RISK, MEDIUM_RISK, HIGH_RISK, UNSAFE. Provide detailed rationale for risk assessments and specific mitigation recommendations."
+}
+
+# =============================================================================
+# AI Tools - Governance and analysis capabilities
+# =============================================================================
+
+tool check_policy_compliance {
+    description: "Evaluates text for compliance with organizational policies and safety guidelines"
+    parameters: {
+        text: {
+            type: "string"
+            description: "Content to evaluate"
+            required: true
+        }
+        context: {
+            type: "string"
+            description: "Additional context about content purpose and audience"
+            required: false
+        }
+        policy_set: {
+            type: "string"
+            description: "Which policy set to apply: general, research, enterprise, academic"
+            required: false
+            default: "general"
+        }
+    }
+    returns: {
+        compliant: {
+            type: "boolean"
+            description: "Whether content passes policy checks"
+        }
+        risk_level: {
+            type: "string"
+            description: "SAFE, LOW_RISK, MEDIUM_RISK, HIGH_RISK, UNSAFE"
+        }
+        policy_tags: {
+            type: "array"
+            description: "List of relevant policy categories"
+        }
+        violations: {
+            type: "array"
+            description: "Specific policy violations found"
+        }
+        explanation: {
+            type: "string"
+            description: "Detailed rationale for compliance decision"
+        }
+        recommendations: {
+            type: "array"
+            description: "Suggested modifications to achieve compliance"
+        }
+    }
+}
+
+tool score_argument_quality {
+    description: "Assesses the reasoning quality and logical structure of arguments"
+    parameters: {
+        text: {
+            type: "string"
+            description: "Argument or reasoning to evaluate"
+            required: true
+        }
+        evaluation_criteria: {
+            type: "array"
+            description: "Specific criteria to evaluate: logic, evidence, clarity, completeness"
+            required: false
+        }
+    }
+    returns: {
+        overall_score: {
+            type: "number"
+            description: "Overall quality score (0-100)"
+        }
+        reasoning_score: {
+            type: "number"
+            description: "Logical reasoning quality (0-100)"
+        }
+        evidence_score: {
+            type: "number"
+            description: "Evidence quality and citation (0-100)"
+        }
+        clarity_score: {
+            type: "number"
+            description: "Clarity and structure (0-100)"
+        }
+        completeness_score: {
+            type: "number"
+            description: "Argument completeness (0-100)"
+        }
+        strengths: {
+            type: "array"
+            description: "Key strengths identified"
+        }
+        weaknesses: {
+            type: "array"
+            description: "Areas for improvement"
+        }
+        suggestions: {
+            type: "array"
+            description: "Concrete improvement suggestions"
+        }
+    }
+}
+
+tool compare_model_outputs {
+    description: "Compares outputs from different models or agents for quality and consistency"
+    parameters: {
+        output_a: {
+            type: "string"
+            description: "First output to compare"
+            required: true
+        }
+        output_b: {
+            type: "string"
+            description: "Second output to compare"
+            required: true
+        }
+        comparison_criteria: {
+            type: "array"
+            description: "Criteria: accuracy, completeness, clarity, safety, bias"
+            required: false
+        }
+    }
+    returns: {
+        similarity_score: {
+            type: "number"
+            description: "Content similarity (0-100)"
+        }
+        quality_comparison: {
+            type: "object"
+            description: "Comparative quality scores"
+        }
+        key_differences: {
+            type: "array"
+            description: "Significant differences identified"
+        }
+        consensus_points: {
+            type: "array"
+            description: "Points of agreement"
+        }
+        recommendation: {
+            type: "string"
+            description: "Which output is preferred and why"
+        }
+    }
+}
+
+tool detect_hallucination {
+    description: "Analyzes text for potential hallucinations or unsupported claims"
+    parameters: {
+        text: {
+            type: "string"
+            description: "Text to analyze"
+            required: true
+        }
+        context: {
+            type: "string"
+            description: "Known facts or source material"
+            required: false
+        }
+    }
+    returns: {
+        hallucination_risk: {
+            type: "string"
+            description: "LOW, MEDIUM, HIGH"
+        }
+        suspicious_claims: {
+            type: "array"
+            description: "Claims that may be unsupported"
+        }
+        confidence_scores: {
+            type: "object"
+            description: "Confidence in various statements"
+        }
+        verification_needed: {
+            type: "array"
+            description: "Claims requiring external verification"
+        }
+    }
+}
+
+tool calculate_bias_metrics {
+    description: "Evaluates text for various types of bias"
+    parameters: {
+        text: {
+            type: "string"
+            description: "Text to evaluate"
+            required: true
+        }
+        bias_types: {
+            type: "array"
+            description: "Types to check: demographic, political, confirmation, anchoring"
+            required: false
+        }
+    }
+    returns: {
+        overall_bias_score: {
+            type: "number"
+            description: "Overall bias level (0-100, lower is better)"
+        }
+        bias_indicators: {
+            type: "array"
+            description: "Specific bias indicators found"
+        }
+        neutrality_score: {
+            type: "number"
+            description: "Neutrality rating (0-100)"
+        }
+        recommendations: {
+            type: "array"
+            description: "Suggestions for reducing bias"
+        }
+    }
+}
+
+# =============================================================================
+# Specialist Agents - Domain experts for research and analysis
+# =============================================================================
+
+agent researcher_agent {
+    llm: gpt4
+    goal: "Conduct thorough research and propose well-reasoned answers to complex questions"
+    system_prompt: researcher_role
+    tools: [detect_hallucination, score_argument_quality]
+    memory: conversation_history
+    max_turns: 15
+    temperature: 0.7
+}
+
+agent critic_agent {
+    llm: claude
+    goal: "Critically analyze arguments, identify flaws, and suggest improvements"
+    system_prompt: critic_role
+    tools: [score_argument_quality, calculate_bias_metrics]
+    memory: conversation_history
+    max_turns: 12
+    temperature: 0.6
+}
+
+agent explainer_agent {
+    llm: gpt4
+    goal: "Translate complex research into clear, accessible explanations"
+    system_prompt: explainer_role
+    tools: [score_argument_quality]
+    memory: conversation_history
+    max_turns: 10
+    temperature: 0.7
+}
+
+agent retriever_agent {
+    llm: gpt35_fast
+    goal: "Retrieve and synthesize relevant information efficiently"
+    system_prompt: retriever_role
+    tools: []
+    memory: research_context
+    max_turns: 8
+    temperature: 0.5
+}
+
+agent safety_reviewer_agent {
+    llm: gpt4_precise
+    goal: "Review outputs for safety risks and ethical concerns"
+    system_prompt: safety_reviewer_role
+    tools: [check_policy_compliance, detect_hallucination, calculate_bias_metrics]
+    memory: governance_decisions
+    max_turns: 10
+    temperature: 0.2
+}
+
+# =============================================================================
+# Governance Agent - Central policy enforcer and quality gatekeeper
+# =============================================================================
+
+agent governance_agent {
+    llm: gpt4_precise
+    goal: "Supervise all agents, enforce policies, assess risks, and ensure safe high-quality outputs"
+    system_prompt: governance_role
+    tools: [check_policy_compliance, score_argument_quality, compare_model_outputs, detect_hallucination, calculate_bias_metrics]
+    memory: governance_decisions
+    max_turns: 20
+    temperature: 0.1
+}
+
+# =============================================================================
+# Agent Graphs - Orchestrated workflows with governance oversight
+# =============================================================================
+
+graph "research_debate_workflow" {
+    start: "researcher_agent"
+    edges: [{ from_agent: "researcher_agent", to_agent: "critic_agent", condition: "done" }, { from_agent: "critic_agent", to_agent: "researcher_agent", condition: "needs_revision" }, { from_agent: "critic_agent", to_agent: "explainer_agent", condition: "acceptable" }, { from_agent: "explainer_agent", to_agent: "safety_reviewer_agent", condition: "done" }, { from_agent: "safety_reviewer_agent", to_agent: "governance_agent", condition: "done" }, { from_agent: "governance_agent", to_agent: "researcher_agent", condition: "revision_required" }, { from_agent: "governance_agent", to_agent: "end", condition: "approved" }]
+    termination: ["governance_agent"]
+    max_hops: 25
+    timeout_ms: 180000
+}
+
+graph "quick_review_workflow" {
+    start: "researcher_agent"
+    edges: [{ from_agent: "researcher_agent", to_agent: "governance_agent", condition: "done" }, { from_agent: "governance_agent", to_agent: "critic_agent", condition: "needs_review" }, { from_agent: "critic_agent", to_agent: "governance_agent", condition: "done" }, { from_agent: "governance_agent", to_agent: "end", condition: "approved" }]
+    termination: ["governance_agent"]
+    max_hops: 10
+    timeout_ms: 60000
+}
+
+# =============================================================================
+# Datasets - Mock data for demo (would connect to real DBs in production)
+# =============================================================================
+
+dataset debate_sessions from table debate_sessions
+
+dataset governance_events from table governance_events
+
+dataset policy_violations from table policy_violations
+
+dataset active_policies from table active_policies
+
+# Note: UI pages are documented in governed-multi-agent-research-lab.md
+# The parser currently has issues with page declarations after complex agent/graph definitions.
+# Pages will be added in a future update when parser support is enhanced.

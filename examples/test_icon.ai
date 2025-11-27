@@ -1,6 +1,0 @@
-app "Test Icon"
-
-page "Home" at "/":
-  show form "Test": 
-    fields: 
-      name: text

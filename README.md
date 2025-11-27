@@ -1195,6 +1195,16 @@ prompt "LocalChat":
 
 ### Production Examples
 
+- **[Governed Multi-Agent Research Lab](examples/governed-multi-agent-research-lab.md)** - Enterprise-grade multi-agent collaboration platform demonstrating AI governance, policy enforcement, and safety monitoring. Features a central governance agent supervising 5 specialist agents (Researcher, Critic, Explainer, Retriever, Safety Reviewer) with comprehensive audit trails, real-time policy checks, and multi-agent workflow orchestration. Includes 5 governance tools (policy compliance, argument quality, output comparison, hallucination detection, bias analysis) and complete observability through datasets. **Status: ✅ Core features parsing successfully** (Pages pending parser support)
+  
+  **Key Features:**
+  - 🎯 Central governance agent with supervisory authority
+  - 🛡️ Real-time policy enforcement and risk assessment
+  - 👥 Multi-agent workflows with conditional routing
+  - 📊 Comprehensive audit trails and performance metrics
+  - 🔍 Safety monitoring: hallucination detection, bias analysis, quality scoring
+  - ⚙️ 4 LLM configurations optimized for different agent roles
+
 - **[AI Customer Support Console](docs/examples/ai-customer-support-console.md)** - Professional support agent workspace demonstrating chrome navigation (sidebar, navbar, breadcrumbs), dynamic routing, and dataset integration. A complete example showing best practices for production Namel3ss applications. **Status: ✅ Parsing & IR generation working**
   
   **Key Learnings:**
