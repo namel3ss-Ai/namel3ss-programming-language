@@ -210,6 +210,54 @@ prompt "PrivateChat":
 
 ## Recent Additions (November 2025)
 
+### 🚀 Smart Dependency Management
+
+**Automatic dependency detection and management** with `namel3ss init` and `namel3ss sync-deps` commands:
+
+- **`namel3ss init`**: Scaffold new projects with proper structure (app.ai, backend/, frontend/)
+- **`namel3ss sync-deps`**: Auto-detect features from `.ai` files and manage dependencies
+- **Intelligent Detection**: Analyzes your code to determine required packages
+  - `agent`, `llm` declarations → AI provider packages (openai, anthropic, ollama)
+  - `dataset from table` → SQL drivers (asyncpg, psycopg3)
+  - `dataset from postgres` → PostgreSQL-specific packages
+  - `dataset from mysql` → MySQL-specific packages  
+  - `memory` with Redis → Redis client
+  - UI components → React and frontend dependencies
+- **Non-Destructive Updates**: Preserves existing packages and user version pins
+- **Preview Mode**: See what would change before writing files (`--preview`)
+
+```bash
+# Initialize new project with scaffolding
+namel3ss init my-ai-app
+
+# Auto-sync dependencies based on features used
+namel3ss sync-deps
+
+# Preview changes without modifying files
+namel3ss sync-deps --preview
+
+# List all available features
+namel3ss sync-deps --list-features
+```
+
+**Example workflow:**
+```bash
+# Start a new project
+namel3ss init my-chat-app
+cd my-chat-app
+
+# Edit app.ai to add AI features
+echo 'llm gpt4 { provider: "openai" }' >> app.ai
+echo 'agent assistant { goal: "Help users" }' >> app.ai
+
+# Auto-detect and add dependencies
+namel3ss sync-deps
+# → Adds: openai, tiktoken, anthropic (if using Claude), etc.
+
+# Build and run
+namel3ss build app.ai
+```
+
 ### 🎨 Comprehensive Syntax Highlighting
 
 **Python-like syntax highlighting** for `.ai` and `.n3` files across all major editors (VS Code, Vim, Neovim, Sublime Text). Keywords, components, properties, strings, and numbers are now color-coded for improved readability.
@@ -805,6 +853,7 @@ namel3ss --version  # Should show: namel3ss 0.5.0 (language 0.1.0)
 **Examples:**
 - **[🛠️ Examples Directory](examples/)** - Complete working applications
 - **[🏥 Hospital AI](examples/hospital-ai/)** - Multi-agent hospital support system with triage, medication lookup, and patient messaging
+- **[🎓 Education Quiz Suite](examples/education-quiz-generator-and-grader-suite.md)** - AI-powered quiz generation, automatic grading with rubric-based evaluation, and comprehensive student analytics
 - **[📝 Language Syntax](docs/LANGUAGE_REFERENCE.md)** - Complete N3 syntax guide
 - **[🏗️ Architecture](docs/ARCHITECTURE.md)** - System design and internals
 
@@ -1017,23 +1066,76 @@ See `examples/local-model-chat/` for a complete working application demonstratin
 
 ## Quick Start
 
-### 1. Create your first AI application
+### 1. Initialize a new project
 
 ```bash
-# Create from template
-echo 'app "MyApp"' > my_app.ai
-echo 'page "home" { show text "Hello World" }' >> my_app.ai
+# Create a new Namel3ss project with scaffolding
+namel3ss init my-ai-app
+cd my-ai-app
+
+# Or initialize in current directory
+namel3ss init .
+
+# View project structure:
+# my-ai-app/
+#   ├── app.ai              # Main application file
+#   ├── requirements.txt    # Python dependencies (auto-generated)
+#   ├── package.json        # NPM dependencies (auto-generated)
+#   ├── backend/
+#   │   └── custom/         # Custom Python code
+#   └── frontend/
+#       └── assets/         # Static assets
+```
+
+### 2. Auto-manage dependencies
+
+```bash
+# Namel3ss automatically detects features from your .ai files
+# and generates/updates dependency files
+
+# Preview what dependencies would be added
+namel3ss sync-deps --preview
+
+# Synchronize dependencies for entire project
+namel3ss sync-deps
+
+# Sync dependencies for specific file
+namel3ss sync-deps --file app.ai
+
+# List all available features and their dependencies
+namel3ss sync-deps --list-features
+```
+
+When you use features in your `.ai` files, `sync-deps` automatically adds the required packages:
+- Using `llm` with OpenAI? → Adds `openai`, `tiktoken`
+- Using `dataset from table`? → Adds SQL database drivers
+- Using `agent`? → Adds AI provider packages
+- Using `chat_thread` component? → Adds React dependencies
+
+### 3. Create your first AI application
+
+```bash
+# Edit app.ai with your application
+echo 'app "MyApp"' > app.ai
+echo 'page "home" { show text "Hello World" }' >> app.ai
+
+# Sync dependencies (detects features and updates requirements.txt/package.json)
+namel3ss sync-deps
 
 # Build the application
-namel3ss build my_app.ai
+namel3ss build app.ai
 
 # For local model examples
 cp -r examples/local-model-chat .
 cd local-model-chat
+
+# Sync dependencies first
+namel3ss sync-deps
+
 namel3ss build app.ai
 ```
 
-### 2. Install dependencies and run
+### 4. Install dependencies and run
 
 ```bash
 cd out/backend
@@ -1049,7 +1151,7 @@ pip install namel3ss[localai]       # Just LocalAI
 uvicorn main:app --reload
 ```
 
-### 3. Deploy local models (optional)
+### 5. Deploy local models (optional)
 
 ```bash
 # Start a local model (if using local model example)
@@ -1059,7 +1161,7 @@ namel3ss deploy local start your_model_name
 namel3ss deploy local status
 ```
 
-### 4. Open the frontend
+### 6. Open the frontend
 
 Open `out/frontend/index.html` in your browser or serve with:
 
@@ -1069,6 +1171,31 @@ python -m http.server 8080
 ```
 
 ## CLI Reference
+
+### Project Management
+
+```bash
+# Initialize new project with scaffolding
+namel3ss init [project_name]         # Create new project
+namel3ss init .                      # Initialize in current directory
+namel3ss init my-app --force         # Force init even if directory exists
+
+# Dependency management (auto-detects features from .ai files)
+namel3ss sync-deps                   # Sync dependencies for entire project
+namel3ss sync-deps --preview         # Preview changes without writing files
+namel3ss sync-deps --file app.ai     # Sync specific file only
+namel3ss sync-deps --list-features   # Show all available features
+namel3ss sync-deps --verbose         # Show detailed output
+```
+
+**Dependency Detection Features:**
+- `agent`, `llm` → AI provider packages (openai, anthropic, etc.)
+- `dataset from table` → SQL database drivers (asyncpg, psycopg3)
+- `dataset from postgres` → PostgreSQL-specific packages
+- `dataset from mysql` → MySQL-specific packages
+- `memory` with Redis → Redis client packages
+- UI components → React and related frontend packages
+- `chat_thread`, `agent_panel` → AI-specific UI dependencies
 
 ### Core Commands
 
