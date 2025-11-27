@@ -28,11 +28,15 @@ class DeclarationParsingMixin:
         
         Grammar:
             AppDecl = "app" , QuotedName , [ AppConnections ] , [ Block ] ;
+            
+        Accepts both quoted and unquoted app names:
+            app "MyApp":        (quoted - modern syntax)
+            app MyApp:          (unquoted - legacy compatibility)
         """
         from namel3ss.ast import App
         
         app_token = self.expect(TokenType.APP)
-        name_token = self.expect(TokenType.STRING)
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         if self.app is not None:
             raise create_syntax_error(
@@ -41,7 +45,6 @@ class DeclarationParsingMixin:
                 line=app_token.line,
             )
         
-        name = name_token.value
         self.declare_symbol(name, app_token.line)
         
         # Optional connections - parse but store as database for now
@@ -217,8 +220,7 @@ class DeclarationParsingMixin:
         from namel3ss.ast import LLMDefinition
         
         llm_token = self.expect(TokenType.LLM)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"llm:{name}", llm_token.line)
         
@@ -235,9 +237,12 @@ class DeclarationParsingMixin:
     def parse_agent_declaration(self):
         """
         Parse agent declaration.
+        Accepts both quoted and unquoted names:
+            agent "my_agent" { ... }
+            agent my_agent { ... }
         
         Grammar:
-            AgentDecl = "agent" , QuotedName , Block ;
+            AgentDecl = "agent" , Name , Block ;
             
         Uses config filtering with DSL→AST aliasing:
         - "llm" -> "llm_name"
@@ -250,8 +255,7 @@ class DeclarationParsingMixin:
         from namel3ss.ast import AgentDefinition
         
         agent_token = self.expect(TokenType.AGENT)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"agent:{name}", agent_token.line)
         
@@ -292,8 +296,7 @@ class DeclarationParsingMixin:
         from namel3ss.ast import Prompt
         
         prompt_token = self.expect(TokenType.PROMPT)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"prompt:{name}", prompt_token.line)
         
@@ -906,12 +909,17 @@ class DeclarationParsingMixin:
         )
     
     def parse_dataset_declaration(self):
-        """Parse dataset declaration."""
+        """
+        Parse dataset declaration.
+        
+        Accepts both quoted and unquoted dataset names:
+            dataset "students":    (quoted - modern syntax)
+            dataset students:      (unquoted - legacy compatibility)
+        """
         from namel3ss.ast import Dataset
         
         dataset_token = self.expect(TokenType.DATASET)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"dataset:{name}", dataset_token.line)
         
@@ -1038,8 +1046,7 @@ class DeclarationParsingMixin:
         from namel3ss.ast import Memory
         
         memory_token = self.expect(TokenType.MEMORY)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"memory:{name}", memory_token.line)
         
@@ -1105,11 +1112,16 @@ class DeclarationParsingMixin:
     
     # Stub methods for other declarations
     def parse_tool_declaration(self):
-        """Parse tool declaration."""
+        """
+        Parse tool declaration.
+        Accepts both quoted and unquoted names:
+            tool "my_tool" { ... }
+            tool my_tool { ... }
+        """
         from namel3ss.ast import ToolDefinition
         
         tool_token = self.expect(TokenType.TOOL)
-        name = self.expect(TokenType.STRING).value
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
         self.declare_symbol(f"tool:{name}", tool_token.line)
         config = self.parse_block()
         

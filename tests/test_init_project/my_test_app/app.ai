@@ -1,0 +1,110 @@
+# Welcome to Your Namel3ss App!
+# This is a starter application showcasing core features.
+
+app "MyApp" {
+    description: "A starter Namel3ss application"
+}
+
+# =============================================================================
+# AI Configuration
+# =============================================================================
+
+llm gpt4 {
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.7
+    max_tokens: 1000
+}
+
+memory conversation_history {
+    type: "short_term"
+    capacity: 50
+}
+
+prompt helpful_assistant {
+    role: "system"
+    content: "You are a helpful AI assistant. Provide clear, concise answers."
+}
+
+# =============================================================================
+# Tools & Agents
+# =============================================================================
+
+tool generate_greeting {
+    description: "Generate a personalized greeting"
+    parameters: {
+        name: {
+            type: "string"
+            description: "Name of the person to greet"
+            required: true
+        }
+        language: {
+            type: "string"
+            description: "Language for greeting"
+            enum: ["english", "spanish", "french"]
+            default: "english"
+        }
+    }
+}
+
+agent assistant {
+    llm: gpt4
+    memory: conversation_history
+    tools: [generate_greeting]
+    goal: "Help users with their questions"
+    system_prompt: helpful_assistant
+    temperature: 0.7
+}
+
+# =============================================================================
+# Data
+# =============================================================================
+
+dataset users from table users
+dataset messages from table messages
+
+# =============================================================================
+# Pages
+# =============================================================================
+
+page "Home" at "/" {
+    show text {
+        content: "Welcome to your Namel3ss app!"
+        size: "large"
+    }
+    
+    show form {
+        title: "Try the AI Assistant"
+        agent: assistant
+    }
+}
+
+page "Dashboard" at "/dashboard" {
+    show text {
+        content: "Dashboard Overview"
+    }
+    
+    show data_table {
+        source: users
+        title: "Users"
+        sortable: true
+        filterable: true
+    }
+    
+    show chart {
+        type: "bar"
+        title: "Activity"
+        data_source: messages
+    }
+}
+
+page "Chat" at "/chat" {
+    show text {
+        content: "Chat with AI"
+    }
+}
+
+
+# Add database feature
+dataset test_data from postgres 'postgresql://localhost/test'
+

@@ -127,6 +127,32 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         
         return self.advance()
     
+    def expect_name(self) -> str:
+        """
+        Expect a name (either STRING or IDENTIFIER) and return its value.
+        This allows both `tool "name"` and `tool name` syntax.
+        """
+        token = self.current()
+        if token is None:
+            raise self.error("Expected name (string or identifier), got end of file")
+        
+        if token.type == TokenType.STRING:
+            self.advance()
+            return token.value
+        elif token.type == TokenType.IDENTIFIER:
+            self.advance()
+            return token.value
+        else:
+            raise create_syntax_error(
+                f"Unexpected token",
+                path=self.path,
+                line=token.line,
+                column=token.column,
+                expected=["string", "identifier"],
+                found=token.type.name.lower().replace('_', ' '),
+                suggestion=f'Did you mean "{token.value}"?' if hasattr(token, 'value') else None,
+            )
+    
     def match(self, *types: TokenType) -> bool:
         """Check if current token matches any of the given types."""
         token = self.current()
