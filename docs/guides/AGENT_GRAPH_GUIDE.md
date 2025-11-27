@@ -4,6 +4,10 @@
 
 Namel3ss supports **first-class agents and graphs** for building multi-agent AI systems. Agents are autonomous LLM-powered entities that can use tools and maintain memory, while graphs orchestrate multiple agents with conditional routing and state management.
 
+This guide covers both the language constructs and the visual graph editor for building agent workflows.
+
+---
+
 ## Table of Contents
 
 1. [Agent Blocks](#agent-blocks)
@@ -12,8 +16,15 @@ Namel3ss supports **first-class agents and graphs** for building multi-agent AI 
 4. [Memory Management](#memory-management)
 5. [Routing and Conditions](#routing-and-conditions)
 6. [Best Practices](#best-practices)
-7. [Examples](#examples)
-8. [Observability](#observability)
+7. [Language Examples](#language-examples)
+8. [Visual Graph Editor](#visual-graph-editor)
+9. [Editor Features](#editor-features)
+10. [Editor Quick Start](#editor-quick-start)
+11. [Real-time Collaboration](#real-time-collaboration)
+12. [Tool Registry](#tool-registry)
+13. [Adaptive Policies (RLHF)](#adaptive-policies-rlhf)
+14. [Observability](#observability)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -458,7 +469,7 @@ Build and test agents individually before composing graphs:
 
 ---
 
-## Examples
+## Language Examples
 
 ### Example 1: Simple Linear Workflow
 
@@ -649,9 +660,281 @@ graph resilient_processing {
 
 ---
 
+## Visual Graph Editor
+
+The N3 Agent Graph Editor is a production-ready visual interface for building and executing agent workflows with real-time collaboration.
+
+### Architecture
+
+```
+┌─────────────────┐
+│  React Frontend │  ← Vite + TypeScript + React Flow
+│  (port 3000)    │
+└────────┬────────┘
+         │
+         ├─────────────────┬──────────────────┐
+         │                 │                  │
+         ▼                 ▼                  ▼
+┌─────────────┐   ┌─────────────┐   ┌──────────────┐
+│ FastAPI     │   │ Yjs WS      │   │ Jaeger UI    │
+│ (port 8000) │   │ (port 1234) │   │ (port 16686) │
+└──────┬──────┘   └─────────────┘   └──────────────┘
+       │
+       ▼
+┌──────────────┐
+│ PostgreSQL   │
+│ (port 5432)  │
+└──────────────┘
+```
+
+### Technology Stack
+
+**Frontend:**
+- React 18 + TypeScript 5
+- Vite 5 (build tool)
+- React Flow 11 (graph visualization)
+- Yjs 13 + WebSocket (real-time)
+- TanStack Query 5 (server state)
+- Tailwind CSS 3 + Radix UI
+- Monaco Editor (code editing)
+
+**Backend:**
+- FastAPI + Uvicorn
+- SQLAlchemy 2.0 (async ORM)
+- PostgreSQL 16
+- OpenTelemetry SDK
+- HuggingFace TRL (RLHF)
+
+**Infrastructure:**
+- Docker + docker-compose
+- Jaeger (tracing)
+- Node.js 18 (Yjs server)
+
+---
+
+## Editor Features
+
+### ✅ Visual Graph Builder
+- **React Flow Integration**: Drag-and-drop DAG builder with custom node types
+- **Monaco Editor**: In-browser code editing with syntax highlighting
+- **Node Types**: Prompts, agents, RAG datasets, memory stores, conditions, Python hooks
+
+### ✅ Real-time Collaboration
+- **Yjs CRDT**: Conflict-free collaborative editing
+- **User Presence**: Live cursors and activity tracking
+- **WebSocket Server**: Persistent connections for instant sync
+
+### ✅ Share Links
+- **Token-based Access**: Secure shareable URLs with role permissions
+- **Viewer/Editor Roles**: Granular access control
+- **Expiration Support**: Time-limited access tokens
+
+### ✅ Backend API
+- **FastAPI**: High-performance async Python API
+- **PostgreSQL**: Persistent graph storage with SQLAlchemy ORM
+- **OpenAPI Docs**: Auto-generated API documentation
+
+### ✅ OpenTelemetry Instrumentation
+- **Distributed Tracing**: Full execution observability
+- **Jaeger Integration**: Visual trace analysis
+- **LLM Span Tracking**: Token counts, costs, model parameters
+
+### ✅ Tool Registry
+- **Decorator-based**: Simple `@tool` registration
+- **OpenAPI/LangChain Adapters**: Import external tools
+- **Execution Tracing**: Per-tool performance metrics
+
+### ✅ Adaptive Agent Policies (RLHF)
+- **Feedback Collection**: Score agent responses
+- **PPO Training**: Policy optimization with HuggingFace TRL
+- **Version Management**: Track policy evolution
+
+---
+
+## Editor Quick Start
+
+### Prerequisites
+```bash
+# Required
+- Docker & docker-compose
+- Node.js 18+
+- Python 3.11+
+```
+
+### Development Setup
+
+1. **Install frontend dependencies**:
+```bash
+cd src/web/graph-editor
+npm install
+```
+
+2. **Install backend dependencies**:
+```bash
+cd n3_server
+pip install -r requirements.txt
+```
+
+3. **Install Yjs server dependencies**:
+```bash
+cd yjs-server
+npm install
+```
+
+4. **Start all services**:
+```bash
+docker-compose up -d
+```
+
+5. **Run database migrations**:
+```bash
+cd n3_server
+alembic revision --autogenerate -m "Initial schema"
+alembic upgrade head
+```
+
+6. **Access services**:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+- Jaeger UI: http://localhost:16686
+- Yjs Server: ws://localhost:1234
+
+### API Endpoints
+
+**Graph Management:**
+```http
+GET  /api/graphs/{projectId}          # Get graph data
+PUT  /api/graphs/{projectId}          # Update graph
+POST /api/graphs/{projectId}/execute  # Execute with tracing
+```
+
+**Share Links:**
+```http
+POST   /api/projects/{projectId}/shares  # Create share link
+GET    /api/projects/{projectId}/shares  # List shares
+DELETE /api/projects/{projectId}/shares/{shareId}
+GET    /api/projects/open-by-token?token={token}
+```
+
+**Tool Registry:**
+```http
+GET  /api/tools                # List registered tools
+POST /api/tools/execute        # Execute tool
+POST /api/tools/register       # Register from OpenAPI/LangChain
+```
+
+**Adaptive Policies:**
+```http
+POST /api/feedback/{agentId}        # Submit feedback
+POST /api/train_policy/{agentId}    # Train policy with RLHF
+GET  /api/policies/{agentId}        # List policy versions
+```
+
+---
+
+## Real-time Collaboration
+
+### How Yjs Works
+- **CRDT-based**: Conflict-free replicated data types
+- **WebSocket**: Persistent connection to yjs-server
+- **Awareness**: User presence tracking (cursors, selections)
+- **Automatic Sync**: Bi-directional updates
+
+### Integration Example
+```typescript
+import { useYjsGraph } from '@/hooks/useYjsGraph';
+
+const { users, sync, isConnected } = useYjsGraph({
+  projectId,
+  nodes,
+  edges,
+  onRemoteUpdate: (remoteNodes, remoteEdges) => {
+    // Apply remote changes
+    setNodes(remoteNodes);
+    setEdges(remoteEdges);
+  },
+});
+
+// Sync local changes
+useEffect(() => {
+  sync(nodes, edges);
+}, [nodes, edges]);
+```
+
+---
+
+## Tool Registry
+
+### Register Function Tools
+```python
+from n3_server.api.tools import tool
+
+@tool(description="Calculate sum", tags=["math"])
+def add(a: float, b: float) -> float:
+    return a + b
+```
+
+### Execute Tools
+```bash
+curl -X POST http://localhost:8000/api/tools/execute \
+  -H "Content-Type: application/json" \
+  -d '{"name": "add", "args": {"a": 5, "b": 3}}'
+```
+
+---
+
+## Adaptive Policies (RLHF)
+
+### Feedback Collection
+```bash
+curl -X POST http://localhost:8000/api/feedback/agent-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What is 2+2?",
+    "response": "4",
+    "score": 1.0,
+    "runId": "run-abc"
+  }'
+```
+
+### Train Policy
+```bash
+curl -X POST http://localhost:8000/api/train_policy/agent-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "maxSteps": 1000,
+    "learningRate": 0.00001
+  }'
+```
+
+---
+
 ## Observability
 
-Agents and graphs emit comprehensive metrics for monitoring and debugging:
+### OpenTelemetry Instrumentation
+
+**Automatic Tracing:**
+- FastAPI requests (via `FastAPIInstrumentor`)
+- OpenAI API calls (via `openinference-instrumentation-openai`)
+- Custom tool executions
+
+**Span Attributes:**
+```python
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("execute_graph") as span:
+    span.set_attribute("project_id", project_id)
+    span.set_attribute("entry", entry_point)
+    # ... execution logic
+```
+
+**View Traces:**
+1. Navigate to http://localhost:16686
+2. Select service: `n3-server`
+3. Browse traces with full context
 
 ### Agent Metrics
 
@@ -720,60 +1003,6 @@ register_metric_listener(metric_handler)
 
 ---
 
-## Advanced Topics
-
-### State Management
-
-Agents can share state through the context dictionary:
-
-```n3
-graph stateful_workflow {
-  start: collector
-  edges: [
-    collector -> processor
-    processor -> finalizer
-  ]
-  termination: [finalizer]
-}
-
-chain run_workflow {
-  step graph stateful_workflow {
-    input: "Start"
-    context: {
-      collected_data: []
-      processing_status: "pending"
-    }
-  }
-}
-```
-
-Agents can read and modify context during execution, passing information between hops.
-
-### Dynamic Routing
-
-Conditions can be complex expressions:
-
-```n3
-# Multiple conditions
-agent_a -> agent_b if contains("urgent") and contains("customer")
-
-# Nested logic
-agent_a -> agent_b if contains("approve") or (contains("pending") and contains("priority"))
-
-# Pattern matching
-agent_a -> agent_b if matches("^TICKET-\\d+")
-```
-
-### Memory Persistence
-
-Memory is maintained per agent instance during graph execution:
-
-- Memory persists across hops within the same graph execution
-- Memory is reset when the graph completes
-- Use `write_memory` in chain steps to persist results beyond graph execution
-
----
-
 ## Troubleshooting
 
 ### Common Issues
@@ -828,6 +1057,122 @@ Memory is maintained per agent instance during graph execution:
 - Review LLM model choice (faster models for simple tasks)
 - Monitor metrics to identify bottleneck agents
 
+#### 6. Collaboration Sync Issues
+
+**Problem**: Changes not syncing between users.
+
+**Solutions**:
+- Check WebSocket connection (ws://localhost:1234)
+- Verify Yjs server is running (`docker ps`)
+- Check browser console for errors
+- Ensure users are on the same project ID
+
+#### 7. Database Connection Errors
+
+**Problem**: API fails to connect to PostgreSQL.
+
+**Solutions**:
+- Verify PostgreSQL is running (`docker ps`)
+- Check DATABASE_URL in environment
+- Run migrations (`alembic upgrade head`)
+- Inspect logs (`docker logs postgres`)
+
+---
+
+## Advanced Topics
+
+### State Management
+
+Agents can share state through the context dictionary:
+
+```n3
+graph stateful_workflow {
+  start: collector
+  edges: [
+    collector -> processor
+    processor -> finalizer
+  ]
+  termination: [finalizer]
+}
+
+chain run_workflow {
+  step graph stateful_workflow {
+    input: "Start"
+    context: {
+      collected_data: []
+      processing_status: "pending"
+    }
+  }
+}
+```
+
+Agents can read and modify context during execution, passing information between hops.
+
+### Dynamic Routing
+
+Conditions can be complex expressions:
+
+```n3
+# Multiple conditions
+agent_a -> agent_b if contains("urgent") and contains("customer")
+
+# Nested logic
+agent_a -> agent_b if contains("approve") or (contains("pending") and contains("priority"))
+
+# Pattern matching
+agent_a -> agent_b if matches("^TICKET-\\d+")
+```
+
+### Memory Persistence
+
+Memory is maintained per agent instance during graph execution:
+
+- Memory persists across hops within the same graph execution
+- Memory is reset when the graph completes
+- Use `write_memory` in chain steps to persist results beyond graph execution
+
+---
+
+## Testing
+
+### Frontend E2E Tests (Playwright)
+```bash
+cd src/web/graph-editor
+npm run test
+```
+
+### Backend Tests (pytest)
+```bash
+cd n3_server
+pytest tests/
+```
+
+---
+
+## Deployment
+
+### Production Build
+```bash
+# Build all containers
+docker-compose -f docker-compose.prod.yml build
+
+# Deploy
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Environment Variables
+```bash
+# Backend (.env)
+DATABASE_URL=postgresql+asyncpg://user:pass@host/db
+OTLP_ENDPOINT=http://jaeger:4317
+JWT_SECRET=your-secret-key
+CORS_ORIGINS=["https://yourdomain.com"]
+
+# Frontend (.env)
+VITE_API_URL=https://api.yourdomain.com/api
+VITE_YJS_URL=wss://collab.yourdomain.com
+```
+
 ---
 
 ## Summary
@@ -837,7 +1182,8 @@ Agents and graphs provide a powerful abstraction for building multi-agent AI sys
 - **Agents**: Autonomous LLM-powered entities with tools and memory
 - **Graphs**: Orchestrate multiple agents with conditional routing
 - **Integration**: Invoke graphs from chains seamlessly
+- **Visual Editor**: Production-ready UI with real-time collaboration
 - **Observability**: Comprehensive metrics and logging
 - **Best Practices**: Design principles for robust workflows
 
-Start simple with linear workflows, then expand to complex multi-agent collaborations as your use cases evolve.
+Start simple with linear workflows, then expand to complex multi-agent collaborations as your use cases evolve. Use the visual editor for rapid prototyping or code directly in N3 for version control and programmatic generation.
