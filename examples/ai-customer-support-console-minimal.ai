@@ -1,0 +1,12 @@
+# AI Customer Support Console - Minimal Test
+# Testing basic parsing before adding complexity
+
+app "AI Customer Support Console"
+
+# Simple datasets
+dataset "dashboard_stats" from table dashboard_stats
+dataset "tickets_list" from table tickets_list
+
+# Simple dashboard page
+page "Dashboard" at "/dashboard":
+  show text "Dashboard Content"

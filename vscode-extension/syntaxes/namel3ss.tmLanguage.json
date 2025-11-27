@@ -7,24 +7,47 @@
             "include": "#comments"
         },
         {
+            "include": "#strings"
+        },
+        {
             "include": "#keywords"
         },
         {
-            "include": "#strings"
+            "include": "#uiComponents"
+        },
+        {
+            "include": "#aiComponents"
+        },
+        {
+            "include": "#properties"
+        },
+        {
+            "include": "#aiProperties"
+        },
+        {
+            "include": "#booleans"
         },
         {
             "include": "#numbers"
         },
         {
-            "include": "#operators"
+            "include": "#functions"
         },
         {
-            "include": "#identifiers"
+            "include": "#bindings"
+        },
+        {
+            "include": "#operators"
         }
     ],
     "repository": {
         "comments": {
             "patterns": [
+                {
+                    "name": "comment.line.number-sign.namel3ss",
+                    "begin": "#",
+                    "end": "$"
+                },
                 {
                     "name": "comment.line.double-slash.namel3ss",
                     "begin": "//",
@@ -41,7 +64,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.namel3ss",
-                    "match": "\\b(app|page|frame|show|widget|data|style|fn|with|at|from|to|if|else|for|while|return)\\b"
+                    "match": "\\b(app|page|action|frame|llm|prompt|memory|dataset|function|fn|with|at|from|to|in|if|else|for|while|return|import|as|model|tool|context|eval|train|test)\\b"
                 },
                 {
                     "name": "keyword.type.namel3ss",
@@ -49,12 +72,66 @@
                 },
                 {
                     "name": "keyword.other.namel3ss",
-                    "match": "\\b(api|static|file|auth|modal|toast|chart|table|form|button)\\b"
+                    "match": "\\b(api|static|file|auth|chart|table|form|button)\\b"
+                }
+            ]
+        },
+        "uiComponents": {
+            "patterns": [
+                {
+                    "name": "entity.name.tag.component.namel3ss",
+                    "match": "\\b(show_text|show_table|show_form|show_image|show_button|show_input|show_select|stack|grid|modal|toast|tabs|accordion|card)\\b"
+                }
+            ]
+        },
+        "aiComponents": {
+            "patterns": [
+                {
+                    "name": "entity.name.tag.ai.namel3ss",
+                    "match": "\\b(chat_thread|agent_panel|tool_call_view|log_view|evaluation_result|diff_view)\\b"
+                }
+            ]
+        },
+        "properties": {
+            "patterns": [
+                {
+                    "name": "variable.parameter.property.namel3ss",
+                    "match": "\\b(title|description|label|value|placeholder|width|height|padding|margin|background|color|on_click|on_change|on_submit|validation|data|columns|rows|items|source|destination)\\b(?=\\s*:)"
+                }
+            ]
+        },
+        "aiProperties": {
+            "patterns": [
+                {
+                    "name": "variable.parameter.ai-property.namel3ss",
+                    "match": "\\b(messages_binding|agent_binding|tool_calls_binding|show_tokens|streaming_enabled|auto_scroll|show_metadata|show_input|show_status|diff_mode|syntax_highlight|editable|show_metrics|show_cost)\\b(?=\\s*:)"
                 }
             ]
         },
         "strings": {
             "patterns": [
+                {
+                    "name": "string.quoted.triple.namel3ss",
+                    "begin": "\"\"\"",
+                    "end": "\"\"\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.namel3ss",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.triple.namel3ss",
+                    "begin": "'''",
+                    "end": "'''",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.namel3ss",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
                 {
                     "name": "string.quoted.double.namel3ss",
                     "begin": "\"",
@@ -79,11 +156,19 @@
                 }
             ]
         },
+        "booleans": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.namel3ss",
+                    "match": "\\b(true|false|True|False|null|None)\\b"
+                }
+            ]
+        },
         "numbers": {
             "patterns": [
                 {
                     "name": "constant.numeric.namel3ss",
-                    "match": "\\b\\d+(\\.\\d+)?\\b"
+                    "match": "\\b-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
                 }
             ]
         },
@@ -91,12 +176,24 @@
             "patterns": [
                 {
                     "name": "keyword.operator.namel3ss",
-                    "match": "(=|\\+|\\-|\\*|/|%|==|!=|<|>|<=|>=|&&|\\|\\||!)"
+                    "match": "(=|\\+|\\-|\\*|/|%|==|!=|<|>|<=|>=|&&|\\|\\||!|\\band\\b|\\bor\\b|\\bnot\\b)"
                 }
             ]
         },
-        "identifiers": {
+        "functions": {
             "patterns": [
+                {
+                    "name": "entity.name.function.namel3ss",
+                    "match": "\\b(?!(?:if|else|for|while|return|function|fn|app|page|action|llm|prompt|memory|frame|dataset|model|tool|context|eval|train|test|with|from|to|in|as)\\b)[a-zA-Z_][a-zA-Z0-9_]*\\s*(?=\\()"
+                }
+            ]
+        },
+        "bindings": {
+            "patterns": [
+                {
+                    "name": "variable.other.binding.namel3ss",
+                    "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?:(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+|(?::[a-zA-Z_][a-zA-Z0-9_]*)+)\\b"
+                },
                 {
                     "name": "variable.name.namel3ss",
                     "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"

@@ -1,0 +1,32 @@
+{
+  "iconDefinitions": {
+    "namel3ss-file": {
+      "iconPath": "../images/namel3ss_128_icon.png"
+    }
+  },
+  "fileExtensions": {
+    "ai": "namel3ss-file",
+    "n3": "namel3ss-file"
+  },
+  "languageIds": {
+    "namel3ss": "namel3ss-file"
+  },
+  "light": {
+    "fileExtensions": {
+      "ai": "namel3ss-file",
+      "n3": "namel3ss-file"
+    },
+    "languageIds": {
+      "namel3ss": "namel3ss-file"
+    }
+  },
+  "highContrast": {
+    "fileExtensions": {
+      "ai": "namel3ss-file",
+      "n3": "namel3ss-file"
+    },
+    "languageIds": {
+      "namel3ss": "namel3ss-file"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "hidesExplorerArrows": false,
+  "iconDefinitions": {
+    "namel3ss_icon": {
+      "iconPath": "./namel3ss_128_icon.svg"
+    }
+  },
+  "fileExtensions": {
+    "ai": "namel3ss_icon",
+    "n3": "namel3ss_icon"
+  },
+  "languageIds": {
+    "n3": "namel3ss_icon"
+  }
+}

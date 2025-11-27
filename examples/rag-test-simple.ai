@@ -1,0 +1,15 @@
+# Test RAG
+
+app "RAG Test"
+
+dataset "collections" from table collections
+
+page "Library" at "/library":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+    
+    navbar:
+        title: "Library"
+        action "New" icon "➕" type "button"
+    
+    show text "Library page"

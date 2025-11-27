@@ -1,0 +1,56 @@
+# RAG Document Assistant & Citation Explorer
+# Minimal version to test parsing
+
+app "RAG Document Assistant"
+
+# Datasets
+dataset "collections" from table collections
+dataset "documents" from table documents
+dataset "chunks" from table chunks
+dataset "queries" from table queries
+dataset "retrieval_logs" from table retrieval_logs
+
+# Library page
+page "Document Library" at "/library":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Assistant" at "/assistant" icon "💬"
+        item "History" at "/history" icon "📊"
+    
+    navbar:
+        title: "Document Library"
+    
+    show text "Library content"
+
+# Assistant page
+page "Assistant Workspace" at "/assistant/:collection_id":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Assistant" at "/assistant" icon "💬"
+    
+    navbar:
+        title: "Chat"
+    
+    show text "Assistant content"
+
+# History page
+page "Query History" at "/history":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "History" at "/history" icon "📊"
+    
+    navbar:
+        title: "History"
+    
+    show text "History content"
+
+# Settings page
+page "Settings" at "/settings":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Settings" at "/settings" icon "⚙️"
+    
+    navbar:
+        title: "Settings"
+    
+    show text "Settings content"

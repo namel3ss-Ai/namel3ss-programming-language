@@ -1,0 +1,47 @@
+# AI Customer Support Console
+# Production-ready example showcasing AI-native support agent workspace
+
+app "AI Customer Support Console"
+
+# Simple datasets
+dataset "dashboard_stats" from table dashboard_stats
+dataset "tickets_list" from table tickets_list
+
+# Dashboard page
+page "Dashboard" at "/dashboard":
+    sidebar:
+        item "Dashboard" at "/dashboard" icon "📊"
+        item "Tickets" at "/tickets" icon "🎫"
+        item "Analytics" at "/analytics" icon "📈"
+    
+    navbar:
+        title: "Support Console"
+        action "Refresh" icon "🔄" type "button"
+    
+    breadcrumbs:
+        item "Home" at "/"
+        item "Dashboard"
+    
+    show text "Dashboard Content"
+
+# Ticket Workspace page
+page "Ticket Workspace" at "/ticket/:id":
+    sidebar:
+        item "Dashboard" at "/dashboard" icon "📊"
+        item "Tickets" at "/tickets" icon "🎫"
+    
+    navbar:
+        title: "Ticket #{{id}}"
+    
+    show text "Ticket workspace content"
+
+# Session Detail page
+page "Session Detail" at "/session/:session_id":
+    sidebar:
+        item "Dashboard" at "/dashboard" icon "📊"
+        item "Sessions" at "/sessions" icon "📋"
+    
+    navbar:
+        title: "Session {{session_id}}"
+    
+    show text "Session details"

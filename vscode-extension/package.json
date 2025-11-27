@@ -48,6 +48,13 @@
         "path": "./syntaxes/namel3ss.tmLanguage.json"
       }
     ],
+    "iconThemes": [
+      {
+        "id": "namel3ss-file-icons",
+        "label": "Namel3ss File Icons",
+        "path": "./fileicons/namel3ss-icon-theme.json"
+      }
+    ],
     "commands": [
       {
         "command": "namel3ss.openChat",

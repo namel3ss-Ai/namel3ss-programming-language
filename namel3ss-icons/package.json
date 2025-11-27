@@ -1,0 +1,37 @@
+{
+  "name": "namel3ss-file-icons",
+  "displayName": "Namel3ss File Icons",
+  "description": "File icons for Namel3ss .ai and .n3 files",
+  "version": "1.0.0",
+  "publisher": "namel3ss",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Themes"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "n3",
+        "aliases": ["Namel3ss", "n3"],
+        "extensions": [".n3", ".ai"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "n3",
+        "scopeName": "source.namel3ss",
+        "path": "./syntaxes/namel3ss.tmLanguage.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "namel3ss-file-icons",
+        "label": "Namel3ss File Icons",
+        "path": "./seti-icons/vs-seti-icon-theme.json"
+      }
+    ]
+  }
+}
