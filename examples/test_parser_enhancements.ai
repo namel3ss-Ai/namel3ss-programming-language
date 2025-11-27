@@ -1,0 +1,57 @@
+# Test Parser Enhancements
+# Testing: tool/agent/vector_store definitions, condition: property, show tabs with chrome
+
+app "Test Parser Enhancements"
+
+# Test 1: Tool definition
+tool search_docs:
+    description: "Search through document collection"
+    parameters:
+        query:
+            type: string
+            description: "Search query"
+            required: true
+        top_k:
+            type: integer
+            description: "Number of results"
+            required: false
+
+# Test 2: Agent definition
+agent rag_assistant:
+    llm: gpt-4
+    tools: [search_docs, rerank_results]
+    goal: "Answer questions using document search"
+    system_prompt: "You are a helpful RAG assistant"
+    max_turns: 10
+    temperature: 0.7
+
+# Test 3: Vector store
+vector_store main_store:
+    type: pgvector
+    table: embeddings
+    dimension: 1536
+
+# Test 4: Dataset with condition property (alias for filter_by)
+dataset "queries" from table queries
+
+# Test 5: Page with chrome + show tabs
+page "Test Page" at "/test":
+    sidebar:
+        item "Home" at "/" icon "🏠"
+    
+    navbar:
+        title: "Test"
+    
+    show tabs:
+        tab "Overview":
+            show text "Overview content"
+            
+            show card "Items" from dataset queries:
+                condition: "status == 'active'"
+                item:
+                    type: card
+                    header:
+                        title: "{{title}}"
+        
+        tab "Details":
+            show text "Details content"

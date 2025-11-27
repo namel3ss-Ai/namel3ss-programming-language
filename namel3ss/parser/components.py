@@ -1083,8 +1083,14 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('group_by:'):
                 group_by = stripped[len('group_by:'):].strip()
                 self._advance()
-            elif stripped.startswith('filter_by:') or stripped.startswith('filter by:'):
-                key_len = len('filter_by:') if stripped.startswith('filter_by:') else len('filter by:')
+            elif stripped.startswith('filter_by:') or stripped.startswith('filter by:') or stripped.startswith('condition:'):
+                # Support both filter_by: and condition: as aliases
+                if stripped.startswith('filter_by:'):
+                    key_len = len('filter_by:')
+                elif stripped.startswith('filter by:'):
+                    key_len = len('filter by:')
+                else:
+                    key_len = len('condition:')
                 filter_by = stripped[key_len:].strip()
                 self._advance()
             elif stripped.startswith('sort_by:') or stripped.startswith('sort by:'):
@@ -3721,21 +3727,33 @@ class ComponentParserMixin(ActionParserMixin):
         """
         Parse a tabs layout component.
         
-        Syntax: layout tabs:
-                    default_tab: overview
-                    persist_state: true
-                    tabs:
-                        - id: overview
-                          label: "Overview"
-                          icon: home
-                          content:
-                              - show card "Summary" from dataset summary
+        Supports two syntaxes:
+        
+        1. Verbose syntax:
+           layout tabs:
+               default_tab: overview
+               persist_state: true
+               tabs:
+                   - id: overview
+                     label: "Overview"
+                     content:
+                         - show card "Summary" from dataset summary
+        
+        2. Simple syntax (show tabs):
+           show tabs:
+               tab "Overview":
+                   show card "Summary" from dataset summary
+               tab "Details":
+                   show text "Details content"
         """
         default_tab: Optional[str] = None
         persist_state = True
         tabs: List[TabItem] = []
         style: Optional[Dict[str, Any]] = None
         layout: Optional[LayoutMeta] = None
+        
+        # Check if using simple "show tabs" syntax
+        using_simple_syntax = 'show tabs' in line
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -3749,6 +3767,13 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= base_indent:
                 break
             
+            # Simple syntax: tab "Name":
+            if using_simple_syntax and stripped.startswith('tab '):
+                tab_item = self._parse_simple_tab_item(line=stripped, base_indent=indent)
+                tabs.append(tab_item)
+                continue
+            
+            # Verbose syntax properties
             if stripped.startswith('default_tab:'):
                 default_tab = stripped[len('default_tab:'):].strip()
                 self._advance()
@@ -3786,7 +3811,7 @@ class ComponentParserMixin(ActionParserMixin):
                     f"Unknown tabs property: {stripped.split(':')[0]}",
                     self.pos + 1,
                     nxt,
-                    hint='Valid properties: default_tab, persist_state, tabs, style, layout'
+                    hint='Valid properties: default_tab, persist_state, tabs, style, layout (or use: tab "Name":)'
                 )
         
         # Validate default_tab if specified
@@ -3875,6 +3900,57 @@ class ComponentParserMixin(ActionParserMixin):
             label=label,
             icon=icon,
             badge=badge,
+            content=content,
+        )
+
+    def _parse_simple_tab_item(self, line: str, base_indent: int) -> TabItem:
+        """
+        Parse a simple tab item.
+        
+        Syntax: tab "Name":
+                    show card "..." from dataset ...
+                    show text "..."
+        """
+        import re
+        
+        # Parse: tab "Name":
+        match = re.match(r'tab\s+"([^"]+)"\s*:', line.strip())
+        if not match:
+            raise self._error(f'Expected: tab "Name":', self.pos + 1, line)
+        
+        label = match.group(1)
+        tab_id = label.lower().replace(' ', '_')
+        content = []
+        
+        self._advance()
+        
+        # Parse tab content (all statements until we hit another tab or outdent)
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            
+            # Stop at outdent or next tab
+            if indent <= base_indent:
+                break
+            if stripped.startswith('tab '):
+                break
+            
+            # Parse page statement (show card, show text, etc.)
+            stmt = self._parse_page_statement(indent)
+            content.append(stmt)
+        
+        return TabItem(
+            id=tab_id,
+            label=label,
+            icon=None,
+            badge=None,
             content=content,
         )
 

@@ -282,6 +282,28 @@ class LegacyProgramParser(
                 if not hasattr(self.app, 'rag_pipelines'):
                     self.app.rag_pipelines = []
                 self.app.rag_pipelines.append(rag_def)
+            elif stripped.startswith('tool '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse tool definition
+                tool_def = self._parse_tool_definition(line, line_no, indent)
+                self.app.tools.append(tool_def)
+            elif stripped.startswith('agent '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse agent definition
+                agent_def = self._parse_agent_definition(line, line_no, indent)
+                if not hasattr(self.app, 'agents'):
+                    self.app.agents = []
+                self.app.agents.append(agent_def)
+            elif stripped.startswith('vector_store '):
+                imports_allowed = False
+                self._ensure_app_initialized(line_no, line)
+                # Parse vector store configuration
+                vector_store = self._parse_vector_store(line, line_no, indent)
+                if not hasattr(self.app, 'vector_stores'):
+                    self.app.vector_stores = []
+                self.app.vector_stores.append(vector_store)
             else:
                 # Unknown top-level construct - provide helpful suggestion
                 first_word = stripped.split()[0] if stripped.split() else stripped
@@ -698,5 +720,189 @@ class LegacyProgramParser(
         
         return config
 
+    def _parse_tool_definition(self, line: str, line_no: int, base_indent: int):
+        """
+        Parse tool definition.
+        
+        Syntax:
+            tool name:
+                description: "Tool description"
+                parameters:
+                    param_name:
+                        type: string
+                        description: "Parameter description"
+                        required: true
+        """
+        import re
+        from namel3ss.ast.ai_tools import ToolDefinition
+        
+        # Parse: tool <name>:
+        match = re.match(r'tool\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s*:', line.strip())
+        if not match:
+            raise self._error('Expected: tool <name>:', line_no, line)
+        
+        name = match.group(1)
+        description = ""
+        parameters = {}
+        returns = None
+        implementation = {}
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            indent = self._indent(nxt)
+            if indent <= base_indent:
+                break
+            
+            if stripped.startswith('description:'):
+                description = stripped[len('description:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('parameters:'):
+                self._advance()
+                parameters = self._parse_kv_block(indent + 4)
+            elif stripped.startswith('returns:'):
+                self._advance()
+                returns = self._parse_kv_block(indent + 4)
+            elif stripped.startswith('implementation:'):
+                self._advance()
+                implementation = self._parse_kv_block(indent + 4)
+            else:
+                self._advance()
+        
+        return ToolDefinition(
+            name=name,
+            description=description,
+            parameters=parameters,
+            returns=returns,
+            implementation=implementation
+        )
+
+    def _parse_agent_definition(self, line: str, line_no: int, base_indent: int):
+        """
+        Parse agent definition.
+        
+        Syntax:
+            agent name:
+                llm: llm_name
+                tools: [tool1, tool2]
+                description: "Agent description"
+                goal: "Agent goal"
+        """
+        import re
+        from namel3ss.ast.agents import AgentDefinition
+        
+        # Parse: agent <name>:
+        match = re.match(r'agent\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s*:', line.strip())
+        if not match:
+            raise self._error('Expected: agent <name>:', line_no, line)
+        
+        name = match.group(1)
+        llm_name = ""
+        tool_names = []
+        goal = ""
+        system_prompt = None
+        max_turns = None
+        temperature = None
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            indent = self._indent(nxt)
+            if indent <= base_indent:
+                break
+            
+            if stripped.startswith('llm:'):
+                llm_name = stripped[len('llm:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('tools:'):
+                # Parse list of tools
+                tools_str = stripped[len('tools:'):].strip()
+                if tools_str.startswith('[') and tools_str.endswith(']'):
+                    tools_str = tools_str[1:-1]
+                    tool_names = [t.strip().strip('"').strip("'") for t in tools_str.split(',') if t.strip()]
+                self._advance()
+            elif stripped.startswith('goal:'):
+                goal = stripped[len('goal:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('system_prompt:'):
+                system_prompt = stripped[len('system_prompt:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('max_turns:'):
+                max_turns = int(stripped[len('max_turns:'):].strip())
+                self._advance()
+            elif stripped.startswith('temperature:'):
+                temperature = float(stripped[len('temperature:'):].strip())
+                self._advance()
+            else:
+                self._advance()
+        
+        return AgentDefinition(
+            name=name,
+            llm_name=llm_name,
+            tool_names=tool_names,
+            goal=goal,
+            system_prompt=system_prompt,
+            max_turns=max_turns,
+            temperature=temperature
+        )
+
+    def _parse_vector_store(self, line: str, line_no: int, base_indent: int) -> Dict[str, Any]:
+        """
+        Parse vector store configuration.
+        
+        Syntax:
+            vector_store name:
+                type: pgvector
+                table: embeddings
+                dimension: 1536
+        """
+        import re
+        
+        # Parse: vector_store <name>:
+        match = re.match(r'vector_store\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s*:', line.strip())
+        if not match:
+            raise self._error('Expected: vector_store <name>:', line_no, line)
+        
+        name = match.group(1)
+        config = {'name': name}
+        
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+            stripped = nxt.strip()
+            
+            if not stripped or stripped.startswith('#') or stripped.startswith('//'):
+                self._advance()
+                continue
+            
+            indent = self._indent(nxt)
+            if indent <= base_indent:
+                break
+            
+            # Parse key: value pairs
+            if ':' in stripped:
+                key, value = stripped.split(':', 1)
+                config[key.strip()] = value.strip().strip('"').strip("'")
+            
+            self._advance()
+        
+        return config
+
 
 __all__ = ["LegacyProgramParser"]
+

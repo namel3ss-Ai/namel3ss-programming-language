@@ -423,7 +423,7 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
             return self._parse_layout_grid(line, parent_indent)
         if stripped.startswith('layout split'):
             return self._parse_layout_split(line, parent_indent)
-        if stripped.startswith('layout tabs'):
+        if stripped.startswith('layout tabs') or stripped.startswith('show tabs'):
             return self._parse_layout_tabs(line, parent_indent)
         if stripped.startswith('layout accordion'):
             return self._parse_layout_accordion(line, parent_indent)

@@ -1,0 +1,343 @@
+[
+  {
+    "run_id": "lab-baseline-001",
+    "label": "Fast vs grounded baseline",
+    "dataset": "benchmark_cases",
+    "cases_executed": 8,
+    "runner": "offline-simulated",
+    "created_at": "2024-11-01T10:40:00Z",
+    "models": [
+      {"name": "fast_eval", "model": "gpt-4o-mini", "temperature": 0.35},
+      {"name": "grounded_eval", "model": "gpt-4o", "temperature": 0.15}
+    ],
+    "metrics": {
+      "fast_eval": {
+        "accuracy": 0.75,
+        "bleu": 0.84,
+        "hallucination_rate": 0.12,
+        "avg_latency_ms": 780,
+        "avg_cost_usd": 0.00082
+      },
+      "grounded_eval": {
+        "accuracy": 1.0,
+        "bleu": 0.93,
+        "hallucination_rate": 0.03,
+        "avg_latency_ms": 1185,
+        "avg_cost_usd": 0.0019
+      },
+      "diff": {
+        "fast_vs_grounded": {"wins": 2, "losses": 5, "ties": 1}
+      }
+    },
+    "cases": [
+      {
+        "case_id": 1,
+        "slug": "capital_canada",
+        "category": "factoid",
+        "expected": "Ottawa",
+        "fast_eval": {
+          "output": "Ottawa",
+          "score": 1.0,
+          "exact_match": true,
+          "latency_ms": 640,
+          "input_tokens": 22,
+          "output_tokens": 4,
+          "cost_usd": 0.00042,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "Ottawa, the capital city of Canada, located in Ontario.",
+          "score": 1.0,
+          "exact_match": true,
+          "latency_ms": 940,
+          "input_tokens": 24,
+          "output_tokens": 11,
+          "cost_usd": 0.00078,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 2,
+        "slug": "fibonacci_10",
+        "category": "math",
+        "expected": "55",
+        "fast_eval": {
+          "output": "55",
+          "score": 1.0,
+          "exact_match": true,
+          "latency_ms": 710,
+          "input_tokens": 18,
+          "output_tokens": 4,
+          "cost_usd": 0.00045,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "The 10th Fibonacci number is 55.",
+          "score": 1.0,
+          "exact_match": true,
+          "latency_ms": 1040,
+          "input_tokens": 20,
+          "output_tokens": 8,
+          "cost_usd": 0.00092,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 3,
+        "slug": "renewable_summary",
+        "category": "summarization",
+        "expected": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+        "fast_eval": {
+          "output": "Renewables supplied about 30% of power in 2023; solar and wind drove the growth.",
+          "score": 0.74,
+          "exact_match": false,
+          "latency_ms": 820,
+          "input_tokens": 128,
+          "output_tokens": 28,
+          "cost_usd": 0.0011,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "Renewables supplied ~30% of global power in 2023, led by solar and wind, and tripled battery storage helped stabilize grids and cut gas peaker use.",
+          "score": 0.93,
+          "exact_match": false,
+          "latency_ms": 1280,
+          "input_tokens": 134,
+          "output_tokens": 38,
+          "cost_usd": 0.00205,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 4,
+        "slug": "translation_es_en",
+        "category": "translation",
+        "expected": "The library opens at nine in the morning and closes at six in the evening.",
+        "fast_eval": {
+          "output": "The library opens at 9 in the morning and closes at 6 in the afternoon.",
+          "score": 0.97,
+          "exact_match": true,
+          "latency_ms": 690,
+          "input_tokens": 30,
+          "output_tokens": 18,
+          "cost_usd": 0.00056,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "The library opens at nine in the morning and closes at six in the evening.",
+          "score": 0.99,
+          "exact_match": true,
+          "latency_ms": 1100,
+          "input_tokens": 32,
+          "output_tokens": 20,
+          "cost_usd": 0.0010,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 5,
+        "slug": "code_review_tax",
+        "category": "code",
+        "expected": "The function adds a 7% uplift to each price, sums the list, and rounds the total to two decimals. It assumes every element is a numeric pre-tax price and will misbehave if prices are already taxed or if non-numeric/negative values are present.",
+        "fast_eval": {
+          "output": "Adds 7% to each price and sums them, then rounds. It does not validate the list items.",
+          "score": 0.64,
+          "exact_match": false,
+          "latency_ms": 760,
+          "input_tokens": 84,
+          "output_tokens": 30,
+          "cost_usd": 0.00088,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "It applies a 7% uplift to every price, sums, and rounds to two decimals. It assumes numeric pre-tax inputs and would be wrong for already-taxed items or non-numeric/negative entries.",
+          "score": 0.91,
+          "exact_match": false,
+          "latency_ms": 1185,
+          "input_tokens": 90,
+          "output_tokens": 40,
+          "cost_usd": 0.00162,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 6,
+        "slug": "temporal_reasoning_departure",
+        "category": "reasoning",
+        "expected": "Leave at 2:05 PM to account for the 65-minute drive and a 20-minute early arrival.",
+        "fast_eval": {
+          "output": "You should leave around 2:05 PM to arrive 20 minutes early with the extra traffic.",
+          "score": 0.88,
+          "exact_match": true,
+          "latency_ms": 840,
+          "input_tokens": 72,
+          "output_tokens": 24,
+          "cost_usd": 0.00098,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "Plan to leave at 2:05 PM so you have 65 minutes for the drive and still arrive 20 minutes before the 3:30 PM meeting.",
+          "score": 0.96,
+          "exact_match": true,
+          "latency_ms": 1260,
+          "input_tokens": 74,
+          "output_tokens": 32,
+          "cost_usd": 0.0018,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 7,
+        "slug": "receipt_total",
+        "category": "math_tool",
+        "expected": "51.64",
+        "fast_eval": {
+          "output": "51.64",
+          "score": 0.82,
+          "exact_match": true,
+          "latency_ms": 730,
+          "input_tokens": 46,
+          "output_tokens": 8,
+          "cost_usd": 0.00072,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "51.64 (42.50 + 2.76 tax + 6.38 tip).",
+          "score": 0.98,
+          "exact_match": true,
+          "latency_ms": 1090,
+          "input_tokens": 48,
+          "output_tokens": 16,
+          "cost_usd": 0.00102,
+          "hallucinated": false
+        }
+      },
+      {
+        "case_id": 8,
+        "slug": "voyager_fact",
+        "category": "fact_check",
+        "expected": "Voyager 1 launched in 1977 and flew by Jupiter in 1979 and Saturn in 1980.",
+        "fast_eval": {
+          "output": "Voyager 1 launched in 1977 and visited Jupiter and Saturn.",
+          "score": 0.94,
+          "exact_match": true,
+          "latency_ms": 760,
+          "input_tokens": 44,
+          "output_tokens": 22,
+          "cost_usd": 0.00086,
+          "hallucinated": false
+        },
+        "grounded_eval": {
+          "output": "Voyager 1 launched in 1977 and flew past Jupiter in 1979 and Saturn in 1980.",
+          "score": 0.97,
+          "exact_match": true,
+          "latency_ms": 1205,
+          "input_tokens": 46,
+          "output_tokens": 24,
+          "cost_usd": 0.00108,
+          "hallucinated": false
+        }
+      }
+    ],
+    "tool_calls": [
+      {
+        "case_id": 3,
+        "model": "fast_eval",
+        "tool_name": "grounded_fact_check",
+        "arguments": {
+          "claim": "Renewables supplied about 30% of power in 2023; solar and wind drove the growth.",
+          "reference": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+          "source": "benchmark_cases.context"
+        },
+        "result": {
+          "verdict": "needs_evidence",
+          "score": 0.74,
+          "evidence": "Missing storage impact and gas peaker reduction."
+        },
+        "latency_ms": 62,
+        "timestamp": "2024-11-01T10:40:04Z",
+        "status": "ok"
+      },
+      {
+        "case_id": 5,
+        "model": "fast_eval",
+        "tool_name": "grounded_fact_check",
+        "arguments": {
+          "claim": "Adds 7% to each price and sums them, then rounds. It does not validate the list items.",
+          "reference": "The function adds a 7% uplift to each price, sums the list, and rounds the total to two decimals. It assumes every element is a numeric pre-tax price and will misbehave if prices are already taxed or if non-numeric/negative values are present.",
+          "source": "benchmark_cases.expected_output"
+        },
+        "result": {
+          "verdict": "partial",
+          "score": 0.64,
+          "evidence": "Edge cases about already taxed values not covered."
+        },
+        "latency_ms": 78,
+        "timestamp": "2024-11-01T10:40:07Z",
+        "status": "ok"
+      },
+      {
+        "case_id": 7,
+        "model": "fast_eval",
+        "tool_name": "structured_calculator",
+        "arguments": {
+          "subtotal": 42.5,
+          "tax_rate": 0.065,
+          "tip_rate": 0.15
+        },
+        "result": {
+          "verdict": "ok",
+          "score": 0.82,
+          "computed_total": 51.64
+        },
+        "latency_ms": 54,
+        "timestamp": "2024-11-01T10:40:11Z",
+        "status": "ok"
+      },
+      {
+        "case_id": 3,
+        "model": "grounded_eval",
+        "tool_name": "grounded_fact_check",
+        "arguments": {
+          "claim": "Renewables supplied ~30% of global power in 2023, led by solar and wind, and tripled battery storage helped stabilize grids and cut gas peaker use.",
+          "reference": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+          "source": "benchmark_cases.context"
+        },
+        "result": {
+          "verdict": "grounded",
+          "score": 0.93,
+          "evidence": "Captures storage impact and gas peaker reduction."
+        },
+        "latency_ms": 65,
+        "timestamp": "2024-11-01T10:40:15Z",
+        "status": "ok"
+      }
+    ],
+    "logs": [
+      {
+        "timestamp": "2024-11-01T10:39:59Z",
+        "level": "info",
+        "message": "Starting run lab-baseline-001 with 8 cases.",
+        "run_id": "lab-baseline-001"
+      },
+      {
+        "timestamp": "2024-11-01T10:40:03Z",
+        "level": "info",
+        "message": "Executed fast_eval on 8 cases in 6.2s.",
+        "run_id": "lab-baseline-001"
+      },
+      {
+        "timestamp": "2024-11-01T10:40:12Z",
+        "level": "info",
+        "message": "Executed grounded_eval on 8 cases in 9.5s.",
+        "run_id": "lab-baseline-001"
+      },
+      {
+        "timestamp": "2024-11-01T10:40:15Z",
+        "level": "info",
+        "message": "Aggregated metrics and wrote artifacts.",
+        "run_id": "lab-baseline-001"
+      }
+    ]
+  }
+]

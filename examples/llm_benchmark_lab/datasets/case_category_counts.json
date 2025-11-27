@@ -1,0 +1,10 @@
+[
+  {"category": "factoid", "count": 1},
+  {"category": "math", "count": 1},
+  {"category": "summarization", "count": 1},
+  {"category": "translation", "count": 1},
+  {"category": "code", "count": 1},
+  {"category": "reasoning", "count": 1},
+  {"category": "math_tool", "count": 1},
+  {"category": "fact_check", "count": 1}
+]

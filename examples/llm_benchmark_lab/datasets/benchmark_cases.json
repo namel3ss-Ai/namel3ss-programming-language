@@ -1,0 +1,98 @@
+[
+  {
+    "id": 1,
+    "slug": "capital_canada",
+    "category": "factoid",
+    "task_type": "short_answer",
+    "input": "What is the capital city of Canada?",
+    "context": "",
+    "expected_output": "Ottawa",
+    "reference_url": "https://en.wikipedia.org/wiki/Ottawa",
+    "tags": ["geography", "factual"],
+    "difficulty": "easy"
+  },
+  {
+    "id": 2,
+    "slug": "fibonacci_10",
+    "category": "math",
+    "task_type": "numeric",
+    "input": "Return the 10th Fibonacci number.",
+    "context": "",
+    "expected_output": "55",
+    "reference_url": "https://en.wikipedia.org/wiki/Fibonacci_number",
+    "tags": ["math", "sequence"],
+    "difficulty": "easy"
+  },
+  {
+    "id": 3,
+    "slug": "renewable_summary",
+    "category": "summarization",
+    "task_type": "summary",
+    "input": "Summarize the following note into one sentence that states the trend and the grid impact.",
+    "context": "The International Energy Agency reported that renewables supplied about 30% of global electricity in 2023, driven by record solar and wind additions. Battery storage deployments tripled year over year, helping grids absorb variable generation and reduce reliance on gas peaker plants during evening demand spikes.",
+    "expected_output": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+    "reference_url": "https://www.iea.org/reports/renewables-2023",
+    "tags": ["energy", "summary", "grid"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 4,
+    "slug": "translation_es_en",
+    "category": "translation",
+    "task_type": "translation",
+    "input": "La biblioteca abre a las 9 de la mañana y cierra a las 6 de la tarde.",
+    "context": "Translate the sentence from Spanish to English.",
+    "expected_output": "The library opens at nine in the morning and closes at six in the evening.",
+    "reference_url": "https://www.spanishdict.com/translate/biblioteca",
+    "tags": ["translation", "spanish", "english"],
+    "difficulty": "easy"
+  },
+  {
+    "id": 5,
+    "slug": "code_review_tax",
+    "category": "code",
+    "task_type": "analysis",
+    "input": "Review this function and state what it does plus one edge case it misses: def calculate_total(prices):\n    total = 0\n    for price in prices:\n        total += price * 1.07\n    return round(total, 2)",
+    "context": "Python function shown inline.",
+    "expected_output": "The function adds a 7% uplift to each price, sums the list, and rounds the total to two decimals. It assumes every element is a numeric pre-tax price and will misbehave if prices are already taxed or if non-numeric/negative values are present.",
+    "reference_url": "",
+    "tags": ["python", "code-review"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 6,
+    "slug": "temporal_reasoning_departure",
+    "category": "reasoning",
+    "task_type": "planning",
+    "input": "A meeting starts at 3:30 PM in Boston. It takes 50 minutes to drive to the office and you need to arrive 20 minutes early. Traffic is expected to add 15 minutes. What time should you leave?",
+    "context": "Assume departure and arrival are in the same time zone and no parking time is needed.",
+    "expected_output": "Leave at 2:05 PM to account for the 65-minute drive and a 20-minute early arrival.",
+    "reference_url": "",
+    "tags": ["planning", "time"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 7,
+    "slug": "receipt_total",
+    "category": "math_tool",
+    "task_type": "numeric",
+    "input": "Calculate the final amount on a $42.50 restaurant bill with 6.5% tax and a 15% tip applied on the pre-tax amount.",
+    "context": "Tax applies before the tip. Round to two decimals.",
+    "expected_output": "51.64",
+    "reference_url": "",
+    "tags": ["math", "finance"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 8,
+    "slug": "voyager_fact",
+    "category": "fact_check",
+    "task_type": "short_answer",
+    "input": "What year did NASA launch Voyager 1 and which planets did it fly by?",
+    "context": "Respond with the launch year and the two planetary flybys.",
+    "expected_output": "Voyager 1 launched in 1977 and flew by Jupiter in 1979 and Saturn in 1980.",
+    "reference_url": "https://voyager.jpl.nasa.gov/mission",
+    "tags": ["space", "history"],
+    "difficulty": "medium"
+  }
+]

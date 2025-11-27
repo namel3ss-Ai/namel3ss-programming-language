@@ -1,0 +1,282 @@
+# RAG Document Assistant & Citation Explorer
+# Production-grade example with tools, agents, and vector store
+
+app "RAG Document Assistant"
+
+# Tool definitions for RAG pipeline
+tool search_collection:
+    description: "Search documents in a collection using vector similarity"
+    parameters:
+        collection_id:
+            type: string
+            description: "Collection to search"
+            required: true
+        query:
+            type: string
+            description: "Search query"
+            required: true
+        top_k:
+            type: integer
+            description: "Number of results to return"
+            required: false
+
+tool rerank_results:
+    description: "Rerank search results using cross-encoder"
+    parameters:
+        query:
+            type: string
+            description: "Original query"
+            required: true
+        results:
+            type: array
+            description: "Initial search results"
+            required: true
+
+tool summarize_chunks:
+    description: "Summarize retrieved document chunks"
+    parameters:
+        chunks:
+            type: array
+            description: "Document chunks to summarize"
+            required: true
+        focus:
+            type: string
+            description: "What to focus on in summary"
+            required: false
+
+# Agent definition
+agent rag_assistant:
+    llm: gpt-4
+    tools: [search_collection, rerank_results, summarize_chunks]
+    goal: "Answer user questions accurately using document search and retrieval"
+    system_prompt: "You are a helpful RAG assistant. Always cite your sources and be accurate."
+    max_turns: 10
+    temperature: 0.7
+
+# Vector store configuration
+vector_store main_vector_store:
+    type: pgvector
+    table: embeddings
+    dimension: 1536
+    distance_metric: cosine
+
+# Datasets
+dataset "collections" from table collections
+dataset "documents" from table documents
+dataset "chunks" from table chunks
+dataset "queries" from table queries
+dataset "retrieval_logs" from table retrieval_logs
+
+# Library page
+page "Document Library" at "/library":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Assistant" at "/assistant" icon "💬"
+        item "History" at "/history" icon "📊"
+    
+    navbar:
+        title: "Document Library"
+        action "New" icon "➕" type "button"
+    
+    show text "Manage collections"
+    
+    show card "Collections" from dataset collections:
+        item:
+            type: card
+            header:
+                title: "{{name}}"
+                badges:
+                    - field: document_count
+            sections:
+                - type: info_grid
+                  columns: 3
+                  items:
+                      - icon: "📄"
+                        label: "Documents"
+                        values:
+                            - field: document_count
+                      - icon: "🧩"
+                        label: "Chunks"
+                        values:
+                            - field: chunk_count
+                      - icon: "📅"
+                        label: "Updated"
+                        values:
+                            - field: last_updated
+            actions:
+                - label: "Open Chat"
+                  icon: "💬"
+                  action: "open"
+                - label: "Delete"
+                  icon: "🗑️"
+                  action: "delete"
+
+# Assistant page with tabs
+page "Assistant Workspace" at "/assistant/:collection_id":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Assistant" at "/assistant" icon "💬"
+        item "History" at "/history" icon "📊"
+    
+    navbar:
+        title: "Chat"
+        action "Clear" icon "🔄" type "button"
+    
+    show tabs:
+        tab "Chat":
+            show text "Ask questions about your documents"
+            
+            show card "Queries" from dataset queries:
+                condition: "collection_id == {{collection_id}}"
+                item:
+                    type: card
+                    header:
+                        title: "{{user_message}}"
+                        badges:
+                            - field: citation_count
+                    sections:
+                        - type: text_section
+                          content: "{{assistant_response}}"
+                        - type: info_grid
+                          columns: 2
+                          items:
+                              - icon: "📖"
+                                label: "Citations"
+                                values:
+                                    - field: citation_count
+                              - icon: "⏱️"
+                                label: "Time"
+                                values:
+                                    - field: response_time
+                    actions:
+                        - label: "View Citations"
+                          icon: "📖"
+                          action: "view_citations"
+                        - label: "Copy"
+                          icon: "📋"
+                          action: "copy"
+        
+        tab "Tools":
+            show text "Tool calls made during retrieval"
+            
+            show card "Tool Calls" from dataset retrieval_logs:
+                condition: "collection_id == {{collection_id}}"
+                item:
+                    type: card
+                    header:
+                        title: "{{tool_name}}"
+                    sections:
+                        - type: info_grid
+                          columns: 3
+                          items:
+                              - icon: "🎯"
+                                label: "Relevance"
+                                values:
+                                    - field: relevance_score
+                              - icon: "⏱️"
+                                label: "Duration"
+                                values:
+                                    - field: duration_ms
+                              - icon: "📊"
+                                label: "Results"
+                                values:
+                                    - field: result_count
+        
+        tab "Logs":
+            show text "Detailed retrieval logs"
+
+# History page
+page "Query History" at "/history":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "History" at "/history" icon "📊"
+    
+    navbar:
+        title: "History"
+        action "Export" icon "📥" type "button"
+    
+    show text "All queries across collections"
+    
+    show card "Queries" from dataset queries:
+        group_by: collection_id
+        item:
+            type: card
+            header:
+                title: "{{user_message}}"
+                badges:
+                    - field: collection_name
+                    - field: citation_count
+            sections:
+                - type: text_section
+                  content: "{{assistant_response}}"
+                - type: info_grid
+                  columns: 4
+                  items:
+                      - icon: "📖"
+                        label: "Citations"
+                        values:
+                            - field: citation_count
+                      - icon: "⏱️"
+                        label: "Time"
+                        values:
+                            - field: response_time
+                      - icon: "🎯"
+                        label: "Relevance"
+                        values:
+                            - field: avg_relevance_score
+                      - icon: "📅"
+                        label: "Date"
+                        values:
+                            - field: created_at
+            actions:
+                - label: "Rerun"
+                  icon: "🔄"
+                  action: "rerun"
+                - label: "Compare"
+                  icon: "⚖️"
+                  action: "compare"
+
+# Settings page
+page "Settings" at "/settings":
+    sidebar:
+        item "Library" at "/library" icon "📚"
+        item "Settings" at "/settings" icon "⚙️"
+    
+    navbar:
+        title: "Settings"
+        action "Save" icon "💾" type "button"
+    
+    show text "Configure RAG parameters"
+    
+    show card "Configuration" from dataset collections:
+        item:
+            type: card
+            header:
+                title: "{{name}}"
+            sections:
+                - type: info_grid
+                  columns: 2
+                  items:
+                      - icon: "🔢"
+                        label: "Chunk Size"
+                        values:
+                            - field: chunk_size
+                      - icon: "🔀"
+                        label: "Chunk Overlap"
+                        values:
+                            - field: chunk_overlap
+                      - icon: "🎯"
+                        label: "Top K"
+                        values:
+                            - field: top_k
+                      - icon: "🌡️"
+                        label: "Temperature"
+                        values:
+                            - field: temperature
+            actions:
+                - label: "Edit"
+                  icon: "✏️"
+                  action: "edit"
+                - label: "Reset"
+                  icon: "↩️"
+                  action: "reset"

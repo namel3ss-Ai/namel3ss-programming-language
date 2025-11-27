@@ -1,0 +1,227 @@
+# LLM Benchmark & Experiment Lab
+# End-to-end benchmarking, evaluation, and observability example.
+
+app "LLM Benchmark & Experiment Lab"
+
+# =============================================================================
+# DATASETS
+# =============================================================================
+
+dataset "benchmark_cases" from file "examples/llm_benchmark_lab/datasets/benchmark_cases.json"
+
+dataset "case_category_counts" from file "examples/llm_benchmark_lab/datasets/case_category_counts.json"
+
+dataset "run_history" from file "examples/llm_benchmark_lab/runs/sample_run_history.json"
+
+dataset "latest_run" from file "examples/llm_benchmark_lab/runs/latest_run.json"
+
+dataset "run_model_metrics" from file "examples/llm_benchmark_lab/runs/sample_model_metrics.json"
+
+dataset "tool_call_log" from file "examples/llm_benchmark_lab/runs/sample_tool_calls.json"
+
+dataset "run_logs" from file "examples/llm_benchmark_lab/runs/sample_logs.json"
+
+# =============================================================================
+# MODELS, TOOLS, AGENTS, AND PROMPTS
+# =============================================================================
+
+llm "fast_eval" {
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.35
+  max_tokens: 512
+  system_prompt: "You are a fast baseline model used for benchmarking. Keep answers concise and deterministic, but prefer speed over exhaustive detail."
+  metadata: {cost_per_1k: {input: 0.00015, output: 0.0006}, variant: "fast-baseline"}
+}
+
+llm "grounded_eval" {
+  provider: "openai"
+  model: "gpt-4o"
+  temperature: 0.15
+  max_tokens: 900
+  system_prompt: "You are the grounded, higher-accuracy evaluator. Cite evidence from provided context and never invent facts. Prefer explicit numeric answers and keep chain-of-thought internal."
+  metadata: {cost_per_1k: {input: 0.0005, output: 0.0012}, variant: "grounded"}
+}
+
+prompt "benchmark_prompt" {
+  model: "fast_eval"
+  template: "Run the benchmark task. Task type: {{task_type}} | Category: {{category}} | Input: {{input}} | Context: {{context}} | Respond with the final answer only."
+}
+
+prompt "scoring_prompt" {
+  model: "grounded_eval"
+  template: "Compare the candidate output to the expected output and return JSON with accuracy, reasoning, and hallucination flag. Expected: {{expected_output}} | Candidate: {{candidate_output}}."
+}
+
+memory "run_cache" {
+  scope: "page"
+  kind: "key_value"
+  max_items: 50
+}
+
+# =============================================================================
+# PAGES
+# =============================================================================
+
+page "LLM Benchmark Dashboard" at "/benchmark":
+  show stat_summary "Accuracy" from dataset run_model_metrics:
+    value: run_model_metrics.accuracy
+    format: percentage
+    suffix: "%"
+  show stat_summary "Latency (ms)" from dataset run_model_metrics:
+    value: run_model_metrics.avg_latency_ms
+    format: number
+    suffix: "ms"
+  show chart "Accuracy by model" from dataset run_model_metrics:
+    chart_type: bar
+    x: model
+    y: accuracy
+    color: hallucination_rate
+  show chart "Cost vs latency" from dataset run_model_metrics:
+    chart_type: scatter
+    x: avg_latency_ms
+    y: avg_cost_usd
+    color: model
+  show data_table "Recent runs" from dataset run_history:
+    columns:
+      - field: run_id
+        header: "Run ID"
+      - field: label
+        header: "Label"
+      - field: cases_executed
+        header: "Cases"
+      - field: created_at
+        header: "Timestamp"
+    page_size: 5
+  evaluation_result "latest_eval":
+    eval_run_binding: "run_history[0]"
+    show_histograms: true
+    show_error_table: true
+    show_error_distribution: true
+    primary_metric: "accuracy"
+  diff_view "model_diff":
+    left_binding: "latest_run.cases[0].fast_eval.output"
+    right_binding: "latest_run.cases[0].grounded_eval.output"
+    mode: "split"
+    content_type: "text"
+    show_line_numbers: true
+    highlight_inline_changes: true
+  tool_call_view "tools_used":
+    calls_binding: "tool_call_log"
+    show_inputs: true
+    show_outputs: true
+    show_timing: true
+    show_status: true
+  log_view "run_logs_panel":
+    logs_binding: "run_logs"
+    show_timestamp: true
+    show_level: true
+    auto_scroll: true
+    enable_download: true
+
+page "Dataset Browser" at "/benchmark/dataset":
+  show data_table "Benchmark cases" from dataset benchmark_cases:
+    columns:
+      - field: slug
+        header: "Slug"
+      - field: category
+        header: "Category"
+      - field: task_type
+        header: "Task"
+      - field: difficulty
+        header: "Difficulty"
+      - field: expected_output
+        header: "Expected"
+    page_size: 10
+  show chart "Cases by category" from dataset case_category_counts:
+    chart_type: bar
+    x: category
+    y: count
+
+page "Experiment Runner" at "/benchmark/run":
+  show form "Launch benchmark" (variant=elevated, tone=primary, size=lg, density=compact):
+    fields:
+      - name: run_label
+        component: text_input
+        label: "Run label"
+        required: true
+      - name: model_a
+        component: select
+        label: "Model A"
+        options: ["fast_eval", "grounded_eval"]
+      - name: model_b
+        component: select
+        label: "Model B"
+        options: ["grounded_eval", "fast_eval"]
+      - name: cases
+        component: multiselect
+        label: "Cases"
+        options: ["capital_canada", "fibonacci_10", "renewable_summary", "translation_es_en", "code_review_tax", "temporal_reasoning_departure", "receipt_total", "voyager_fact"]
+      - name: tax_rate
+        component: number_input
+        label: "Tax rate"
+        default: 0.065
+      - name: tip_rate
+        component: number_input
+        label: "Tip rate"
+        default: 0.15
+    layout: horizontal
+    submit_button_text: "Run experiment"
+    success_message: "Run launched. Watch metrics update in real time."
+
+  evaluation_result "experiment_eval":
+    eval_run_binding: "latest_run"
+    show_histograms: true
+    show_error_examples: true
+    max_error_examples: 6
+    show_error_table: true
+  diff_view "expected_vs_actual":
+    left_binding: "benchmark_cases.expected_output"
+    right_binding: "latest_run.cases[0].fast_eval.output"
+    mode: "unified"
+    content_type: "text"
+  show chart "Latency trend" from dataset run_model_metrics:
+    chart_type: line
+    x: created_at
+    y: avg_latency_ms
+    color: model
+  show chart "Cost per run" from dataset run_model_metrics:
+    chart_type: bar
+    x: model
+    y: avg_cost_usd
+  log_view "experiment_logs":
+    logs_binding: "latest_run.logs"
+    show_timestamp: true
+    show_level: true
+    search_enabled: true
+  tool_call_view "experiment_tools":
+    calls_binding: "latest_run.tool_calls"
+    show_inputs: true
+    show_outputs: true
+
+page "Run Details" at "/benchmark/runs":
+  show table "Model metrics" from dataset run_model_metrics:
+    columns: model, accuracy, avg_latency_ms, avg_cost_usd, hallucination_rate
+    sort by: accuracy desc
+  show data_table "Tool calls" from dataset tool_call_log:
+    columns:
+      - field: run_id
+        header: "Run"
+      - field: tool_name
+        header: "Tool"
+      - field: model
+        header: "Model"
+      - field: score
+        header: "Score"
+      - field: timestamp
+        header: "Timestamp"
+  diff_view "run_regression_check":
+    left_binding: "latest_run.cases[0].fast_eval.output"
+    right_binding: "latest_run.cases[0].grounded_eval.output"
+    mode: "split"
+    content_type: "text"
+  log_view "detailed_logs":
+    logs_binding: "run_logs"
+    show_timestamp: true
+    show_level: true
+    search_enabled: true

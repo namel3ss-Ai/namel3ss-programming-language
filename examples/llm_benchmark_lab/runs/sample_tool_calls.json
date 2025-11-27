@@ -1,0 +1,78 @@
+[
+  {
+    "run_id": "lab-baseline-001",
+    "case_id": 3,
+    "model": "fast_eval",
+    "tool_name": "grounded_fact_check",
+    "arguments": {
+      "claim": "Renewables supplied about 30% of power in 2023; solar and wind drove the growth.",
+      "reference": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+      "source": "benchmark_cases.context"
+    },
+    "result": {
+      "verdict": "needs_evidence",
+      "score": 0.74,
+      "evidence": "Missing storage impact and gas peaker reduction."
+    },
+    "latency_ms": 62,
+    "timestamp": "2024-11-01T10:40:04Z",
+    "status": "ok"
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "case_id": 5,
+    "model": "fast_eval",
+    "tool_name": "grounded_fact_check",
+    "arguments": {
+      "claim": "Adds 7% to each price and sums them, then rounds. It does not validate the list items.",
+      "reference": "The function adds a 7% uplift to each price, sums the list, and rounds the total to two decimals. It assumes every element is a numeric pre-tax price and will misbehave if prices are already taxed or if non-numeric/negative values are present.",
+      "source": "benchmark_cases.expected_output"
+    },
+    "result": {
+      "verdict": "partial",
+      "score": 0.64,
+      "evidence": "Edge cases about already taxed values not covered."
+    },
+    "latency_ms": 78,
+    "timestamp": "2024-11-01T10:40:07Z",
+    "status": "ok"
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "case_id": 7,
+    "model": "fast_eval",
+    "tool_name": "structured_calculator",
+    "arguments": {
+      "subtotal": 42.5,
+      "tax_rate": 0.065,
+      "tip_rate": 0.15
+    },
+    "result": {
+      "verdict": "ok",
+      "score": 0.82,
+      "computed_total": 51.64
+    },
+    "latency_ms": 54,
+    "timestamp": "2024-11-01T10:40:11Z",
+    "status": "ok"
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "case_id": 3,
+    "model": "grounded_eval",
+    "tool_name": "grounded_fact_check",
+    "arguments": {
+      "claim": "Renewables supplied ~30% of global power in 2023, led by solar and wind, and tripled battery storage helped stabilize grids and cut gas peaker use.",
+      "reference": "Renewables reached roughly 30% of global power in 2023 thanks to record solar and wind growth, with tripled battery storage stabilizing grids and cutting the need for gas peakers.",
+      "source": "benchmark_cases.context"
+    },
+    "result": {
+      "verdict": "grounded",
+      "score": 0.93,
+      "evidence": "Captures storage impact and gas peaker reduction."
+    },
+    "latency_ms": 65,
+    "timestamp": "2024-11-01T10:40:15Z",
+    "status": "ok"
+  }
+]

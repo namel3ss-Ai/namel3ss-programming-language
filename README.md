@@ -1373,8 +1373,39 @@ out/backend/
 
 ## Examples
 
+### Production Examples
+
+- **[AI Customer Support Console](docs/examples/ai-customer-support-console.md)** - Professional support agent workspace demonstrating chrome navigation (sidebar, navbar, breadcrumbs), dynamic routing, and dataset integration. A complete example showing best practices for production Namel3ss applications. **Status: ✅ Parsing & IR generation working**
+  
+  **Key Learnings:**
+  - Dataset declarations must use `dataset "name" from table table_name` syntax (no `columns:` or `fields:` blocks)
+  - Namel3ss requires **4-space indentation** (not 2-space)
+  - Chrome components (sidebar, navbar, breadcrumbs) must be declared before page content
+  - Dataset names must be quoted strings, not bare identifiers
+  - Working examples (like `chrome_demo_clean.ai`) are the authoritative syntax reference
+
+- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - Production-grade RAG system showcasing complex nested UI patterns: multi-column info grids, deeply nested card sections, tabs with chrome components, and comprehensive citation tracking. Demonstrates tool/agent definitions, vector store configuration, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. **Status: ✅ All tests passing (13/13) + Enhanced with parser improvements!**
+  
+  **Key Learnings:**
+  - ✅ **Chrome components now work with `show tabs`!** Use simple `tab "Name":` syntax
+  - ✅ **Tool definitions fully supported:** Define tools with parameters and descriptions
+  - ✅ **Agent definitions fully supported:** Configure agents with LLM, tools, and goals
+  - ✅ **Vector store configuration supported:** Define pgvector stores with dimensions
+  - ✅ **`condition:` works as alias for `filter_by:`** - Use whichever you prefer
+  - Multi-column info_grid layouts (2, 3, 4 columns) work correctly
+  - Deeply nested cards (3-4 levels) parse successfully: `card → sections → info_grid → items`
+  - Multiple badges and actions per card item are supported
+  - `group_by:` property enables data grouping in card displays
+  
+  **Parser Enhancements (Nov 26, 2025):**
+  All three previously-documented limitations are now fixed! 🎉
+  1. ✅ Chrome + tabs combination works
+  2. ✅ Tool/agent/vector_store definitions parse correctly
+  3. ✅ `condition:` property supported as filter_by alias
+
 ### AI Examples
 
+- `examples/llm_benchmark_lab/benchmark.ai` - LLM Benchmark & Experiment Lab ([docs](examples/llm_benchmark_lab/README.md))
 - `examples/ai_demo.ai` - Complete AI application
 - `examples/text_classification.n3` - Classification with prompts
 - `examples/rag_qa.n3` - RAG question answering

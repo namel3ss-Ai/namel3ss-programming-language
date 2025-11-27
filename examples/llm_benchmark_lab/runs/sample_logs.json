@@ -1,0 +1,26 @@
+[
+  {
+    "run_id": "lab-baseline-001",
+    "timestamp": "2024-11-01T10:39:59Z",
+    "level": "info",
+    "message": "Starting run lab-baseline-001 with 8 cases."
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "timestamp": "2024-11-01T10:40:03Z",
+    "level": "info",
+    "message": "Executed fast_eval on 8 cases in 6.2s."
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "timestamp": "2024-11-01T10:40:12Z",
+    "level": "info",
+    "message": "Executed grounded_eval on 8 cases in 9.5s."
+  },
+  {
+    "run_id": "lab-baseline-001",
+    "timestamp": "2024-11-01T10:40:15Z",
+    "level": "info",
+    "message": "Aggregated metrics and wrote artifacts."
+  }
+]
