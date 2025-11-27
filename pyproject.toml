@@ -7,8 +7,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "namel3ss"
-version = "0.5.1"
-description = "Declarative English-like language that compiles .n3 files into FastAPI backends and static frontends."
+version = "0.6.2"
+description = "The first language designed for AI - where thought becomes production code"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
     { name = "Namel3ss Developers" }
