@@ -1,0 +1,1519 @@
+# Namel3ss
+## The first language designed for AI
+
+> **✨ Now shipping v0.6.1** – [What's new](#recent-additions-november-2025)
+
+We think AI programming should be simple. Beautiful. Intuitive.
+
+So we built a programming language that thinks like you do. Where you describe what you want in plain English, and it creates production applications. Complete with intelligent agents, conversational memory, and sophisticated workflows.
+
+No frameworks to learn. No libraries to wrangle. No boilerplate to write.
+
+**Just pure thought to production code.**
+
+---
+
+Today, developers bolt AI onto languages built for a different era. They wrestle with complexity. Fight with frameworks. Compromise on what's possible.
+
+**We started from zero.**
+
+We asked ourselves: what if AI wasn't an afterthought? What if prompts, memory, agents, and intelligence were as fundamental as variables and functions?
+
+What if building AI applications was as simple as describing them?
+
+
+
+## This changes everything
+
+**Intelligent conversations.** Memory isn't an afterthought—it's built into the language. Session memory. Conversation history. Global knowledge. Just declare it.
+
+**Multi-agent systems.** Orchestrate teams of AI agents with simple, declarative syntax. No complex state machines. No imperative choreography. Just describe the workflow.
+
+**Production-ready interfaces.** Navigation, dashboards, real-time data, professional UI components. All generated from your description.
+
+**Your own AI models.** Deploy private LLMs with one command. Full control. Zero external APIs. Enterprise-grade security.
+
+**Type-safe intelligence.** Every prompt has a schema. Every output is validated. Catch errors at compile time, not in production.
+
+**Deterministic testing.** Built-in mocks and stubs. Test AI workflows like any other code. No surprises in production.
+
+And it all compiles to production-ready FastAPI backends and modern React frontends. Fast. Secure. Observable.
+
+
+
+## See it in action
+
+Here's a complete AI support system. Written in plain English. Ready for production.
+
+```text
+app "AI Support" connects to postgres "SUPPORT_DB".
+
+# First-class memory as a language construct
+memory "chat_history":
+  scope: conversation
+  kind: conversation
+  max_items: 50
+
+# Structured prompts with typed schemas
+prompt "ClassifyTicket":
+  input:
+    ticket: text
+    history: conversation
+  output:
+    category: one_of("billing", "technical", "general")
+    urgency: one_of("low", "medium", "high")
+    summary: text
+  using model "gpt-4o-mini":
+    """
+    You are a support agent. Classify this ticket based on history.
+    
+    Ticket: {{ticket}}
+    History: {{history}}
+    """
+
+# Multi-step chain workflow
+define chain "SupportFlow":
+  steps:
+    - step "classify":
+        kind: prompt
+        target: ClassifyTicket
+        read_memory: chat_history
+    - if ctx:steps.classify.result.urgency == "high":
+        then:
+          - step "escalate":
+              kind: python
+              module: ops.alerting
+              arguments:
+                ticket: ctx:payload
+        else:
+          - step "auto_reply":
+              kind: template
+              target: AutoReply
+    - step "save":
+        write_memory: chat_history
+
+# Professional dashboard with navigation and data display
+page "Analytics Dashboard" at "/dashboard":
+  # Navigation sidebar
+  sidebar:
+    item "Dashboard" at "/dashboard" icon "📊"
+    item "Analytics" at "/analytics" icon "📈"
+    item "Reports" at "/reports" icon "📋":
+      item "Sales" at "/reports/sales"
+      item "Revenue" at "/reports/revenue"
+  
+  # Top navbar with actions
+  navbar:
+    logo: "/assets/logo.png"
+    title: "Analytics"
+    action "Export" icon "📥" type "button"
+    action "User" icon "👤" type "menu":
+      item "Profile" at "/profile"
+      item "Logout" action "logout"
+  
+  # Breadcrumb navigation
+  breadcrumbs:
+    item "Home" at "/"
+    item "Dashboard"
+  
+  # Command palette for quick navigation
+  command palette:
+    shortcut: "Ctrl+K"
+    source "pages" from "/api/search/pages" label "Jump to..."
+  
+  # KPI metrics with sparklines
+  show stat_summary from dataset revenue:
+    label: "Total Revenue"
+    value:
+      field: total_revenue
+      format: currency
+    delta:
+      field: revenue_change
+      format: percentage
+    sparkline:
+      data: daily_revenue
+      color: "#10b981"
+  
+  # Multi-series chart
+  show data_chart "Sales Trend" from dataset sales:
+    chart:
+      type: line
+      x_axis: date
+      series:
+        - data_key: revenue
+          label: "Revenue"
+        - data_key: orders
+          label: "Orders"
+  
+  # Interactive data table
+  show data_table "Recent Orders" from dataset orders:
+    columns:
+      - field: order_number
+        header: "Order #"
+        sortable: true
+      - field: amount
+        header: "Amount"
+        format: currency
+    toolbar:
+      searchable: true
+      filters:
+        - field: status
+          label: "Status"
+          type: select
+    row_actions:
+      - label: "View"
+        action: view_order
+        icon: eye
+  
+  # Feedback components for user interactions
+  modal "confirm_delete":
+    title: "Delete Order?"
+    description: "This action cannot be undone"
+    trigger: "show_delete_confirm"
+    content:
+      show text "The order will be permanently removed from the system."
+    actions:
+      action "Cancel" variant "ghost"
+      action "Delete" variant "destructive" action "do_delete"
+  
+  toast "order_deleted":
+    title: "Order Deleted"
+    description: "The order has been removed"
+    variant: success
+    duration: 3000
+    action_label: "Undo"
+    action: "undo_delete"
+    trigger: "show_delete_success"
+
+# AI-powered form with chain workflow
+page "Support Chat" at "/chat":
+  show form "Ask Support":
+    fields: message
+    on submit:
+      run chain SupportFlow with:
+        ticket = form.message
+      show toast "Your ticket has been processed"
+```
+
+That's it. One file. Complete application.
+
+This compiles to:
+- Production FastAPI backend with typed validation
+- Conversation memory with intelligent scoping
+- Conditional workflow orchestration
+- Real-time UI components
+- Complete test infrastructure
+
+**No frameworks. No glue code. No complexity.**
+
+### Own your AI
+
+Want private, secure AI? Run your own models locally:
+
+```text
+# Deploy a local model for private AI
+model "local_chat" using local_engine:
+  engine_type: "ollama" 
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    gpu_layers: -1
+    context_length: 4096
+
+prompt "PrivateChat":
+  input: message: text
+  output: response: text
+  using model "local_chat":
+    "You are a helpful assistant. {{message}}"
+
+Deploy it. Use it. Own it. All with one command.
+
+No external APIs. No usage limits. Complete control over your AI.
+
+---
+
+## Getting started is insanely simple
+
+### Install Namel3ss
+
+One command. That's all it takes.
+
+```bash
+pip install namel3ss
+```
+
+The core installation is elegant. Lightweight at ~10MB. Just what you need:
+- Language parser and compiler
+- FastAPI code generation
+- React UI generation  
+- CLI tools
+- Development server
+
+**Perfect for:** Getting started. Building applications. Shipping to production.
+
+### Add only what you need
+
+We believe in choice. Install just the features you want:
+
+```bash
+# AI providers (OpenAI, Claude, local models)
+pip install namel3ss[ai]
+
+# Your own private models
+pip install namel3ss[local-models]
+
+# Databases
+pip install namel3ss[postgres]
+pip install namel3ss[mysql]
+
+# Real-time features
+pip install namel3ss[realtime]
+
+# Everything
+pip install namel3ss[all]
+```
+
+**Or get specific:**
+
+```bash
+pip install namel3ss[openai]      # GPT-4 and friends
+pip install namel3ss[anthropic]   # Claude
+pip install namel3ss[ollama]      # Local Llama, Mistral
+pip install namel3ss[vllm]        # High-performance local models
+```
+
+Simple. Modular. Your choice.
+
+---
+
+## Your first app in 60 seconds
+
+```bash
+# Install
+pip install namel3ss
+
+# Create
+namel3ss init my-ai-app
+cd my-ai-app
+
+# Describe your app
+echo 'app "MyApp"
+page "home" { 
+  show text "Hello, World" 
+}' > app.ai
+
+# Build it
+namel3ss build app.ai
+
+# Run it
+cd out/backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+**Done.** Your app is live at `localhost:8000`.
+
+From thought to running application in 60 seconds.
+
+## Recent Additions (November 2025)
+
+### 🚀 Parser Enhancements (v0.6.0 - Nov 27, 2025)
+
+**Major parser improvements** removing three critical limitations that previously required workarounds. RAG system development is now significantly more intuitive with first-class support for tools, agents, and vector stores.
+
+#### What's New
+
+**1. Tool Definitions with Parameters**
+```namel3ss
+tool search_collection:
+  description: "Search documents in a collection"
+  parameters:
+    - name: query
+      type: string
+      description: "Search query text"
+      required: true
+    - name: collection_id
+      type: integer
+      description: "ID of the collection to search"
+      required: true
+    - name: limit
+      type: integer
+      description: "Maximum number of results"
+      required: false
+```
+
+**2. Agent Definitions with LLM Configuration**
+```namel3ss
+agent rag_assistant:
+  llm_name: "gpt-4"
+  tool_names:
+    - search_collection
+    - rerank_results
+    - summarize_chunks
+  goal: "Help users find and understand information from documents"
+  system_prompt: "You are a helpful research assistant..."
+  max_turns: 10
+  temperature: 0.7
+```
+
+**3. Vector Store Configuration**
+```namel3ss
+vector_store main_vector_store:
+  type: "pgvector"
+  table: "document_embeddings"
+  dimension: 1536
+  similarity_metric: "cosine"
+```
+
+**4. Chrome + Tabs Combination**
+```namel3ss
+page "Assistant" at "/assistant":
+  navbar:
+    logo: "/logo.png"
+    title: "RAG Assistant"
+  
+  show tabs:
+    tab "Chat":
+      show chat_thread "conversation"
+    
+    tab "Tools":
+      show tool_call_view "tools"
+    
+    tab "Logs":
+      show log_view "system_logs"
+```
+
+**5. Flexible Filtering with `condition:` Alias**
+```namel3ss
+show card "Recent Queries" from dataset queries:
+  condition: "created_at > now() - interval '24 hours'"  # Alternative to filter_by
+  title_from: query_text
+  description_from: created_at
+```
+
+#### Benefits
+
+- **✅ More intuitive syntax** - Aligns with developer expectations
+- **✅ Better RAG development** - Define complete RAG systems declaratively
+- **✅ Simplified chrome layouts** - Simple `tab "Name":` syntax instead of verbose YAML
+- **✅ Flexible filtering** - Use `condition:` or `filter_by:` interchangeably
+- **✅ Production-ready** - All enhancements fully tested with 21+ tests passing
+
+#### Enhanced Examples
+
+- **[RAG Document Assistant](examples/rag-document-assistant.ai)** - Now uses tool/agent/vector_store definitions with chrome+tabs
+- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - Demonstrates all 5 new features
+- **[LLM Benchmark Lab](examples/llm_benchmark_lab/benchmark.ai)** - Production example validating parser robustness
+
+#### Documentation
+
+- **[Parser Capabilities Reference](docs/PARSER_CAPABILITIES.md)** - Complete guide to all parser features
+- **[RAG Document Assistant Guide](examples/rag-document-assistant-and-citation-explorer.md)** - 6,400+ line comprehensive guide
+
+**Upgrade:** `pip install --upgrade namel3ss==0.6.0`
+
+---
+
+### 🚀 Smart Dependency Management
+
+**Automatic dependency detection and management** with `namel3ss init` and `namel3ss sync-deps` commands:
+
+- **`namel3ss init`**: Scaffold new projects with proper structure (app.ai, backend/, frontend/)
+- **`namel3ss sync-deps`**: Auto-detect features from `.ai` files and manage dependencies
+- **Intelligent Detection**: Analyzes your code to determine required packages
+  - `agent`, `llm` declarations → AI provider packages (openai, anthropic, ollama)
+  - `dataset from table` → SQL drivers (asyncpg, psycopg3)
+  - `dataset from postgres` → PostgreSQL-specific packages
+  - `dataset from mysql` → MySQL-specific packages  
+  - `memory` with Redis → Redis client
+  - UI components → React and frontend dependencies
+- **Non-Destructive Updates**: Preserves existing packages and user version pins
+- **Preview Mode**: See what would change before writing files (`--preview`)
+
+```bash
+# Initialize new project with scaffolding
+namel3ss init my-ai-app
+
+# Auto-sync dependencies based on features used
+namel3ss sync-deps
+
+# Preview changes without modifying files
+namel3ss sync-deps --preview
+
+# List all available features
+namel3ss sync-deps --list-features
+```
+
+**Example workflow:**
+```bash
+# Start a new project
+namel3ss init my-chat-app
+cd my-chat-app
+
+# Edit app.ai to add AI features
+echo 'llm gpt4 { provider: "openai" }' >> app.ai
+echo 'agent assistant { goal: "Help users" }' >> app.ai
+
+# Auto-detect and add dependencies
+namel3ss sync-deps
+# → Adds: openai, tiktoken, anthropic (if using Claude), etc.
+
+# Build and run
+namel3ss build app.ai
+```
+### 🎨 Comprehensive Syntax Highlighting
+
+**Python-like syntax highlighting** for `.ai` and `.n3` files across all major editors (VS Code, Vim, Neovim, Sublime Text). Keywords, components, properties, strings, and numbers are now color-coded for improved readability.
+
+**Color Scheme:**
+- Keywords (`app`, `page`, `if`, `llm`) in **blue/purple**
+- UI Components (`show_text`, `modal`, `toast`) in **yellow**
+- AI Components (`chat_thread`, `agent_panel`) in **orange**
+- Properties (`title`, `messages_binding`) in **cyan**
+- Strings, numbers, booleans, comments in distinct colors
+
+**Example with colors:**
+```namel3ss
+# Chat interface demo
+app "AI Dashboard"                    # comment in gray
+
+page "Chat" at "/chat":               # keywords in blue
+  chat_thread "conversation":         # AI component in orange
+    messages_binding: agent.messages  # property in cyan, binding in default
+    streaming_enabled: true           # property in cyan, boolean in purple
+    show_tokens: 42                   # property in cyan, number in teal
+```
+
+**Installation:** See [SYNTAX_HIGHLIGHTING.md](SYNTAX_HIGHLIGHTING.md) for setup instructions and [SYNTAX_REFERENCE.md](SYNTAX_REFERENCE.md) for a complete color guide.
+
+### 🤖 AI Semantic Components
+
+**Six production-ready AI-specific UI components** for building intelligent interfaces:
+
+- **`chat_thread`**: Conversation displays with real-time streaming, token counts, and message grouping
+- **`agent_panel`**: Agent status dashboards showing metrics, model info, and tool availability
+- **`tool_call_view`**: Tool invocation displays with expandable inputs/outputs and timing
+- **`log_view`**: Structured log viewing with search, filtering, and syntax highlighting
+- **`evaluation_result`**: Metrics display with deltas, trends, and comparisons
+- **`diff_view`**: Side-by-side or unified diff viewer with syntax highlighting
+
+```namel3ss
+# Complete AI interface
+page "AI Workspace":
+  chat_thread "conversation":
+    messages_binding: "agent_run.conversation"
+    streaming_enabled: true
+    show_tokens: true
+    auto_scroll: true
+  
+  agent_panel "status":
+    agent_binding: "agent_run.agent"
+    show_metrics: true
+    show_cost: true
+    show_latency: true
+  
+  tool_call_view "tools":
+    calls_binding: "agent_run.tool_calls"
+    show_inputs: true
+    show_outputs: true
+    expandable: true
+```
+
+See [examples/ai_components_demo.ai](examples/ai_components_demo.ai) for complete examples.
+
+### 🎉 Feedback Components (Modal Dialogs & Toast Notifications)
+
+**Production-ready user feedback components** with comprehensive testing and documentation. Build professional UIs with confirmation dialogs, notifications, and interactive feedback patterns.
+
+#### Modal Dialogs
+
+Create rich dialog overlays for confirmations, forms, and important user interactions:
+
+```text
+# Confirmation dialog with actions
+modal "confirm_delete":
+  title: "Delete Order?"
+  description: "This action cannot be undone"
+  size: md  # sm (400px), md (600px), lg (800px), xl (1000px), full
+  dismissible: true
+  trigger: "show_delete_confirm"
+  content:
+    show text "The order will be permanently removed from the system."
+    show text "This includes all related transactions and history."
+  actions:
+    action "Cancel" variant "ghost"
+    action "Delete" variant "destructive" action "do_delete"
+
+# Form validation modal
+modal "edit_profile":
+  title: "Edit Profile"
+  size: lg
+  actions:
+    action "Cancel" variant "ghost"
+    action "Validate" variant "primary" action "validate_profile" close false
+    action "Save" variant "primary" action "save_profile"
+
+# Info modal with custom size
+modal "terms_conditions":
+  title: "Terms & Conditions"
+  description: "Please review our terms"
+  size: xl
+  dismissible: true
+  content:
+    show text "Full terms and conditions content here..."
+  actions:
+    action "Accept" variant "primary" action "accept_terms"
+    action "Decline" variant "ghost" action "decline_terms"
+```
+
+**Modal Features**:
+- **5 Size Variants**: `sm` (400px), `md` (600px), `lg` (800px), `xl` (1000px), `full` (full width)
+- **5 Action Variants**: `default` (gray), `primary` (blue), `destructive` (red), `ghost` (transparent), `link` (text-only)
+- **Nested Content**: Include multiple `show text` statements for rich content
+- **Non-Closing Actions**: Set `close: false` for validation without closing modal
+- **Dismissible Control**: Control ESC key and backdrop click behavior
+- **Trigger-Based**: Show modals via events from backend or frontend
+- **Accessibility**: Full ARIA support, keyboard navigation, focus management
+
+#### Toast Notifications
+
+Display temporary notifications for success, errors, warnings, and info:
+
+```text
+# Success notification with action
+toast "order_created":
+  title: "Order Created"
+  description: "Your order has been placed successfully"
+  variant: success
+  duration: 3000
+  position: top-right
+  action_label: "View Order"
+  action: "view_order"
+  trigger: "show_order_created"
+
+# Error notification (persistent)
+toast "connection_error":
+  title: "Connection Lost"
+  description: "Unable to connect to server"
+  variant: error
+  duration: 0  # 0 = persistent (no auto-dismiss)
+  position: top
+  action_label: "Retry"
+  action: "retry_connection"
+  trigger: "show_connection_error"
+
+# Warning notification
+toast "low_stock":
+  title: "Low Stock Warning"
+  description: "Only 3 items remaining"
+  variant: warning
+  duration: 5000
+  position: bottom-right
+  trigger: "show_low_stock"
+
+# Info notification (quick)
+toast "sync_complete":
+  title: "Sync Complete"
+  variant: info
+  duration: 2000
+  position: bottom
+  trigger: "show_sync_complete"
+```
+
+**Toast Features**:
+- **5 Variants**: `default`, `success` (green, CheckCircle icon), `error` (red, XCircle icon), `warning` (yellow, AlertCircle icon), `info` (blue, Info icon)
+- **6 Positions**: `top`, `top-right` (default), `top-left`, `bottom`, `bottom-right`, `bottom-left`
+- **Flexible Duration**: 2000-5000ms for auto-dismiss, or 0 for persistent display
+- **Optional Actions**: Add action button with label and handler
+- **Trigger-Based**: Show toasts from backend responses or frontend events
+- **Icons**: Automatic icon selection based on variant
+
+#### Common Patterns
+
+**Confirmation Flow** (Modal → Action → Toast):
+```text
+page "Orders" at "/orders":
+  # User clicks delete button → triggers modal
+  modal "confirm_delete":
+    title: "Delete Order?"
+    actions:
+      action "Cancel" variant "ghost"
+      action "Delete" variant "destructive" action "do_delete"
+  
+  # After deletion → show success toast
+  toast "delete_success":
+    title: "Order Deleted"
+    variant: success
+    duration: 3000
+    action_label: "Undo"
+    action: "undo_delete"
+    trigger: "show_delete_success"
+```
+
+**Form Validation Pattern**:
+```text
+page "Settings" at "/settings":
+  modal "edit_settings":
+    title: "Edit Settings"
+    actions:
+      action "Validate" variant "primary" action "validate" close false
+      action "Save" variant "primary" action "save"
+  
+  toast "validation_error":
+    title: "Validation Failed"
+    description: "Please check the highlighted fields"
+    variant: error
+    duration: 5000
+    trigger: "show_validation_error"
+  
+  toast "save_success":
+    title: "Settings Saved"
+    variant: success
+    duration: 3000
+    trigger: "show_save_success"
+```
+
+**Multi-Step Process**:
+```text
+page "Onboarding" at "/onboarding":
+  modal "welcome":
+    title: "Welcome!"
+    description: "Let's get you set up"
+    actions:
+      action "Get Started" variant "primary" action "start_setup"
+  
+  toast "step_progress":
+    title: "Processing..."
+    description: "Step 2 of 5"
+    variant: info
+    duration: 0  # Persistent until complete
+    trigger: "show_step_progress"
+  
+  modal "setup_complete":
+    title: "Setup Complete!"
+    description: "You're all set to start using the app"
+    actions:
+      action "Continue" variant "primary" action "finish_setup"
+    trigger: "show_setup_complete"
+```
+
+#### Documentation & Resources
+
+- **📖 [Comprehensive Guide](docs/FEEDBACK_COMPONENTS_GUIDE.md)** - 6,500+ lines covering syntax, properties, usage patterns, best practices, accessibility, mobile considerations, complete examples, and troubleshooting
+- **⚡ [Quick Reference](FEEDBACK_COMPONENTS_QUICK_REFERENCE.md)** - Handy reference card with common patterns and property tables
+- **📊 [Implementation Summary](FEEDBACK_COMPONENTS_SUMMARY.md)** - Technical details, metrics, and integration points
+- **🎨 [Demo Application](examples/feedback_demo.ai)** - 3 pages with 6 modals and 9 toasts demonstrating all features
+
+#### Implementation Quality
+
+- **✅ 56 Tests** (100% pass rate): 19 parser + 18 IR builder + 19 codegen
+- **✅ Full Stack**: Parser → AST → IR → Codegen → React/TypeScript components
+- **✅ Production Ready**: Marked as stable feature with zero breaking changes
+- **✅ Accessibility**: ARIA-compliant, keyboard navigation, screen reader support
+- **✅ Mobile Responsive**: Optimized for touch devices with appropriate sizing
+- **✅ shadcn/ui Integration**: Uses Dialog and Toast components with Tailwind CSS
+
+#### Migration from Browser Alerts
+
+Replace blocking browser alerts with declarative, styled components:
+
+**Before** (Browser APIs):
+```javascript
+if (confirm("Delete this item?")) {
+    deleteItem();
+}
+alert("Item deleted!");
+```
+
+**After** (Namel3ss):
+```text
+modal "confirm_delete":
+  title: "Delete Item?"
+  actions:
+    action "Cancel" variant "ghost"
+    action "Delete" variant "destructive" action "do_delete"
+
+toast "deleted":
+  title: "Item Deleted"
+  variant: success
+  duration: 3000
+```
+
+**Benefits**: Declarative syntax, consistent styling, better UX, customizable, event-driven, accessible, mobile-friendly.
+
+
+
+## Language Features
+
+### Core Application Structure
+- **Apps** with database connections, theming, and configuration
+- **Pages** with routes and component composition
+- **Datasets** from SQL, REST, CSV with filters, joins, and caching
+- **Components**: tables, charts, forms, actions with full styling
+- **Logging**: First-class log statements with runtime observability
+
+### AI-Native Constructs
+
+#### Logging & Observability
+```text
+page "User Dashboard" at "/dashboard":
+  log info "Loading dashboard for user {user_id}"
+  
+  let user_data = dataset users where id == user_id
+  
+  if user_data.count == 0:
+    log warn "User {user_id} not found in database"
+    show text "User not found"
+  else:
+    log debug "User data loaded: {user_data.name}"
+    show text "Welcome, {user_data.name}!"
+
+# Configure with CLI: --log-level debug|info|warn|error
+# Or environment: NAMEL3SS_LOG_LEVEL=debug
+```
+
+#### Structured Prompts
+```text
+prompt "SummarizeDocument":
+  input:
+    content: text
+    max_length: number = 500
+  output:
+    summary: text
+    key_points: list<text>
+  metadata:
+    temperature: 0.2
+  using model "gpt-4o-mini":
+    """
+    Summarize this document in under {{max_length}} characters:
+    {{content}}
+    """
+```
+
+#### Memory Systems
+```text
+memory "user_preferences":
+  scope: user
+  kind: key_value
+  max_items: 100
+
+memory "conversation":
+  scope: session
+  kind: conversation
+  ttl: 3600
+
+memory "knowledge_base":
+  scope: global
+  kind: vector
+  dimensions: 1536
+```
+
+#### Multi-Agent Orchestration
+```text
+define agent "Researcher":
+  model: "gpt-4o"
+  tools: [web_search, read_document]
+  instructions: "You research topics thoroughly"
+
+define agent "Writer":
+  model: "gpt-4o-mini"
+  instructions: "You write clear summaries"
+
+define agent_graph "ResearchPipeline":
+  start: Researcher
+  routing:
+    - from: Researcher
+      to: Writer
+      condition: ctx:steps.Researcher.complete == true
+```
+
+#### RAG & Dataset Integration
+```text
+dataset "documentation" from vector_store DOCS:
+  embeddings: openai
+  dimensions: 1536
+  similarity: cosine
+
+prompt "AnswerQuestion":
+  input:
+    question: text
+    context: retrieved_docs
+  output:
+    answer: text
+    sources: list<text>
+  using model "gpt-4o":
+    """
+    Answer based on these docs:
+    {{context}}
+    
+    Question: {{question}}
+    """
+
+define chain "RAG_Query":
+  input -> retrieve_similar_from documentation top_k 5 -> prompt AnswerQuestion
+```
+
+#### Local Model Deployment
+```text
+# Define local model with deployment configuration
+model "local_llama" using local_engine:
+  engine_type: "ollama"  # or "vllm", "localai"
+  model_name: "llama3.2:latest"
+  deployment:
+    port: 11434
+    gpu_layers: -1
+    context_length: 4096
+    max_tokens: 2048
+  health_check:
+    endpoint: "/api/health"
+    timeout: 30
+
+# Deploy and manage local models via CLI
+# namel3ss deploy local start local_llama
+# namel3ss deploy local stop local_llama
+# namel3ss deploy local status
+
+# Use in prompts like any other model
+prompt "LocalChat":
+  input: message: text
+  output: response: text
+  using model "local_llama":
+    "You are a helpful assistant. {{message}}"
+```
+
+
+
+## Examples
+
+### Production Examples
+
+- **[Governed Multi-Agent Research Lab](examples/governed-multi-agent-research-lab.md)** - Enterprise-grade multi-agent collaboration platform demonstrating AI governance, policy enforcement, and safety monitoring. Features a central governance agent supervising 5 specialist agents (Researcher, Critic, Explainer, Retriever, Safety Reviewer) with comprehensive audit trails, real-time policy checks, and multi-agent workflow orchestration. Includes 5 governance tools (policy compliance, argument quality, output comparison, hallucination detection, bias analysis) and complete observability through datasets. **Status: ✅ Core features parsing successfully** (Pages pending parser support)
+  
+  **Key Features:**
+  - 🎯 Central governance agent with supervisory authority
+  - 🛡️ Real-time policy enforcement and risk assessment
+  - 👥 Multi-agent workflows with conditional routing
+  - 📊 Comprehensive audit trails and performance metrics
+  - 🔍 Safety monitoring: hallucination detection, bias analysis, quality scoring
+  - ⚙️ 4 LLM configurations optimized for different agent roles
+
+- **[AI Customer Support Console](docs/examples/ai-customer-support-console.md)** - Professional support agent workspace demonstrating chrome navigation (sidebar, navbar, breadcrumbs), dynamic routing, and dataset integration. A complete example showing best practices for production Namel3ss applications. **Status: ✅ Parsing & IR generation working**
+  
+  **Key Learnings:**
+  - Dataset declarations must use `dataset "name" from table table_name` syntax (no `columns:` or `fields:` blocks)
+  - Namel3ss requires **4-space indentation** (not 2-space)
+  - Chrome components (sidebar, navbar, breadcrumbs) must be declared before page content
+  - Dataset names must be quoted strings, not bare identifiers
+  - Working examples (like `chrome_demo_clean.ai`) are the authoritative syntax reference
+
+- **[RAG Document Assistant & Citation Explorer](examples/rag-document-assistant-and-citation-explorer.md)** - **✨ Enhanced with v0.6.0 parser improvements!** Production-grade RAG system showcasing tool/agent/vector_store definitions, chrome+tabs combination, and advanced data display components (file_upload, chat_thread, tool_call_view, log_view, diff_view) for document Q&A workflows. Includes comprehensive citation tracking, multi-column info grids, and deeply nested card sections. **Status: ✅ All tests passing (13/13)**
+  
+  **v0.6.0 Enhancements:**
+  - ✅ **3 Tool definitions** with typed parameters (search, rerank, summarize)
+  - ✅ **Agent definition** with GPT-4, tool integration, and conversational config
+  - ✅ **Vector store config** for pgvector with 1536-dimensional embeddings
+  - ✅ **Chrome + tabs** - Navbar with 3-tab interface (Chat, Tools, Logs)
+  - ✅ **`condition:` property** for intuitive card filtering
+  - Multi-column info_grid layouts (2, 3, 4 columns) work correctly
+  - Deeply nested cards (3-4 levels) parse successfully: `card → sections → info_grid → items`
+  - Multiple badges and actions per card item are supported
+  - `group_by:` property enables data grouping in card displays
+
+### AI Examples
+
+- **[Parser Enhancements Demo](examples/test_parser_enhancements.ai)** - **NEW in v0.6.0!** Minimal example demonstrating all 5 parser improvements: tool definition, agent definition, vector_store config, chrome+tabs combination, and `condition:` property alias. Perfect starting point for RAG system development.
+
+- `examples/llm_benchmark_lab/benchmark.ai` - LLM Benchmark & Experiment Lab ([docs](examples/llm_benchmark_lab/README.md))
+- `examples/ai_demo.ai` - Complete AI application
+- `examples/text_classification.n3` - Classification with prompts
+- `examples/rag_qa.n3` - RAG question answering
+- `examples/experiment_comparison.n3` - A/B testing models
+- `examples/memory_chat_demo.n3` - Stateful conversation
+
+### Traditional Examples
+
+- `examples/app.ai` - Full-stack CRUD application
+- `examples/control_flow_demo.n3` - Conditionals and loops
+
+Run any example:
+
+```bash
+namel3ss generate examples/ai_demo.ai demo_output
+cd demo_output/backend && uvicorn main:app --reload
+```
+
+
+
+## CLI Reference
+
+### Project Management
+
+```bash
+# Initialize new project with scaffolding
+namel3ss init [project_name]         # Create new project
+namel3ss init .                      # Initialize in current directory
+namel3ss init my-app --force         # Force init even if directory exists
+
+# Dependency management (auto-detects features from .ai files)
+namel3ss sync-deps                   # Sync dependencies for entire project
+namel3ss sync-deps --preview         # Preview changes without writing files
+namel3ss sync-deps --file app.ai     # Sync specific file only
+namel3ss sync-deps --list-features   # Show all available features
+namel3ss sync-deps --verbose         # Show detailed output
+```
+
+**Dependency Detection Features:**
+- `agent`, `llm` → AI provider packages (openai, anthropic, etc.)
+- `dataset from table` → SQL database drivers (asyncpg, psycopg3)
+- `dataset from postgres` → PostgreSQL-specific packages
+- `dataset from mysql` → MySQL-specific packages
+- `memory` with Redis → Redis client packages
+- UI components → React and related frontend packages
+- `chat_thread`, `agent_panel` → AI-specific UI dependencies
+
+### Core Commands
+
+```bash
+# Generate full application
+namel3ss generate app.ai output/
+
+# Build with backend
+namel3ss build app.ai --build-backend --backend-out backend/
+
+# Run development server
+namel3ss run app.ai --dev
+
+# Execute a chain
+namel3ss run chain SupportFlow --payload '{"ticket": "Help!"}'
+
+# Run experiment with variants
+namel3ss eval experiment ModelComparison
+```
+
+### AI-Specific Commands
+
+```bash
+# Test prompt execution
+namel3ss run prompt ClassifyTicket --input '{"ticket": "Billing issue"}'
+
+# Validate memory configuration
+namel3ss doctor --check-memory
+
+# Trace chain execution
+namel3ss run chain RAG_Query --trace --payload '{"query": "..."}'
+
+# Export agent graph visualization
+namel3ss graph ResearchPipeline --output graph.json
+```
+
+### Local Model Deployment Commands
+
+```bash
+# Deploy local models
+namel3ss deploy local start my_model     # Start model deployment
+namel3ss deploy local stop my_model      # Stop running model
+namel3ss deploy local restart my_model   # Restart model
+namel3ss deploy local status             # Show all model statuses
+namel3ss deploy local list               # List available models
+
+# Model configuration
+namel3ss deploy local config my_model    # Show model configuration
+namel3ss deploy local validate my_model  # Validate model config
+
+# Health monitoring
+namel3ss deploy local health my_model    # Check model health
+namel3ss deploy local logs my_model      # View model logs
+```
+
+### Configuration
+
+```bash
+# Use environment file
+namel3ss run app.ai --env .env.prod
+
+# Check available integrations
+namel3ss doctor
+
+# Validate .n3 syntax
+namel3ss validate my_app.ai
+```
+
+
+
+## Architecture
+
+### Compilation Pipeline
+
+```
+.n3 source
+    ↓
+Parser (ANTLR4 grammar)
+    ↓
+AST (typed nodes)
+    ↓
+Resolver (semantic analysis)
+    ↓
+Code Generator
+    ↓
+FastAPI backend + Frontend assets
+```
+
+### Generated Backend Structure
+
+```
+out/backend/
+├── main.py                 # FastAPI app entry
+├── database.py            # SQLAlchemy models
+├── schemas.py             # Pydantic schemas
+├── requirements.txt       # Dependencies
+├── generated/             # Generated routers
+│   ├── pages.py
+│   ├── datasets.py
+│   └── ai/                # AI-specific endpoints
+│       ├── prompts.py
+│       ├── chains.py
+│       ├── memory.py
+│       └── agents.py
+└── custom/                # User customizations (preserved)
+    └── custom_api.py
+```
+
+### Runtime Features
+
+- **Dataset Registry**: Cached execution with pagination
+- **Memory Manager**: Scoped storage with TTL and eviction
+- **Prompt Engine**: Schema validation and template rendering
+- **Chain Orchestrator**: Step execution with context management
+- **Agent Runtime**: Multi-agent graphs with tool calling
+- **Observability**: OpenTelemetry tracing and Prometheus metrics
+
+
+
+## Production Deployment
+
+### Environment Variables
+
+Set these before running your backend:
+
+**Authentication:**
+```bash
+NAMEL3SS_AUTH_MODE=required
+NAMEL3SS_JWT_SECRET=your-secret
+NAMEL3SS_API_KEY=your-api-key
+```
+
+**Databases:**
+```bash
+NAMEL3SS_DATABASE_URL=postgresql://...
+NAMEL3SS_REDIS_URL=redis://localhost:6379
+MONGODB_URI=mongodb://...
+```
+
+**Local Model Deployment:**
+```bash
+# Model deployment paths
+NAMEL3SS_LOCAL_MODELS_ROOT=/opt/models
+NAMEL3SS_DEPLOYMENT_LOGS=/var/log/namel3ss
+
+# vLLM configuration
+VLLM_HOST=0.0.0.0
+VLLM_PORT=8000
+VLLM_GPU_MEMORY_UTILIZATION=0.9
+
+# Ollama configuration 
+OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_MODELS=/usr/share/ollama/.ollama/models
+
+# LocalAI configuration
+LOCALAI_MODELS_PATH=/models
+LOCALAI_THREADS=4
+```
+
+**AI Providers:**
+```bash
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**Runtime:**
+```bash
+NAMEL3SS_ALLOW_STUBS=0  # Disable test stubs in prod
+NAMEL3SS_ENABLE_TRACING=1
+```
+
+### Run Production Server
+
+```bash
+cd out/backend
+pip install -r requirements.txt
+
+# With Uvicorn
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# With Gunicorn
+gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4
+```
+
+### Observability Endpoints
+
+Generated backends include:
+
+- `GET /api/health` - Health check
+- `GET /readyz` - Readiness probe (checks DB connections)
+- `GET /metrics` - Prometheus metrics
+- `GET /api/ai/chains` - List all chains
+- `GET /api/ai/prompts` - List all prompts
+- `GET /api/ai/memory/stats` - Memory system statistics
+
+
+
+## Testing
+
+Run the complete test suite:
+
+```bash
+./scripts/run_tests.sh
+```
+
+Run specific test categories:
+
+```bash
+# Language and parser tests
+pytest tests/test_parser.py tests/test_codegen.py
+
+# AI feature tests
+pytest tests/test_prompts.py tests/test_chains.py tests/test_memory_system.py
+
+# Backend integration tests
+pytest tests/test_backend_integration.py
+
+# Error message quality
+pytest tests/test_error_messages.py
+
+# Conformance tests (language specification)
+namel3ss conformance
+pytest tests/conformance_runner/  # Meta-tests for conformance infrastructure
+```
+
+Run with coverage:
+
+```bash
+pytest --cov=namel3ss --cov-report=html
+```
+
+
+
+## Conformance & Governance
+
+Namel3ss includes a comprehensive conformance test suite to ensure consistency across implementations and guide language evolution.
+
+### Running Conformance Tests
+
+```bash
+# Run all conformance tests
+namel3ss conformance
+
+# Run specific category
+namel3ss conformance --category parse
+
+# Run specific test
+namel3ss conformance --test parse-valid-001
+
+# Verbose output
+namel3ss conformance --verbose
+
+# JSON output (for CI)
+namel3ss conformance --format json
+```
+
+### Conformance Test Results
+
+Current test coverage:
+- **Parse Phase**: 30 tests (100% passing)
+  - 18 valid syntax tests
+  - 12 invalid syntax tests
+- **Type System**: Coming soon
+- **Runtime**: Coming soon
+
+### For External Implementers
+
+If you're building an alternative Namel3ss implementation:
+
+1. **Read the specification**: See [tests/conformance/SPEC.md](tests/conformance/SPEC.md) for the test format
+2. **Run the test suite**: Test descriptors are in `tests/conformance/v1/`
+3. **Validate conformance**: Tests are machine-readable YAML files
+4. **Report results**: Use the same test IDs for cross-implementation comparison
+
+See [CONFORMANCE.md](CONFORMANCE.md) for a complete guide with examples in Python and JavaScript.
+
+### Language Governance
+
+Namel3ss follows an RFC (Request for Comments) process for language changes:
+
+1. **Submit RFC**: Propose changes with motivation and design
+2. **Discussion**: Community feedback (2-4 weeks)
+3. **FCP**: Final Comment Period (10 days)
+4. **Decision**: Accepted or Rejected by maintainers
+
+**All language-level changes must include**:
+- RFC document with rationale
+- Conformance tests demonstrating the new behavior
+- Implementation in the reference implementation
+- Documentation updates
+
+See [GOVERNANCE.md](GOVERNANCE.md) for the complete process and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+### Core Documentation
+- **[Documentation Index](docs/INDEX.md)** - Central navigation hub
+- **[Testing Guide](docs/TESTING.md)** - Complete testing reference
+- **[Memory System](docs/MEMORY_SYSTEM.md)** - Memory scopes and patterns
+- **[Control Flow](CONTROL_FLOW_SYNTAX.md)** - Conditionals and loops
+- **[CLI Documentation](CLI_DOCUMENTATION.md)** - Full CLI reference
+
+### Conformance & Governance
+- **[CONFORMANCE.md](CONFORMANCE.md)** - External implementation guide
+- **[GOVERNANCE.md](GOVERNANCE.md)** - Language governance and RFC process
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines with conformance requirements
+- **[tests/conformance/SPEC.md](tests/conformance/SPEC.md)** - Conformance test specification
+
+
+
+## 📚 Documentation
+
+**Complete Guides:**
+- **[📖 Complete Documentation](NAMEL3SS_DOCUMENTATION.md)** - Comprehensive guide covering all language features, CLI commands, AI components, and deployment
+- **[🔧 API Reference](API_REFERENCE.md)** - Detailed Python API documentation for all classes and functions
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for development with namel3ss
+- **[🩺 Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues, syntax errors, JavaScript limitations, and solutions
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Solutions for common issues, syntax errors, and JavaScript limitations
+- **[🛠️ Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for namel3ss development
+- **[🚨 Troubleshooting Guide](TROUBLESHOOTING.md)** - Common issues and solutions for development problems
+- **[🆘 Troubleshooting Guide](TROUBLESHOOTING.md)** - Solutions for common syntax, runtime, and development issues
+
+**Quick References:**
+- **[⚡ CLI Quick Reference](docs/archive/status-reports/CLI_QUICK_REFERENCE.md)** - All CLI commands with examples
+- **[🧠 AI Features Guide](docs/INDEX.md)** - AI-native constructs, prompts, chains, and agents
+- **[💾 Memory System](docs/MEMORY_SYSTEM.md)** - Persistent state and conversation management
+- **[🔍 RAG Guide](docs/RAG_GUIDE.md)** - Retrieval-Augmented Generation implementation
+- **[📊 Evaluation Framework](docs/EVAL_SUITES.md)** - Testing and metrics for AI applications
+
+**Examples:**
+- **[🛠️ Examples Directory](examples/)** - Complete working applications
+- **[🏥 Hospital AI](examples/hospital-ai/)** - Multi-agent hospital support system with triage, medication lookup, and patient messaging
+- **[🎓 Education Quiz Suite](examples/education-quiz-generator-and-grader-suite.md)** - AI-powered quiz generation, automatic grading with rubric-based evaluation, and comprehensive student analytics
+- **[📝 Language Syntax](docs/LANGUAGE_REFERENCE.md)** - Complete N3 syntax guide
+- **[🏗️ Architecture](docs/ARCHITECTURE.md)** - System design and internals
+
+### Feature → Extra Mapping
+
+Quick reference for what each extra provides:
+
+| Feature | Extra | Packages Installed |
+|---------|-------|-------------------|
+| **Core** (always included) | _(none)_ | `pydantic`, `jinja2`, `pygls`, `packaging`, `psutil`, `pyyaml`, `rich`, `httpx`, `click` |
+| OpenAI (GPT models) | `[openai]` | `openai`, `tiktoken` |
+| Anthropic (Claude) | `[anthropic]` | `anthropic` |
+| Local models (all) | `[local-models]` | `vllm`, `ollama-python`, `docker` |
+| vLLM (high-performance) | `[vllm]` | `vllm` |
+| Ollama (easy setup) | `[ollama]` | `ollama-python` |
+| LocalAI (multi-format) | `[localai]` | `docker` |
+| All AI providers | `[ai]` | `openai`, `anthropic`, `tiktoken`, `vllm`, `ollama-python`, `docker` |
+| PostgreSQL | `[postgres]` | `sqlalchemy`, `asyncpg`, `psycopg[binary]` |
+| MySQL | `[mysql]` | `sqlalchemy`, `aiomysql` |
+| All SQL databases | `[sql]` | `sqlalchemy`, `asyncpg`, `psycopg`, `aiomysql` |
+| MongoDB | `[mongo]` | `motor`, `pymongo` |
+| Redis caching/queues | `[redis]` | `redis>=5.0` |
+| WebSockets | `[websockets]` | `websockets>=12.0` |
+| Real-time (WS + Redis) | `[realtime]` | `websockets`, `redis` |
+| OpenTelemetry | `[otel]` | `opentelemetry-*` (SDK, instrumentation, exporters) |
+| Development tools | `[dev]` | `pytest`, `black`, `mypy`, `ruff`, etc. |
+| Everything | `[all]` | All of the above |
+
+### From source
+
+```bash
+git clone https://github.com/SsebowaDisan/namel3ss-programming-language.git
+cd namel3ss-programming-language
+pip install -e .[dev]  # Include dev tools
+```
+
+### Legacy extras (deprecated)
+
+The following extras are deprecated and will be removed in future versions:
+
+```bash
+# DEPRECATED: Use [ai] instead
+pip install namel3ss[ai-connectors]
+
+# sql, redis, mongo extras remain supported
+pip install namel3ss[sql]
+pip install namel3ss[redis]
+
+# MongoDB datasets
+pip install namel3ss[mongo]
+
+# Observability with OpenTelemetry
+pip install namel3ss[observability]
+
+# All features
+pip install namel3ss[all]
+```
+
+### Development setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+./scripts/run_tests.sh
+```
+
+
+
+## Repository Structure
+
+```
+namel3ss-programming-language/
+├── examples/                  # Working example applications
+│   ├── minimal/              # Basic N3 usage  
+│   ├── content-analyzer/     # Agent-based content analysis
+│   └── research-assistant/   # Multi-turn research workflows
+├── tests/                    # Comprehensive test suite
+│   ├── conformance/          # Language conformance tests
+│   │   ├── SPEC.md          # Conformance test specification
+│   │   └── v1/              # Version 1.0.0 test suite
+│   │       ├── parse/       # Parse phase tests (30 tests)
+│   │       └── fixtures/    # Test source files
+│   ├── conformance_runner/   # Meta-tests for conformance infrastructure (41 tests)
+│   ├── unit/fixtures/       # Unit test fixtures by component
+│   └── integration/         # Integration and build validation
+├── scripts/                 # Development utilities
+│   ├── demos/              # Feature demonstrations
+│   ├── tests/              # Standalone test scripts
+│   └── utilities/          # Development tools
+├── docs/                    # Organized documentation
+│   ├── guides/             # User and developer guides
+│   ├── specifications/     # Technical specifications
+│   └── archive/            # Historical documents
+├── namel3ss/               # Core language implementation
+│   ├── conformance/        # Conformance test infrastructure
+│   │   ├── models.py       # Test descriptors and discovery
+│   │   └── runner.py       # Test execution engine
+│   ├── cli/                # Command-line interface
+│   └── ...                 # Parser, codegen, runtime, etc.
+├── rfcs/                   # RFC (Request for Comments) proposals
+│   ├── 0000-template.md   # RFC template
+│   └── README.md          # RFC process documentation
+├── api/                    # REST API server
+├── CONFORMANCE.md          # External implementation guide
+├── GOVERNANCE.md           # Language governance model
+├── CONTRIBUTING.md         # Contribution guidelines
+└── [configuration files]   # Build and deployment configs
+```
+
+### Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run an example:**
+   ```bash
+   namel3ss build examples/minimal/app.ai
+   ```
+
+3. **Start development server:**
+   ```bash
+   namel3ss run examples/minimal/app.ai
+   ```
+
+
+
+## Why Namel3ss for AI Development?
+
+### Compared to LangChain/LlamaIndex
+- **Language, not library**: First-class syntax for prompts, memory, chains
+- **Compile-time validation**: Catch errors before runtime
+- **Type safety**: Structured inputs/outputs with schemas
+- **Deterministic testing**: Built-in stubs and mocks
+
+### Compared to prompt engineering tools
+- **Full application generation**: Not just prompts—complete backends
+- **Integrated memory**: Session, conversation, and global scopes built-in
+- **Multi-agent orchestration**: Declarative agent graphs, not imperative code
+
+### Compared to traditional web frameworks
+- **AI-native constructs**: Prompts and chains are language primitives
+- **Natural language syntax**: Write apps in structured English
+- **Zero boilerplate**: No Flask/FastAPI setup, routes auto-generated
+
+
+
+## Contributing
+
+Contributions welcome! This is a production-ready AI programming language with:
+
+- **500+ tests** across language, backend, and AI features
+- **Conformance suite** with 71 tests (30 conformance + 41 meta-tests)
+- **RFC-based governance** for language changes
+- **Comprehensive documentation** and guides
+- **Type-safe compilation** pipeline
+- **Production deployment** patterns
+
+### Contributing Requirements
+
+All contributions must follow these guidelines:
+
+1. **Code changes**: Include tests and documentation
+2. **Language changes**: Must include RFC + conformance tests
+3. **Bug fixes**: Add regression tests
+4. **Features**: Update relevant documentation
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for complete details on:
+- Development setup
+- Testing requirements
+- RFC process
+- Conformance test requirements
+- Code style and PR guidelines
+
+
+
+## Migration Notice
+
+**⚠️ Breaking Change**: As of the latest version, Namel3ss source files now use `.ai` extensions instead of `.n3`. If you have existing `.n3` files, please rename them to `.ai`:
+
+```bash
+# For individual files
+mv my_app.n3 my_app.ai
+
+# For all files in a directory
+for file in *.n3; do mv "$file" "${file%.n3}.ai"; done
+```
+
+All documentation, examples, and CLI commands now use `.ai` extensions. The `.n3` extension is no longer supported.
+
+
+
+## License
+
+[MIT License](LICENSE)
+
+
+
+## Community
+
+- **GitHub**: [github.com/SsebowaDisan/namel3ss-programming-language](https://github.com/SsebowaDisan/namel3ss-programming-language)
+- **Issues**: Report bugs or request features
+- **Discussions**: Share your AI applications built with Namel3ss
+
+---
+
+**Namel3ss** — The programming language where AI developers write in prompts, memory, agents, and chains.
+
