@@ -279,17 +279,17 @@ Compared to traditional web frameworks:
 - Docker deployment
 - Kubernetes manifests
 
-[See deployment guide →](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/DEPLOYMENT.md)
+[See deployment guide →](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/guides/PRODUCTION_DEPLOYMENT_GUIDE.md)
 
 ---
 
 ## Learn more
 
 **Documentation:**
-- [Complete guide](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
-- [API reference](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/API_REFERENCE.md) - Detailed API docs
+- [Complete guide](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
+- [API reference](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/API_REFERENCE.md) - Detailed API docs
 - [Examples](https://github.com/namel3ss-Ai/namel3ss-programming-language/tree/main/examples) - Real applications you can run
-- [Troubleshooting](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/TROUBLESHOOTING.md) - Common issues solved
+- [Troubleshooting](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/TROUBLESHOOTING.md) - Common issues solved
 
 **Examples:**
 - [Governed Multi-Agent Lab](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
