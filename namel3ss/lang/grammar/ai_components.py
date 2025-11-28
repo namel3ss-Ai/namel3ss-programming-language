@@ -223,6 +223,14 @@ class AIComponentsParserMixin:
 
     def _parse_prompt_wrapper(self, line: _Line) -> None:
         """Wrapper to parse structured prompts using AIParserMixin."""
+        # Check for common mistake: using { instead of :
+        stripped = line.text.strip()
+        if stripped.endswith('{'):
+            raise self._error(
+                "Prompt declaration must end with ':', not '{'. Example: prompt MyPrompt:",
+                line
+            )
+        
         prompt = self._run_ai_block_parser(line, _AIParserMixin._parse_prompt)
         if prompt:
             self._ensure_app(line)

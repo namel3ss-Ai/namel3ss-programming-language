@@ -240,6 +240,77 @@ calculate_total([10, 20, 30], 0.1)
 
 ## See it in action
 
+### Build Your First Chat Widget in 10 Minutes
+
+Want to build a production-ready customer support chat widget? Here's how easy it is:
+
+```n3
+app "Support Chat"
+
+# Configure AI model
+model support_bot:
+    provider: openai
+    name: "gpt-4"
+    temperature: 0.7
+
+# Store conversation history
+memory "conversation_history":
+    scope: conversation
+    kind: conversation
+    max_items: 50
+
+# AI chain for responses
+chain "chat_response":
+    inputs:
+        message: text
+        history: conversation
+    steps:
+        - step generate:
+            model: support_bot
+            prompt: |
+                Chat history: {{history}}
+                User: {{message}}
+                
+                Provide helpful customer support response.
+            output: response
+
+# Chat UI page
+page "Chat" at "/":
+    show text "Customer Support" style {
+        fontSize: "24px"
+        fontWeight: "bold"
+        marginBottom: "20px"
+    }
+    
+    # Display messages
+    show list from memory "conversation_history":
+        item:
+            show text "{{role}}: {{content}}" style {
+                padding: "12px"
+                borderRadius: "8px"
+                background: "{{role == 'user' ? '#e3f2fd' : '#f5f5f5'}}"
+            }
+    
+    # Message input
+    show form "Send Message":
+        field "user_message" type textarea placeholder "Type your message..."
+        button "Send"
+        on submit:
+            run chain "chat_response"
+            show toast "Message sent!"
+```
+
+That's it! A complete chat widget with:
+- ✅ AI-powered responses
+- ✅ Conversation memory
+- ✅ Professional UI
+- ✅ Form handling
+- ✅ Real-time updates
+
+**Want more?** See the [Complete Chat Widget Example](docs/COMPLETE_CHAT_WIDGET_EXAMPLE.md) for 600+ lines with typing indicators, escalation, embedding, and more.
+
+### Complete AI Support System
+
 Here's a complete AI support system. Written in plain English. Ready for production.
 
 ```text
@@ -442,6 +513,19 @@ That's it! You have a working AI application.
 
 ## What's New in 2.0
 
+### 📚 Comprehensive Documentation & Examples (November 2025)
+
+**NEW!** We've added extensive guides to help you build production applications:
+
+- **5 Complete Documentation Guides** covering UI components, real-time features, API integration, backend operations, and deployment
+- **Production Chat Widget Example** with 600+ lines of working code
+- **Working Code Examples** including chatbots, API demos, and navigation patterns
+- **Syntax Guidelines** for correct indentation, memory blocks, and page structures
+
+Everything you need to build sophisticated applications like customer support widgets, collaborative editors, and real-time dashboards.
+
+👉 **[View All Documentation Guides](#-comprehensive-documentation-guides)**
+
 ### 🎯 Static Type Checking
 
 Catch errors before runtime with comprehensive type validation:
@@ -587,6 +671,8 @@ We made RAG development feel magical.
 
 **Smart filtering.** Use `condition:` or `filter_by:`. Whichever reads better. The compiler understands both.
 
+**Comprehensive error messages.** Try to use an unsupported component? Get detailed explanations why it's not supported, 2-3 alternative solutions with specific use cases, complete working examples, and documentation links. Errors that teach, not block.
+
 And it all just works. 21+ tests passing. Production-ready. Zero breaking changes.
 
 [See complete changelog →](#recent-additions-november-2025)
@@ -644,16 +730,55 @@ Compared to traditional web frameworks:
 
 ## Learn more
 
-**Documentation:**
-- [Complete guide](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
-- [API reference](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/API_REFERENCE.md) - Detailed API docs
-- [Examples](https://github.com/namel3ss-Ai/namel3ss-programming-language/tree/main/examples) - Real applications you can run
-- [Troubleshooting](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/TROUBLESHOOTING.md) - Common issues solved
+### 📖 Comprehensive Documentation Guides
 
-**Examples:**
-- [Governed Multi-Agent Lab](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
-- [RAG Document Assistant](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
-- [AI Support Console](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/examples/ai-customer-support-console.md) - Complete support application
+**NEW!** Complete guides for building production applications:
+
+👉 **[Complete Documentation Index](docs/DOCUMENTATION_INDEX.md)** - Organized guide to all documentation
+
+**Essential Guides:**
+
+- **[UI Components & Styling Guide](docs/UI_COMPONENTS_AND_STYLING.md)** - Master component styling, conditional rendering, list iteration, and reactive state. Build beautiful, responsive interfaces with CSS property mapping and advanced form patterns.
+
+- **[UI Component Reference](docs/UI_COMPONENT_REFERENCE.md)** ⭐ NEW - Complete catalog of ALL supported components (text, tables, forms, charts, cards, modals, AI components, etc.) with clear documentation of what's NOT supported and alternatives.
+
+- **[Navigation Guide](docs/NAVIGATION_GUIDE.md)** ⭐ NEW - Routing patterns, page navigation without route parameters, state management, breadcrumbs, modals, and master-detail patterns.
+
+- **[Data Models Guide](docs/DATA_MODELS_GUIDE.md)** ⭐ NEW - Dataset vs Frame explained: when to use each, CRUD operations, query patterns, and best practices for data modeling.
+
+- **[Queries & Datasets](docs/QUERIES_AND_DATASETS.md)** ⭐ NEW - Filter, sort, aggregate, and paginate data. Complete patterns for complex queries without query blocks.
+
+- **[Standard Library](docs/STANDARD_LIBRARY.md)** ⭐ NEW - Built-in functions reference: date/time, strings, JSON, numbers, arrays. Essential utilities for data processing.
+
+- **[Real-Time & Forms Guide](docs/REALTIME_AND_FORMS_GUIDE.md)** - Implement WebSocket features, real-time collaboration, typing indicators, multi-step wizards, and dynamic validation. Perfect for chat applications and live dashboards.
+
+- **[API & Navigation Patterns](docs/API_AND_NAVIGATION_PATTERNS.md)** - Integrate REST and GraphQL APIs, implement routing with parameters, use the action system, and embed widgets. Complete examples with GitHub API integration.
+
+- **[Extensions Guide](docs/EXTENSIONS_GUIDE.md)** ⭐ NEW - Extend Namel3ss with custom Python tools: file processing (PDF, CSV, images), external APIs, scheduling, and monitoring.
+
+- **[Backend & Deployment Guide](docs/BACKEND_AND_DEPLOYMENT_GUIDE.md)** - Advanced backend features, session management, database operations, error handling, monitoring, and production deployment patterns.
+
+- **[Complete Chat Widget Example](docs/COMPLETE_CHAT_WIDGET_EXAMPLE.md)** - 600+ line production-ready customer support chat widget with real-time messaging, typing indicators, and iframe embedding.
+
+### 📚 Core Documentation
+
+- [Complete Language Guide](docs/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
+- [API Reference](docs/API_REFERENCE.md) - Detailed API documentation
+- [Advanced Features](docs/ADVANCED_FEATURES.md) - Type checking, modules, expressions
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues solved
+
+### 💡 Working Examples
+
+**Production-Ready Applications:**
+- [Customer Support Chatbot](examples/customer_support_chatbot.ai) - AI chatbot with memory, chains, and escalation
+- [Governed Multi-Agent Lab](examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
+- [RAG Document Assistant](examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
+- [AI Support Console](docs/examples/ai-customer-support-console.md) - Complete support application
+
+**Quick Start Examples:**
+- [Simple Demo](examples/verified_simple_demo.ai) - Minimal working example with verified syntax
+- [API Navigation Demo](examples/api_navigation_demo.ai) - REST API integration with routing and actions
+- [Working Chatbot](examples/working_chatbot.ai) - Basic conversational AI implementation
 
 **Community:**
 - [GitHub](https://github.com/namel3ss-Ai/namel3ss-programming-language) - Star us, contribute, discuss

@@ -27,7 +27,15 @@ class PagesParserMixin:
         """Parse page declaration: page "name" at "/route":"""
         from .constants import PAGE_HEADER_RE
         
-        match = PAGE_HEADER_RE.match(line.text.strip())
+        # Check for common mistake: using { instead of :
+        stripped = line.text.strip()
+        if stripped.endswith('{'):
+            raise self._error(
+                "Page declaration must end with ':', not '{'. Example: page \"Dashboard\" at \"/\":",
+                line
+            )
+        
+        match = PAGE_HEADER_RE.match(stripped)
         if not match:
             self._unsupported(line, "page declaration")
         page_name = match.group(1)
@@ -35,7 +43,7 @@ class PagesParserMixin:
         base_indent = self._indent(line.text)
         self._advance()
         statements = self._parse_page_statements(base_indent)
-        page = Page(name=page_name, route=route, statements=statements)
+        page = Page(name=page_name, route=route, body=statements)  # Changed from statements= to body=
         self._ensure_app(line)
         if self._app:
             self._app.pages.append(page)

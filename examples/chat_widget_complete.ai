@@ -1,0 +1,322 @@
+app "Customer Support Chat Widget" {
+  version: "1.0.0"
+  description: "Production-ready chat widget with real-time messaging, forms, and dynamic UI"
+}
+
+# Memory configuration for chat state
+memory:
+  # Widget state
+  is_open: false
+  is_minimized: true
+  unread_count: 0
+  
+  # User info
+  user_name: ""
+  user_email: ""
+  has_user_info: false
+  
+  # Chat session
+  chat_session_id: ""
+  current_agent: null
+  
+  # Messages
+  messages: []
+  is_typing: false
+
+# Chain to initialize chat session
+chain "InitializeChat":
+  step create_session:
+    prompt: "Generate a unique chat session ID"
+    model: "gpt-4"
+  
+  step save_session:
+    write: memory.chat_session_id = create_session.session_id
+    write: memory.messages = []
+  
+  output: create_session.session_id
+
+# Chain to send message
+chain "SendMessage":
+  input: message_text, user_name
+  
+  step save_message:
+    write: memory.messages append {
+      content: message_text,
+      sender: user_name,
+      is_user: true,
+      timestamp: now()
+    }
+  
+  step generate_response:
+    prompt: """
+    You are a helpful customer support agent.
+    User message: {message_text}
+    Provide a friendly and helpful response.
+    """
+    model: "gpt-4"
+  
+  step save_response:
+    write: memory.messages append {
+      content: generate_response.response,
+      sender: "Support Agent",
+      is_user: false,
+      timestamp: now()
+    }
+  
+  output: generate_response.response
+
+# Main chat widget page
+page "ChatWidget" at "/widget":
+  reactive: true
+  
+  # Minimized state - floating button
+  if is_minimized:
+    show button "Open Chat":
+      text: "💬"
+      style: {
+        position: "fixed",
+        bottom: "20px",
+        right: "20px",
+        width: "60px",
+        height: "60px",
+        borderRadius: "50%",
+        backgroundColor: "#3b82f6",
+        color: "white",
+        border: "none",
+        fontSize: "24px",
+        cursor: "pointer",
+        boxShadow: "0 4px 16px rgba(59, 130, 246, 0.3)",
+        zIndex: "9999"
+      }
+      on_click:
+        write: memory.is_minimized = false
+        write: memory.is_open = true
+        write: memory.unread_count = 0
+        if !memory.chat_session_id:
+          run_chain: "InitializeChat"
+    
+    # Unread badge
+    if unread_count > 0:
+      show text "{unread_count}":
+        style: {
+          position: "fixed",
+          bottom: "65px",
+          right: "65px",
+          backgroundColor: "#dc2626",
+          color: "white",
+          borderRadius: "50%",
+          width: "20px",
+          height: "20px",
+          fontSize: "11px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: "10000"
+        }
+  
+  # Expanded chat interface
+  elif is_open:
+    show div "Chat Container":
+      style: {
+        position: "fixed",
+        bottom: "20px",
+        right: "20px",
+        width: "380px",
+        height: "600px",
+        backgroundColor: "white",
+        borderRadius: "16px",
+        boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        zIndex: "9999"
+      }
+      
+      children:
+        # Chat header
+        - show div "Header":
+            style: {
+              padding: "16px 20px",
+              backgroundColor: "#3b82f6",
+              color: "white",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center"
+            }
+            
+            children:
+              - show text "Customer Support":
+                  style: {fontSize: "16px", fontWeight: "600"}
+              
+              - show button "Minimize":
+                  text: "−"
+                  style: {
+                    background: "none",
+                    border: "none",
+                    color: "white",
+                    fontSize: "24px",
+                    cursor: "pointer"
+                  }
+                  on_click:
+                    write: memory.is_minimized = true
+                    write: memory.is_open = false
+        
+        # User info collection form (if not provided)
+        - if !has_user_info:
+            show div "User Info":
+              style: {
+                padding: "20px",
+                backgroundColor: "#f8fafc"
+              }
+              
+              children:
+                - show text "Hi! Please share your details:":
+                    style: {fontSize: "14px", marginBottom: "16px"}
+                
+                - show form "User Info Form":
+                    fields:
+                      - name: user_name
+                        component: text_input
+                        label: "Your Name"
+                        required: true
+                      - name: user_email
+                        component: text_input
+                        label: "Email (optional)"
+                        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+                    
+                    layout: vertical
+                    submit_button_text: "Start Chat"
+                    
+                    on_submit:
+                      write: memory.user_name = form.user_name
+                      write: memory.user_email = form.user_email
+                      write: memory.has_user_info = true
+        
+        # Messages area (if user info collected)
+        - elif has_user_info:
+            show div "Messages Area":
+              style: {
+                flex: "1",
+                overflowY: "auto",
+                padding: "16px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px"
+              }
+              
+              children:
+                # Welcome message
+                - show div "Welcome":
+                    style: {
+                      padding: "12px 16px",
+                      backgroundColor: "#f0f9ff",
+                      borderRadius: "12px",
+                      fontSize: "14px"
+                    }
+                    children:
+                      - show text "Hi {user_name}! 👋 How can I help you?":
+                          style: {color: "#0369a1"}
+                
+                # Message list
+                - show list "Messages":
+                    from: memory.messages
+                    item as message:
+                      show div "Message":
+                        style: {
+                          display: "flex",
+                          justifyContent: message.is_user ? "flex-end" : "flex-start"
+                        }
+                        
+                        children:
+                          - show div "Message Bubble":
+                              style: {
+                                maxWidth: "75%",
+                                padding: "12px 16px",
+                                borderRadius: message.is_user ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                                backgroundColor: message.is_user ? "#3b82f6" : "#f1f5f9",
+                                color: message.is_user ? "white" : "#1e293b"
+                              }
+                              
+                              children:
+                                - show text "{message.content}":
+                                    style: {fontSize: "14px", lineHeight: "1.4"}
+                                
+                                - show text "{message.timestamp}":
+                                    style: {
+                                      fontSize: "11px",
+                                      opacity: "0.7",
+                                      marginTop: "4px"
+                                    }
+        
+        # Typing indicator
+        - if is_typing && has_user_info:
+            show div "Typing":
+              style: {
+                padding: "8px 20px",
+                fontSize: "12px",
+                color: "#6b7280",
+                fontStyle: "italic"
+              }
+              children:
+                - show text "Agent is typing...":
+                    style: {}
+        
+        # Message input form
+        - if has_user_info:
+            show div "Input Area":
+              style: {
+                padding: "16px 20px",
+                borderTop: "1px solid #e2e8f0"
+              }
+              
+              children:
+                - show form "Send Message":
+                    fields:
+                      - name: message
+                        component: textarea
+                        placeholder: "Type your message..."
+                        required: true
+                        rows: 2
+                    
+                    layout: inline
+                    submit_button_text: "Send"
+                    
+                    on_submit:
+                      write: memory.is_typing = true
+                      run_chain: "SendMessage"
+                      input: {
+                        message_text: form.message,
+                        user_name: memory.user_name
+                      }
+                      write: memory.is_typing = false
+                      clear_form: true
+
+# Admin page to view all chat sessions
+page "ChatAdmin" at "/admin/chats":
+  show text "Chat Sessions":
+    style: {fontSize: "24px", fontWeight: "700", marginBottom: "24px"}
+  
+  show list "All Sessions":
+    from: memory.all_sessions || []
+    item as session:
+      show div "Session Card":
+        style: {
+          padding: "16px",
+          border: "1px solid #e5e7eb",
+          borderRadius: "8px",
+          marginBottom: "12px"
+        }
+        
+        children:
+          - show text "User: {session.user_name}":
+              style: {fontWeight: "600", marginBottom: "8px"}
+          
+          - show text "Session ID: {session.id}":
+              style: {fontSize: "12px", color: "#6b7280"}
+          
+          - show text "Messages: {session.message_count}":
+              style: {fontSize: "12px", color: "#6b7280"}
+          
+          - show button "View Details":
+              on_click:
+                navigate: "/admin/chats/{session.id}"

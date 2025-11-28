@@ -1,0 +1,307 @@
+app "API & Navigation Demo"
+
+# ============================================================================
+# API Connectors
+# ============================================================================
+
+# REST API connector - Public API for demonstration
+connector "jsonPlaceholder":
+  type: rest
+  options:
+    endpoint: "https://jsonplaceholder.typicode.com/users"
+    method: get
+
+# REST connector with parameter
+connector "userPosts":
+  type: rest
+  options:
+    endpoint: "https://jsonplaceholder.typicode.com/posts?userId={{user_id}}"
+    method: get
+
+# REST connector for creating post
+connector "createPost":
+  type: rest
+  options:
+    endpoint: "https://jsonplaceholder.typicode.com/posts"
+    method: post
+    headers:
+      Content-Type: "application/json"
+    payload:
+      title: "{{post_title}}"
+      body: "{{post_body}}"
+      userId: "{{user_id}}"
+
+# ============================================================================
+# Memory Stores
+# ============================================================================
+
+memory "app_state" {
+  scope: "session"
+  kind: "key_value"
+}
+
+memory "notifications" {
+  scope: "local"
+  kind: "key_value"
+}
+
+# ============================================================================
+# Pages with Navigation
+# ============================================================================
+
+# Home page with user list
+page "Home" at "/":
+  # Top navigation bar
+  navbar:
+    logo: "🏠"
+    title: "API Demo"
+    position: "top"
+    sticky: true
+    actions:
+      action "theme_toggle" icon "🎨" type "toggle"
+      action "notifications" icon "🔔" type "button" badge {count: 3}
+      action "user_menu" icon "👤" type "menu":
+        item "profile" label "Profile" at "/profile"
+        item "settings" label "Settings" at "/settings"
+        item "divider" label "---"
+        item "logout" label "Logout" action "logout"
+
+  # Command palette for quick navigation
+  command palette:
+    shortcut: "Ctrl+K"
+    placeholder: "Search pages and actions..."
+    max_results: 10
+
+  # Main content
+  show text "User Directory" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  show text "Browse users and view their posts" style {
+    fontSize: "16px"
+    color: "#64748b"
+    marginBottom: "32px"
+  }
+
+  # User list from API
+  show list from connector jsonPlaceholder:
+    loading: "Loading users..."
+    empty: "No users found"
+    error: "Failed to load users. Please try again."
+    
+    item:
+      show card:
+        header:
+          show text "{{name}}" style {
+            fontSize: "18px"
+            fontWeight: "bold"
+          }
+        
+        body:
+          show text "Email: {{email}}" style {
+            marginBottom: "8px"
+          }
+          show text "Phone: {{phone}}" style {
+            marginBottom: "8px"
+          }
+          show text "Company: {{company.name}}" style {
+            marginBottom: "16px"
+          }
+        
+        footer:
+          # Action buttons
+          show text "View Posts" style {
+            display: "inline-block"
+            padding: "8px 16px"
+            background: "#3b82f6"
+            color: "white"
+            borderRadius: "6px"
+            cursor: "pointer"
+          }
+
+# User posts page with route parameter
+page "UserPosts" at "/users/:userId/posts":
+  # Navigation
+  navbar:
+    logo: "🏠"
+    title: "API Demo"
+    actions:
+      action "back" icon "←" type "button"
+
+  # Breadcrumbs
+  breadcrumbs:
+    item "home_bc" label "Home" at "/"
+    item "user_bc" label "User {{userId}}"
+    item "posts_bc" label "Posts"
+
+  # Page title
+  show text "Posts by User {{userId}}" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  # Action bar
+  show text "Create New Post" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#10b981"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginBottom: "24px"
+  }
+
+  # Posts list
+  show list from connector userPosts where { user_id: "{{userId}}" }:
+    loading: "Loading posts..."
+    empty: "This user has no posts yet"
+    error: "Failed to load posts"
+    
+    item:
+      show card:
+        header:
+          show text "{{title}}" style {
+            fontSize: "18px"
+            fontWeight: "bold"
+          }
+        
+        body:
+          show text "{{body}}" style {
+            lineHeight: "1.6"
+          }
+
+# Create post page
+page "CreatePost" at "/posts/new":
+  navbar:
+    logo: "🏠"
+    title: "API Demo"
+    actions:
+      action "back" icon "←" type "button"
+
+  breadcrumbs:
+    item "home_bc" label "Home" at "/"
+    item "create_bc" label "Create Post"
+
+  show text "Create New Post" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  # Form for creating post
+  show form "New Post":
+    field "post_title" type text label "Title" placeholder "Enter post title..." required
+    field "post_body" type textarea label "Content" placeholder "Write your post content..." required rows 6
+    field "user_id" type number label "User ID" value "1" required
+    
+    button "Create Post"
+    
+    on submit:
+      show toast "Post created successfully!"
+
+# Profile page
+page "Profile" at "/profile":
+  sidebar:
+    title: "Settings"
+    position: "left"
+    items:
+      item "profile_nav" label "Profile" at "/profile" icon "👤"
+      item "settings_nav" label "Settings" at "/settings" icon "⚙️"
+      item "security_nav" label "Security" at "/security" icon "🔒"
+
+  show text "User Profile" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  show form "Profile Settings":
+    field "full_name" type text label "Full Name" value "John Doe"
+    field "email" type email label "Email" value "john@example.com"
+    field "bio" type textarea label "Bio" rows 4
+    
+    button "Save Changes"
+    
+    on submit:
+      show toast "Profile updated successfully!"
+
+# Settings page
+page "Settings" at "/settings":
+  sidebar:
+    title: "Settings"
+    position: "left"
+    items:
+      item "profile_nav" label "Profile" at "/profile" icon "👤"
+      item "settings_nav" label "Settings" at "/settings" icon "⚙️"
+      item "security_nav" label "Security" at "/security" icon "🔒"
+
+  show text "Application Settings" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  show form "App Preferences":
+    field "theme" type select label "Theme":
+      option "light" label "Light"
+      option "dark" label "Dark"
+      option "auto" label "Auto"
+    
+    field "notifications" type checkbox label "Enable notifications"
+    field "email_updates" type checkbox label "Email updates"
+    
+    button "Save Settings"
+    
+    on submit:
+      show toast "Settings saved!"
+
+# Security page
+page "Security" at "/security":
+  sidebar:
+    title: "Settings"
+    position: "left"
+    items:
+      item "profile_nav" label "Profile" at "/profile" icon "👤"
+      item "settings_nav" label "Settings" at "/settings" icon "⚙️"
+      item "security_nav" label "Security" at "/security" icon "🔒"
+
+  show text "Security Settings" style {
+    fontSize: "28px"
+    fontWeight: "bold"
+    marginBottom: "24px"
+  }
+
+  show form "Change Password":
+    field "current_password" type password label "Current Password" required
+    field "new_password" type password label "New Password" required
+    field "confirm_password" type password label "Confirm Password" required
+    
+    button "Update Password"
+    
+    on submit:
+      show toast "Password updated successfully!"
+
+# ============================================================================
+# Actions
+# ============================================================================
+
+action "view_user_posts" when clicks "View Posts":
+  show toast "Loading user posts..."
+
+action "create_new_post" when clicks "Create New Post":
+  show toast "Opening post creator..."
+
+action "go_back" when clicks "back":
+  show toast "Going back..."
+
+action "toggle_theme" when clicks "theme_toggle":
+  show toast "Theme toggled!"
+
+action "show_notifications" when clicks "notifications":
+  show toast "You have 3 new notifications"
+
+action "handle_logout" when clicks "logout":
+  show toast "Logging out..."

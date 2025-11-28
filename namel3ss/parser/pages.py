@@ -388,6 +388,21 @@ class PageParserMixin(ComponentParserMixin, ControlFlowParserMixin):
                 hint='Check your if/elif/else structure'
             )
         
+        # Check for unsupported show components first
+        if stripped.startswith('show '):
+            # Extract component name (e.g., "progress_bar" from "show progress_bar")
+            component_match = re.match(r'show\s+([a-z_]+)', stripped)
+            if component_match:
+                component_name = component_match.group(1)
+                
+                # Import comprehensive error formatting from component_helpers
+                from .component_helpers import get_component_alternatives, format_alternatives_error
+                
+                # Check if this is an unsupported component
+                if get_component_alternatives(component_name):
+                    error_message = format_alternatives_error(component_name)
+                    raise self._error(error_message, line_no, line)
+        
         # Component display
         if stripped.startswith('show text '):
             return self._parse_show_text(line, parent_indent)

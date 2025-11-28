@@ -189,6 +189,15 @@ class ExpressionParserMixin(ParserBase):
     def _parse_comparison(self) -> Expression:
         left = self._parse_additive()
         self._expr_skip_whitespace()
+        
+        # Check for ternary operator (not supported)
+        if self._expr_pos < len(self._expr_text) and self._expr_text[self._expr_pos] == '?':
+            raise self._error(
+                "Ternary operators (? :) are not supported. Use if/else blocks instead. Example: if condition:\n    value1\nelse:\n    value2",
+                self.pos,
+                self._expr_text
+            )
+        
         if self._expr_match('=='):
             right = self._parse_additive()
             return BinaryOp(left=left, op='==', right=right)

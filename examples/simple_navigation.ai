@@ -1,0 +1,111 @@
+app "Simple Navigation Demo"
+
+# Home page
+page "Home" at "/":
+    show text "Welcome Home" style {
+        fontSize: "32px"
+        fontWeight: "bold"
+        marginBottom: "20px"
+    }
+
+    show text "This is a simple navigation demo." style {
+    fontSize: "16px"
+    marginBottom: "30px"
+  }
+
+  # Links to other pages
+  show text "Go to About Page" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#3b82f6"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginRight: "10px"
+  }
+
+  show text "Go to Contact Page" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#10b981"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }
+
+# About page
+page "About" at "/about":
+  show text "About Us" style {
+    fontSize: "32px"
+    fontWeight: "bold"
+    marginBottom: "20px"
+  }
+
+  show text "This is the about page." style {
+    fontSize: "16px"
+    marginBottom: "30px"
+  }
+
+  show text "Back to Home" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#6b7280"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }
+
+# Contact page
+page "Contact" at "/contact":
+  show text "Contact Us" style {
+    fontSize: "32px"
+    fontWeight: "bold"
+    marginBottom: "20px"
+  }
+
+  show form "Contact Form":
+    field "name" type text label "Name" required
+    field "email" type email label "Email" required
+    field "message" type textarea label "Message" rows 5 required
+    
+    button "Send Message"
+    
+    on submit:
+      show toast "Message sent!"
+
+  show text "Back to Home" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#6b7280"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginTop: "20px"
+  }
+
+# User detail page with route parameter
+page "UserDetail" at "/users/:userId":
+  show text "User Profile" style {
+    fontSize: "32px"
+    fontWeight: "bold"
+    marginBottom: "20px"
+  }
+
+  show text "User ID: {{userId}}" style {
+    fontSize: "18px"
+    marginBottom: "10px"
+  }
+
+  show text "This is the detail page for user {{userId}}" style {
+    fontSize: "16px"
+    marginBottom: "30px"
+  }
+
+  show text "Back to Home" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#6b7280"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }

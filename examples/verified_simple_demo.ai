@@ -1,0 +1,38 @@
+# Simple Working Example - Verified Syntax
+# Based on patterns from working_chatbot.ai
+
+app "Simple Demo"
+
+# Model configuration
+model chat_model:
+    provider: openai
+    name: "gpt-3.5-turbo"
+    temperature: 0.7
+    max_tokens: 500
+
+# Memory
+memory "user_data":
+    scope: session
+    kind: key_value
+
+# Chain
+chain "process_message":
+    inputs:
+        text: text
+    
+    steps:
+        - step generate:
+            model: chat_model
+            prompt: |
+                Respond to: {{text}}
+            output: response
+
+# Page
+page "Home" at "/":
+    show text "Welcome!"
+    
+    show form "Message Form":
+        field "message" type text placeholder "Enter message..."
+        button "Submit"
+        on submit:
+            show toast "Submitted!"

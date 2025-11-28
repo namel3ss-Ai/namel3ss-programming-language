@@ -1,0 +1,521 @@
+app "Real-Time Collaboration Demo" {
+  version: "1.0.0"
+  description: "Demonstrates real-time updates, complex forms, and collaborative features"
+}
+
+# Memory for real-time state
+memory:
+  # User tracking
+  active_users: []
+  current_user: {name: "Guest", color: "#3b82f6"}
+  
+  # Document state
+  document_content: ""
+  document_title: "Untitled Document"
+  last_edited: null
+  
+  # Form state
+  form_step: 1
+  registration_data: {}
+  
+  # Todo list
+  todos: []
+  filter: "all"
+
+# Real-time collaborative editor page
+page "CollaborativeEditor" at "/editor/{doc_id}":
+  reactive: true
+  realtime: true
+  
+  show div "Editor Container":
+    style: {
+      maxWidth: "1200px",
+      margin: "0 auto",
+      padding: "24px"
+    }
+    
+    children:
+      # Header with active users
+      - show div "Header":
+          style: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "24px"
+          }
+          
+          children:
+            - show text "{document_title}":
+                style: {fontSize: "24px", fontWeight: "700"}
+            
+            - show div "Active Users":
+                style: {display: "flex", gap: "8px", alignItems: "center"}
+                
+                children:
+                  - show text "Currently editing:":
+                      style: {fontSize: "14px", color: "#6b7280"}
+                  
+                  - show list "User Avatars":
+                      from: memory.active_users
+                      layout: horizontal
+                      item as user:
+                        show div "Avatar":
+                          style: {
+                            width: "32px",
+                            height: "32px",
+                            borderRadius: "50%",
+                            backgroundColor: user.color,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "white",
+                            fontSize: "12px",
+                            fontWeight: "600"
+                          }
+                          children:
+                            - show text "{user.name.charAt(0)}":
+                                style: {}
+      
+      # Document editor
+      - show form "Document Editor":
+          fields:
+            - name: title
+              component: text_input
+              label: "Document Title"
+              value: memory.document_title
+              on_change:
+                write: memory.document_title = value
+                broadcast: "document_updated"
+            
+            - name: content
+              component: textarea
+              label: "Content"
+              value: memory.document_content
+              rows: 20
+              on_change:
+                write: memory.document_content = value
+                write: memory.last_edited = now()
+                broadcast: "document_updated"
+          
+          layout: vertical
+          submit_button_text: "Save Document"
+          
+          on_submit:
+            run_chain: "SaveDocument"
+            show_toast: "Document saved successfully!"
+      
+      # Last edited timestamp
+      - if last_edited:
+          show text "Last edited: {last_edited}":
+            style: {
+              fontSize: "12px",
+              color: "#6b7280",
+              marginTop: "16px"
+            }
+
+# Multi-step registration form
+page "Registration" at "/register":
+  reactive: true
+  
+  show div "Registration Wizard":
+    style: {
+      maxWidth: "600px",
+      margin: "0 auto",
+      padding: "40px 24px"
+    }
+    
+    children:
+      # Progress bar
+      - show div "Progress":
+          style: {
+            width: "100%",
+            height: "4px",
+            backgroundColor: "#e5e7eb",
+            borderRadius: "2px",
+            marginBottom: "32px"
+          }
+          
+          children:
+            - show div "Progress Fill":
+                style: {
+                  width: "{(form_step / 3) * 100}%",
+                  height: "100%",
+                  backgroundColor: "#3b82f6",
+                  transition: "width 0.3s ease"
+                }
+      
+      # Step indicator
+      - show text "Step {form_step} of 3":
+          style: {
+            fontSize: "14px",
+            color: "#6b7280",
+            marginBottom: "16px"
+          }
+      
+      # Step 1: Personal Information
+      - if form_step == 1:
+          show div "Step 1":
+            children:
+              - show text "Personal Information":
+                  style: {fontSize: "24px", fontWeight: "700", marginBottom: "24px"}
+              
+              - show form "Personal Info":
+                  fields:
+                    - name: first_name
+                      component: text_input
+                      label: "First Name"
+                      required: true
+                      min_length: 2
+                    
+                    - name: last_name
+                      component: text_input
+                      label: "Last Name"
+                      required: true
+                      min_length: 2
+                    
+                    - name: email
+                      component: text_input
+                      label: "Email Address"
+                      required: true
+                      pattern: "^[^@]+@[^@]+\\.[^@]+$"
+                    
+                    - name: phone
+                      component: text_input
+                      label: "Phone Number"
+                      pattern: "^\\+?[1-9]\\d{1,14}$"
+                  
+                  layout: vertical
+                  submit_button_text: "Next Step →"
+                  
+                  on_submit:
+                    write: memory.registration_data.personal = form
+                    write: memory.form_step = 2
+      
+      # Step 2: Account Details
+      - elif form_step == 2:
+          show div "Step 2":
+            children:
+              - show text "Account Details":
+                  style: {fontSize: "24px", fontWeight: "700", marginBottom: "24px"}
+              
+              - show form "Account Info":
+                  fields:
+                    - name: username
+                      component: text_input
+                      label: "Username"
+                      required: true
+                      min_length: 3
+                      pattern: "^[a-zA-Z0-9_]+$"
+                      help_text: "Letters, numbers, and underscores only"
+                    
+                    - name: password
+                      component: text_input
+                      label: "Password"
+                      required: true
+                      min_length: 8
+                      type: password
+                      help_text: "At least 8 characters"
+                    
+                    - name: confirm_password
+                      component: text_input
+                      label: "Confirm Password"
+                      required: true
+                      type: password
+                  
+                  layout: vertical
+                  submit_button_text: "Next Step →"
+                  
+                  on_submit:
+                    if form.password != form.confirm_password:
+                      show_error: "Passwords don't match"
+                      return
+                    write: memory.registration_data.account = form
+                    write: memory.form_step = 3
+              
+              - show button "← Back":
+                  style: {marginTop: "16px"}
+                  on_click:
+                    write: memory.form_step = 1
+      
+      # Step 3: Preferences
+      - elif form_step == 3:
+          show div "Step 3":
+            children:
+              - show text "Preferences":
+                  style: {fontSize: "24px", fontWeight: "700", marginBottom: "24px"}
+              
+              - show form "User Preferences":
+                  fields:
+                    - name: role
+                      component: select
+                      label: "Your Role"
+                      required: true
+                      options: ["Developer", "Designer", "Manager", "Other"]
+                    
+                    - name: team_size
+                      component: select
+                      label: "Team Size"
+                      options: ["1-5", "6-20", "21-50", "50+"]
+                    
+                    - name: newsletter
+                      component: checkbox
+                      label: "Subscribe to newsletter"
+                    
+                    - name: notifications
+                      component: checkbox
+                      label: "Enable email notifications"
+                  
+                  layout: vertical
+                  submit_button_text: "Complete Registration"
+                  
+                  on_submit:
+                    write: memory.registration_data.preferences = form
+                    run_chain: "CompleteRegistration"
+                    show_toast: "Registration complete! Welcome aboard!"
+                    navigate: "/dashboard"
+              
+              - show button "← Back":
+                  style: {marginTop: "16px"}
+                  on_click:
+                    write: memory.form_step = 2
+
+# Real-time todo list with filtering
+page "TodoApp" at "/todos":
+  reactive: true
+  
+  show div "Todo Container":
+    style: {
+      maxWidth: "600px",
+      margin: "0 auto",
+      padding: "40px 24px"
+    }
+    
+    children:
+      # Header
+      - show text "My Tasks":
+          style: {fontSize: "32px", fontWeight: "700", marginBottom: "24px"}
+      
+      # Add todo form
+      - show form "Add Task":
+          fields:
+            - name: task_text
+              component: text_input
+              placeholder: "What needs to be done?"
+              required: true
+          
+          layout: inline
+          submit_button_text: "Add"
+          
+          on_submit:
+            write: memory.todos append {
+              id: generate_id(),
+              text: form.task_text,
+              completed: false,
+              created_at: now()
+            }
+            clear_form: true
+      
+      # Filter buttons
+      - show div "Filters":
+          style: {
+            display: "flex",
+            gap: "12px",
+            marginTop: "24px",
+            marginBottom: "16px"
+          }
+          
+          children:
+            - show button "All":
+                style: {
+                  backgroundColor: filter == "all" ? "#3b82f6" : "#f3f4f6",
+                  color: filter == "all" ? "white" : "#374151"
+                }
+                on_click:
+                  write: memory.filter = "all"
+            
+            - show button "Active":
+                style: {
+                  backgroundColor: filter == "active" ? "#3b82f6" : "#f3f4f6",
+                  color: filter == "active" ? "white" : "#374151"
+                }
+                on_click:
+                  write: memory.filter = "active"
+            
+            - show button "Completed":
+                style: {
+                  backgroundColor: filter == "completed" ? "#3b82f6" : "#f3f4f6",
+                  color: filter == "completed" ? "white" : "#374151"
+                }
+                on_click:
+                  write: memory.filter = "completed"
+      
+      # Todo list
+      - show list "Tasks":
+          from: memory.todos.filter(todo => 
+            filter == "all" || 
+            (filter == "active" && !todo.completed) ||
+            (filter == "completed" && todo.completed)
+          )
+          
+          empty_state:
+            show text "No tasks yet! Add one above.":
+              style: {
+                textAlign: "center",
+                color: "#6b7280",
+                padding: "32px"
+              }
+          
+          item as todo:
+            show div "Todo Item":
+              style: {
+                display: "flex",
+                alignItems: "center",
+                padding: "12px",
+                borderBottom: "1px solid #e5e7eb",
+                backgroundColor: todo.completed ? "#f9fafb" : "white"
+              }
+              
+              children:
+                - show checkbox:
+                    checked: todo.completed
+                    style: {marginRight: "12px"}
+                    on_change:
+                      write: memory.todos[todo.id].completed = !todo.completed
+                
+                - show text "{todo.text}":
+                    style: {
+                      flex: "1",
+                      textDecoration: todo.completed ? "line-through" : "none",
+                      color: todo.completed ? "#6b7280" : "#111827"
+                    }
+                
+                - show button "Delete":
+                    style: {
+                      color: "#dc2626",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer"
+                    }
+                    on_click:
+                      write: memory.todos = memory.todos.filter(t => t.id != todo.id)
+
+# Live search and filtering
+page "CustomerSearch" at "/customers":
+  reactive: true
+  
+  memory:
+    search_query: ""
+    search_results: []
+    loading: false
+  
+  show div "Search Container":
+    style: {
+      maxWidth: "800px",
+      margin: "0 auto",
+      padding: "40px 24px"
+    }
+    
+    children:
+      - show text "Customer Search":
+          style: {fontSize: "32px", fontWeight: "700", marginBottom: "24px"}
+      
+      # Search input
+      - show form "Search":
+          fields:
+            - name: query
+              component: text_input
+              placeholder: "Search customers..."
+              value: memory.search_query
+              on_change:
+                write: memory.search_query = value
+                write: memory.loading = true
+                run_chain: "SearchCustomers"
+                input: {query: value}
+                write: memory.search_results = result.customers
+                write: memory.loading = false
+          
+          layout: inline
+          submit_button_text: "Search"
+      
+      # Loading indicator
+      - if loading:
+          show text "Searching...":
+            style: {
+              textAlign: "center",
+              padding: "32px",
+              color: "#6b7280"
+            }
+      
+      # Results
+      - elif search_query && search_results.length > 0:
+          show list "Results":
+            from: memory.search_results
+            
+            item as customer:
+              show div "Customer Card":
+                style: {
+                  padding: "16px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "8px",
+                  marginBottom: "12px",
+                  cursor: "pointer"
+                }
+                on_click:
+                  navigate: "/customer/{customer.id}"
+                
+                children:
+                  - show text "{customer.name}":
+                      style: {fontWeight: "600", fontSize: "16px"}
+                  
+                  - show text "{customer.email}":
+                      style: {color: "#6b7280", fontSize: "14px"}
+                  
+                  - show text "Customer since {customer.created_date}":
+                      style: {color: "#9ca3af", fontSize: "12px"}
+      
+      - elif search_query:
+          show text "No customers found":
+            style: {
+              textAlign: "center",
+              padding: "32px",
+              color: "#6b7280"
+            }
+
+# Supporting chains
+chain "SaveDocument":
+  input: {title: memory.document_title, content: memory.document_content}
+  
+  step validate:
+    if !title || !content:
+      throw "Title and content are required"
+  
+  step save:
+    prompt: "Save document with title '{title}' and content"
+    model: "gpt-4"
+  
+  output: {success: true}
+
+chain "CompleteRegistration":
+  input: memory.registration_data
+  
+  step validate:
+    prompt: "Validate registration data: {input}"
+    model: "gpt-4"
+  
+  step create_user:
+    prompt: "Create user account with data: {input}"
+    model: "gpt-4"
+  
+  output: create_user.user_id
+
+chain "SearchCustomers":
+  input: query
+  
+  step search:
+    prompt: """
+    Search for customers matching: {query}
+    Return a list of matching customers with their details.
+    """
+    model: "gpt-4"
+  
+  output: search.customers

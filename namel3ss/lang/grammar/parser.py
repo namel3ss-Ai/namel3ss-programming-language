@@ -208,6 +208,19 @@ class _GrammarModuleParser(
             if stripped.startswith('rule '):
                 self._parse_rule_def(line)
                 continue
+            
+            # Detect common mistakes and provide helpful errors
+            if stripped.startswith('type '):
+                raise self._error(
+                    "'type' keyword is not supported. Use 'dataset' for database-backed models or 'frame' for analytical schemas. See docs/DATA_MODELS_GUIDE.md",
+                    line
+                )
+            if stripped.startswith('query '):
+                raise self._error(
+                    "'query' blocks are not supported. Use dataset operations like: MyDataset.filter(...).order_by(...). See docs/QUERIES_AND_DATASETS.md",
+                    line
+                )
+            
             self._unsupported(line, f"top-level statement '{stripped.split()[0]}'")
 
         body: List[object] = []

@@ -1,0 +1,159 @@
+app "Action System Demo"
+
+# Memory for storing data
+memory "app_state" {
+  scope: "session"
+  kind: "key_value"
+}
+
+# Home page with actions
+page "Home" at "/":
+    show text "Action System Demo" style {
+        fontSize: "32px"
+        fontWeight: "bold"
+        marginBottom: "20px"
+    }
+
+  # Counter example
+  show text "Counter: {{app_state.counter}}" style {
+    fontSize: "24px"
+    marginBottom: "10px"
+  }
+
+  show text "Increment Counter" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#3b82f6"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginRight: "10px"
+  }
+
+  show text "Reset Counter" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#ef4444"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }
+
+  # Divider
+  show text "" style {
+    borderTop: "1px solid #e5e7eb"
+    marginTop: "30px"
+    marginBottom: "30px"
+  }
+
+  # Form with actions
+  show text "User Info" style {
+    fontSize: "24px"
+    fontWeight: "bold"
+    marginBottom: "20px"
+  }
+
+  show form "User Form":
+    field "name" type text label "Name" placeholder "Enter your name..."
+    button "Save Name"
+    on submit:
+      show toast "Name saved!"
+
+  # Divider
+  show text "" style {
+    borderTop: "1px solid #e5e7eb"
+    marginTop: "30px"
+    marginBottom: "30px"
+  }
+
+  # Navigation action
+  show text "Go to Dashboard" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#10b981"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }
+
+# Dashboard page
+page "Dashboard" at "/dashboard":
+  show text "Dashboard" style {
+    fontSize: "32px"
+    fontWeight: "bold"
+    marginBottom: "20px"
+  }
+
+  show text "Welcome to your dashboard!" style {
+    fontSize: "16px"
+    marginBottom: "30px"
+  }
+
+  # Action buttons
+  show text "Show Success Toast" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#10b981"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginRight: "10px"
+  }
+
+  show text "Show Info Toast" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#3b82f6"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginRight: "10px"
+  }
+
+  show text "Show Warning Toast" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#f59e0b"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+  }
+
+  # Back button
+  show text "Back to Home" style {
+    display: "inline-block"
+    padding: "10px 20px"
+    background: "#6b7280"
+    color: "white"
+    borderRadius: "6px"
+    cursor: "pointer"
+    marginTop: "30px"
+  }
+
+# ============================================================================
+# Actions
+# ============================================================================
+
+action "increment" when clicks "Increment Counter":
+  show toast "Counter incremented!"
+
+action "reset_counter" when clicks "Reset Counter":
+  show toast "Counter reset!"
+
+action "save_name" when clicks "Save Name":
+  show toast "Name saved successfully!"
+
+action "go_to_dashboard" when clicks "Go to Dashboard":
+  show toast "Navigating to dashboard..."
+
+action "show_success" when clicks "Show Success Toast":
+  show toast "✓ Success! Operation completed."
+
+action "show_info" when clicks "Show Info Toast":
+  show toast "ℹ Information: This is an info message."
+
+action "show_warning" when clicks "Show Warning Toast":
+  show toast "⚠ Warning: Please review before proceeding."
+
+action "go_back_home" when clicks "Back to Home":
+  show toast "Going back to home..."
