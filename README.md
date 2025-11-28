@@ -279,22 +279,22 @@ Compared to traditional web frameworks:
 - Docker deployment
 - Kubernetes manifests
 
-[See deployment guide →](docs/DEPLOYMENT.md)
+[See deployment guide →](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/DEPLOYMENT.md)
 
 ---
 
 ## Learn more
 
 **Documentation:**
-- [Complete guide](NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
-- [API reference](API_REFERENCE.md) - Detailed API docs
-- [Examples](examples/) - Real applications you can run
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues solved
+- [Complete guide](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
+- [API reference](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/API_REFERENCE.md) - Detailed API docs
+- [Examples](https://github.com/namel3ss-Ai/namel3ss-programming-language/tree/main/examples) - Real applications you can run
+- [Troubleshooting](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/TROUBLESHOOTING.md) - Common issues solved
 
 **Examples:**
-- [Governed Multi-Agent Lab](examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
-- [RAG Document Assistant](examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
-- [AI Support Console](docs/examples/ai-customer-support-console.md) - Complete support application
+- [Governed Multi-Agent Lab](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
+- [RAG Document Assistant](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
+- [AI Support Console](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/examples/ai-customer-support-console.md) - Complete support application
 
 **Community:**
 - [GitHub](https://github.com/namel3ss-Ai/namel3ss-programming-language) - Star us, contribute, discuss
@@ -313,7 +313,7 @@ Namel3ss has:
 - Clear contribution guidelines
 - Welcoming community
 
-[Read the contributing guide →](CONTRIBUTING.md)
+[Read the contributing guide →](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/CONTRIBUTING.md)
 
 ---
 
@@ -321,7 +321,7 @@ Namel3ss has:
 
 MIT License. Build anything. Commercial or open source.
 
-[Read the full license →](LICENSE)
+[Read the full license →](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/LICENSE)
 
 ---
 
