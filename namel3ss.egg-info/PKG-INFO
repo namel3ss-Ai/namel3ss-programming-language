@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: namel3ss
-Version: 0.6.4
+Version: 0.6.5
 Summary: The first language designed for AI - where thought becomes production code
 Author: Namel3ss Developers
 License-Expression: MIT
@@ -124,45 +124,317 @@ Requires-Dist: opentelemetry-exporter-otlp<2.0,>=1.25; extra == "all"
 Dynamic: license-file
 
 # Namel3ss
-## The first language designed for AI
+## An AI-Native DSL for Orchestrating Production Applications
 
-> **✨ Now shipping v0.6.1** – [What's new](#whats-new)
+> **✨ Now shipping v2.0** – [What's new](#whats-new)
 
-We think AI programming should be simple. Beautiful. Intuitive.
+**Namel3ss is a declarative DSL purpose-built for AI orchestration.**
 
-So we built a programming language that thinks like you do. Where you describe what you want in plain English, and it creates production applications. Complete with intelligent agents, conversational memory, and sophisticated workflows.
+We're not trying to replace Python or TypeScript. We're doing something different: creating a specialized language where AI agents, prompts, memory, and workflows are first-class primitives.
+
+**Think of us as the "SQL for AI applications"** – just as SQL specializes in data queries, Namel3ss specializes in AI orchestration.
+
+You write high-level declarations. We generate production-ready backends (FastAPI) and frontends (React). You stay focused on what makes your application unique: the AI logic.
 
 No frameworks to learn. No libraries to wrangle. No boilerplate to write.
 
-**Just pure thought to production code.**
+**Just pure AI orchestration compiled to production code.**
 
 ---
 
-Today, developers bolt AI onto languages built for a different era. They wrestle with complexity. Fight with frameworks. Compromise on what's possible.
+## What Makes Namel3ss Different
 
-**We started from zero.**
+**1. AI-Native Language Design**
 
-We asked ourselves: what if AI wasn't an afterthought? What if prompts, memory, agents, and intelligence were as fundamental as variables and functions?
+Other languages bolt AI onto legacy syntax. We started from zero:
+- Prompts are first-class types with schemas
+- Memory is a language construct, not an afterthought
+- Agents are declarative, not imperative
+- Workflows are orchestrated, not coded
 
-What if building AI applications was as simple as describing them?
+**2. Specialized, Not General-Purpose**
 
-## This changes everything
+We're hyper-focused on AI orchestration:
+- ✅ Building AI agents and multi-agent systems
+- ✅ RAG pipelines and knowledge retrieval
+- ✅ Conversational AI with memory
+- ✅ Complex AI workflows and chains
+- ❌ System programming or low-level computation
+- ❌ Replacing your backend language
+- ❌ General-purpose application logic
 
-**Intelligent conversations.** Memory isn't an afterthought—it's built into the language. Session memory. Conversation history. Global knowledge. Just declare it.
+Use Namel3ss for AI coordination. Use Python/TypeScript for everything else.
 
-**Multi-agent systems.** Orchestrate teams of AI agents with simple, declarative syntax. No complex state machines. No imperative choreography. Just describe the workflow.
+**3. Declarative → Code Generation**
 
-**Production-ready interfaces.** Navigation, dashboards, real-time data, professional UI components. All generated from your description.
+You declare what you want, we generate how to build it:
+- Production FastAPI backends with typed validation
+- Modern React frontends with professional UI components
+- Complete test infrastructure
+- Database migrations
+- Deployment configurations
 
-**Your own AI models.** Deploy private LLMs with one command. Full control. Zero external APIs. Enterprise-grade security.
+This is compiler-driven development. Your source is concise. The generated code is battle-tested.
 
-**Type-safe intelligence.** Every prompt has a schema. Every output is validated. Catch errors at compile time, not in production.
+## Core Capabilities
 
-**Deterministic testing.** Built-in mocks and stubs. Test AI workflows like any other code. No surprises in production.
+### 🤖 Multi-Agent Orchestration
 
-And it all compiles to production-ready FastAPI backends and modern React frontends. Fast. Secure. Observable.
+Build sophisticated agent systems with declarative syntax:
+
+```n3
+agent "ResearchAgent" {
+  role: "Research Specialist"
+  goal: "Find accurate information"
+  tools: [web_search, document_reader]
+  memory: "research_context"
+}
+
+agent "WriterAgent" {
+  role: "Content Writer"
+  goal: "Create engaging content"
+  tools: [text_editor, grammar_check]
+  memory: "writing_context"
+}
+
+chain "ContentPipeline" {
+  steps:
+    - agent: ResearchAgent, task: "Research {{topic}}"
+    - agent: WriterAgent, task: "Write article from {{research_results}}"
+    - step: "publish", action: save_to_database
+}
+```
+
+No imperative choreography. Just declare the workflow.
+
+### 🧠 Structured Memory Systems
+
+Memory isn't an API call—it's a language construct:
+
+```n3
+memory "conversation_history" {
+  scope: "user"           # Per-user, per-session, or global
+  kind: "conversation"    # Conversation, vector, or graph
+  max_items: 100
+  retention_days: 30
+}
+
+memory "knowledge_base" {
+  scope: "global"
+  kind: "vector"
+  embedding_model: "text-embedding-3-small"
+}
+
+prompt "ContextualChat" {
+  input: {message: text}
+  output: {response: text}
+  using model "gpt-4":
+    """
+    Chat history: {{read_memory("conversation_history")}}
+    Relevant context: {{search_memory("knowledge_base", query=message)}}
+    
+    User message: {{message}}
+    """
+}
+```
+
+### 📋 Type-Safe Prompts
+
+Every prompt has a schema. Every output is validated:
+
+```n3
+prompt "ExtractEntities" {
+  input: {
+    text: text,
+    entity_types: array<text>
+  }
+  output: {
+    entities: array<{
+      type: text,
+      value: text,
+      confidence: number
+    }>
+  }
+  using model "gpt-4o-mini":
+    """
+    Extract {{entity_types}} from: {{text}}
+    Return as structured JSON.
+    """
+}
+```
+
+Catch errors at compile time, not in production.
+
+### 🔄 RAG Pipelines
+
+Retrieval-Augmented Generation made simple:
+
+```n3
+index "documentation" {
+  source_dataset: "docs"
+  embedding_model: "text-embedding-3-small"
+  chunk_size: 512
+  backend: "pgvector"
+}
+
+rag_pipeline "doc_qa" {
+  query_encoder: "text-embedding-3-small"
+  index: "documentation"
+  top_k: 5
+  reranker: "cross_encoder"
+}
+
+prompt "AnswerQuestion" {
+  input: {question: text}
+  output: {answer: text, sources: array<text>}
+  using rag: "doc_qa", model: "gpt-4":
+    """
+    Context: {{retrieved_documents}}
+    Question: {{question}}
+    
+    Provide accurate answer with sources.
+    """
+}
+```
+
+### 🎯 Advanced Expression Language (New in 2.0!)
+
+Functional programming features for complex logic:
+
+```n3
+# Lambda expressions
+let active_users = filter(users, fn(u) => u.status == "active")
+let user_names = map(active_users, fn(u) => u.name)
+
+# List comprehensions
+let doubled = [x * 2 for x in numbers if x > 0]
+let formatted = [format_name(user) for user in users if user.verified]
+
+# Subscripts and slicing
+let first_item = items[0]
+let user_email = user["email"]
+let top_five = results[0:5]
+```
+
+### 📦 Multi-File Module System (New in 2.0!)
+
+Build large applications across multiple files:
+
+```n3
+# app/main.ai
+module "app.main"
+import "app.models.user"
+import "app.shared.types"
+
+app "CustomerPortal" {
+  # Use imported types and functions
+}
+
+# app/models/user.ai
+module "app.models.user"
+import "app.shared.types"
+
+dataset "active_users" from postgres {
+  schema: UserSchema
+}
+
+# app/shared/types.ai
+module "app.shared.types"
+
+schema UserSchema {
+  id: number,
+  name: text,
+  email: text
+}
+```
+
+### ✅ Static Type Checking (New in 2.0!)
+
+Catch errors before runtime:
+
+```n3
+fn calculate_total(items: array<number>, tax_rate: number): number =>
+  sum(items) * (1 + tax_rate)
+
+# ❌ Type error: Cannot pass text to function expecting number
+calculate_total(["1", "2"], 0.1)
+
+# ✅ Type-safe
+calculate_total([10, 20, 30], 0.1)
+```
 
 ## See it in action
+
+### Build Your First Chat Widget in 10 Minutes
+
+Want to build a production-ready customer support chat widget? Here's how easy it is:
+
+```n3
+app "Support Chat"
+
+# Configure AI model
+model support_bot:
+    provider: openai
+    name: "gpt-4"
+    temperature: 0.7
+
+# Store conversation history
+memory "conversation_history":
+    scope: conversation
+    kind: conversation
+    max_items: 50
+
+# AI chain for responses
+chain "chat_response":
+    inputs:
+        message: text
+        history: conversation
+    steps:
+        - step generate:
+            model: support_bot
+            prompt: |
+                Chat history: {{history}}
+                User: {{message}}
+                
+                Provide helpful customer support response.
+            output: response
+
+# Chat UI page
+page "Chat" at "/":
+    show text "Customer Support" style {
+        fontSize: "24px"
+        fontWeight: "bold"
+        marginBottom: "20px"
+    }
+    
+    # Display messages
+    show list from memory "conversation_history":
+        item:
+            show text "{{role}}: {{content}}" style {
+                padding: "12px"
+                borderRadius: "8px"
+                background: "{{role == 'user' ? '#e3f2fd' : '#f5f5f5'}}"
+            }
+    
+    # Message input
+    show form "Send Message":
+        field "user_message" type textarea placeholder "Type your message..."
+        button "Send"
+        on submit:
+            run chain "chat_response"
+            show toast "Message sent!"
+```
+
+That's it! A complete chat widget with:
+- ✅ AI-powered responses
+- ✅ Conversation memory
+- ✅ Professional UI
+- ✅ Form handling
+- ✅ Real-time updates
+
+**Want more?** See the [Complete Chat Widget Example](docs/COMPLETE_CHAT_WIDGET_EXAMPLE.md) for 600+ lines with typing indicators, escalation, embedding, and more.
+
+### Complete AI Support System
 
 Here's a complete AI support system. Written in plain English. Ready for production.
 
@@ -253,15 +525,186 @@ No external APIs. No usage limits. Complete control over your AI.
 
 ---
 
-## Getting started is insanely simple
+## When to Use Namel3ss (and When Not To)
+
+### ✅ Perfect For:
+
+- **AI Agent Systems**: Multi-agent workflows, autonomous agents, agent orchestration
+- **RAG Applications**: Document Q&A, knowledge bases, semantic search
+- **Conversational AI**: Chatbots, support systems, interactive assistants
+- **AI Workflow Automation**: Complex prompt chains, conditional logic, state management
+- **Rapid AI Prototyping**: MVPs, demos, proof-of-concepts
+- **AI-First Applications**: Where AI coordination is 80%+ of your logic
+
+### ❌ Not Designed For:
+
+- **General Web Applications**: Use Next.js, Django, Rails
+- **System Programming**: Use Rust, C++, Go
+- **Data Engineering Pipelines**: Use Airflow, Prefect
+- **Mobile Apps**: Use React Native, Flutter
+- **Low-Level Computation**: Use Python, C, Julia
+- **Complex Business Logic**: Use TypeScript, Python
+
+### 🤝 Works Great With:
+
+Namel3ss is designed to **orchestrate**, not replace:
+
+```
+┌─────────────────────────────────────┐
+│   Your Application Architecture     │
+├─────────────────────────────────────┤
+│  Namel3ss (AI Orchestration Layer)  │
+│  ↓ Compiles to ↓                    │
+│  FastAPI Backend + React Frontend   │
+├─────────────────────────────────────┤
+│  Your Existing Services:            │
+│  • Python data processing           │
+│  • TypeScript business logic        │
+│  • PostgreSQL database              │
+│  • Redis caching                    │
+│  • External APIs                    │
+└─────────────────────────────────────┘
+```
+
+Use Namel3ss as your **AI coordination layer**. Let it handle prompts, agents, memory, and workflows. Connect it to your existing infrastructure.
+
+---
+
+## Getting Started
 
 ### Install Namel3ss
-
-One command. That's all it takes.
 
 ```bash
 pip install namel3ss
 ```
+
+The core installation (~10MB) includes:
+- Language parser and compiler
+- FastAPI code generation
+- React UI generation  
+- CLI tools
+- Development server
+
+### Quick Start Example
+
+Create `hello_ai.ai`:
+
+```n3
+app "Hello AI" connects to postgres "main_db" {
+  description: "My first AI application"
+}
+
+prompt "Greeter" {
+  input: {name: text}
+  output: {greeting: text, tone: one_of("formal", "casual")}
+  using model "gpt-4o-mini":
+    """
+    Greet {{name}} warmly.
+    Determine if the greeting should be formal or casual.
+    """
+}
+
+page "Home" at "/" {
+  show form "Greeting Generator" {
+    fields: [
+      {name: "name", label: "Your Name", type: "text"}
+    ]
+    on submit {
+      let result = call_prompt("Greeter", {name: form.name})
+      show text result.greeting
+      show badge result.tone
+    }
+  }
+}
+```
+
+### Build and Run
+
+```bash
+# Compile to FastAPI + React
+namel3ss build hello_ai.ai -o ./output
+
+# Start development server
+cd output
+python -m uvicorn demo_backend.main:app --reload
+
+# Frontend runs on http://localhost:3000
+# Backend runs on http://localhost:8000
+```
+
+That's it! You have a working AI application.
+
+---
+
+## What's New in 2.0
+
+### 📚 Comprehensive Documentation & Examples (November 2025)
+
+**NEW!** We've added extensive guides to help you build production applications:
+
+- **5 Complete Documentation Guides** covering UI components, real-time features, API integration, backend operations, and deployment
+- **Production Chat Widget Example** with 600+ lines of working code
+- **Working Code Examples** including chatbots, API demos, and navigation patterns
+- **Syntax Guidelines** for correct indentation, memory blocks, and page structures
+
+Everything you need to build sophisticated applications like customer support widgets, collaborative editors, and real-time dashboards.
+
+👉 **[View All Documentation Guides](#-comprehensive-documentation-guides)**
+
+### 🎯 Static Type Checking
+
+Catch errors before runtime with comprehensive type validation:
+
+```n3
+fn process_users(users: array<{name: text, age: number}>): array<text> => {
+  let adults = filter(users, fn(u) => u.age >= 18)
+  return map(adults, fn(u) => u.name)
+}
+
+# Type errors caught at compile time!
+```
+
+### 🔥 Enhanced Expression Language
+
+Lambda expressions, subscripts, and list comprehensions:
+
+```n3
+# Lambdas
+let evens = filter(numbers, fn(x) => x % 2 == 0)
+
+# Subscripts
+let first = items[0]
+let email = user["email"]
+
+# Comprehensions
+let doubled = [x * 2 for x in numbers if x > 0]
+```
+
+### 📦 Multi-File Module System
+
+Build large applications with imports:
+
+```n3
+module "app.main"
+import "app.models.user"
+import "app.shared.types"
+
+# Use symbols from imported modules
+```
+
+### 🛠️ Editor/IDE Integration API
+
+Foundation for Language Server Protocol support:
+
+```python
+from namel3ss.tools.editor_api import analyze_module
+
+result = analyze_module(source_code)
+for diag in result.diagnostics:
+    print(f"Error: {diag.message}")
+```
+
+See [ADVANCED_FEATURES.md](docs/ADVANCED_FEATURES.md) for complete details.
 
 The core installation is elegant. Lightweight at ~10MB. Just what you need:
 - Language parser and compiler
@@ -353,6 +796,8 @@ We made RAG development feel magical.
 
 **Smart filtering.** Use `condition:` or `filter_by:`. Whichever reads better. The compiler understands both.
 
+**Comprehensive error messages.** Try to use an unsupported component? Get detailed explanations why it's not supported, 2-3 alternative solutions with specific use cases, complete working examples, and documentation links. Errors that teach, not block.
+
 And it all just works. 21+ tests passing. Production-ready. Zero breaking changes.
 
 [See complete changelog →](#recent-additions-november-2025)
@@ -410,16 +855,55 @@ Compared to traditional web frameworks:
 
 ## Learn more
 
-**Documentation:**
-- [Complete guide](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
-- [API reference](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/API_REFERENCE.md) - Detailed API docs
-- [Examples](https://github.com/namel3ss-Ai/namel3ss-programming-language/tree/main/examples) - Real applications you can run
-- [Troubleshooting](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/TROUBLESHOOTING.md) - Common issues solved
+### 📖 Comprehensive Documentation Guides
 
-**Examples:**
-- [Governed Multi-Agent Lab](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
-- [RAG Document Assistant](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
-- [AI Support Console](https://github.com/namel3ss-Ai/namel3ss-programming-language/blob/main/docs/examples/ai-customer-support-console.md) - Complete support application
+**NEW!** Complete guides for building production applications:
+
+👉 **[Complete Documentation Index](docs/DOCUMENTATION_INDEX.md)** - Organized guide to all documentation
+
+**Essential Guides:**
+
+- **[UI Components & Styling Guide](docs/UI_COMPONENTS_AND_STYLING.md)** - Master component styling, conditional rendering, list iteration, and reactive state. Build beautiful, responsive interfaces with CSS property mapping and advanced form patterns.
+
+- **[UI Component Reference](docs/UI_COMPONENT_REFERENCE.md)** ⭐ NEW - Complete catalog of ALL supported components (text, tables, forms, charts, cards, modals, AI components, etc.) with clear documentation of what's NOT supported and alternatives.
+
+- **[Navigation Guide](docs/NAVIGATION_GUIDE.md)** ⭐ NEW - Routing patterns, page navigation without route parameters, state management, breadcrumbs, modals, and master-detail patterns.
+
+- **[Data Models Guide](docs/DATA_MODELS_GUIDE.md)** ⭐ NEW - Dataset vs Frame explained: when to use each, CRUD operations, query patterns, and best practices for data modeling.
+
+- **[Queries & Datasets](docs/QUERIES_AND_DATASETS.md)** ⭐ NEW - Filter, sort, aggregate, and paginate data. Complete patterns for complex queries without query blocks.
+
+- **[Standard Library](docs/STANDARD_LIBRARY.md)** ⭐ NEW - Built-in functions reference: date/time, strings, JSON, numbers, arrays. Essential utilities for data processing.
+
+- **[Real-Time & Forms Guide](docs/REALTIME_AND_FORMS_GUIDE.md)** - Implement WebSocket features, real-time collaboration, typing indicators, multi-step wizards, and dynamic validation. Perfect for chat applications and live dashboards.
+
+- **[API & Navigation Patterns](docs/API_AND_NAVIGATION_PATTERNS.md)** - Integrate REST and GraphQL APIs, implement routing with parameters, use the action system, and embed widgets. Complete examples with GitHub API integration.
+
+- **[Extensions Guide](docs/EXTENSIONS_GUIDE.md)** ⭐ NEW - Extend Namel3ss with custom Python tools: file processing (PDF, CSV, images), external APIs, scheduling, and monitoring.
+
+- **[Backend & Deployment Guide](docs/BACKEND_AND_DEPLOYMENT_GUIDE.md)** - Advanced backend features, session management, database operations, error handling, monitoring, and production deployment patterns.
+
+- **[Complete Chat Widget Example](docs/COMPLETE_CHAT_WIDGET_EXAMPLE.md)** - 600+ line production-ready customer support chat widget with real-time messaging, typing indicators, and iframe embedding.
+
+### 📚 Core Documentation
+
+- [Complete Language Guide](docs/NAMEL3SS_DOCUMENTATION.md) - Everything you need to know
+- [API Reference](docs/API_REFERENCE.md) - Detailed API documentation
+- [Advanced Features](docs/ADVANCED_FEATURES.md) - Type checking, modules, expressions
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues solved
+
+### 💡 Working Examples
+
+**Production-Ready Applications:**
+- [Customer Support Chatbot](examples/customer_support_chatbot.ai) - AI chatbot with memory, chains, and escalation
+- [Governed Multi-Agent Lab](examples/governed-multi-agent-research-lab.md) - Enterprise AI with governance
+- [RAG Document Assistant](examples/rag-document-assistant-and-citation-explorer.md) - Production RAG system  
+- [AI Support Console](docs/examples/ai-customer-support-console.md) - Complete support application
+
+**Quick Start Examples:**
+- [Simple Demo](examples/verified_simple_demo.ai) - Minimal working example with verified syntax
+- [API Navigation Demo](examples/api_navigation_demo.ai) - REST API integration with routing and actions
+- [Working Chatbot](examples/working_chatbot.ai) - Basic conversational AI implementation
 
 **Community:**
 - [GitHub](https://github.com/namel3ss-Ai/namel3ss-programming-language) - Star us, contribute, discuss

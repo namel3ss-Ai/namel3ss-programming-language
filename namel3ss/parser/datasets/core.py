@@ -138,7 +138,7 @@ class CoreDatasetParserMixin:
             source = require_token('source reference') if idx < len(parts) else name
             connector = DatasetConnectorConfig(connector_type=source_type, connector_name=source)
 
-        return Dataset(name=name, source_type=source_type, source=source, connector=connector)
+        return Dataset(name, source_type, source, connector=connector)
     
     def _parse_dataset_body(self, dataset: "Dataset", base_indent: int, line_no: int) -> None:
         """

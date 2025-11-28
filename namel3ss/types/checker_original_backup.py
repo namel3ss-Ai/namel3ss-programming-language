@@ -358,19 +358,25 @@ class AppTypeChecker:
         valid_methods = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH'}
         
         for tool in tools:
-            if tool.type not in valid_types:
-                self._raise(f"Tool '{tool.name}' has invalid type '{tool.type}'. "
+            # Get type from implementation dict, default to 'python'
+            tool_type = tool.implementation.get('type', 'python') if tool.implementation else 'python'
+            
+            if tool_type not in valid_types:
+                self._raise(f"Tool '{tool.name}' has invalid type '{tool_type}'. "
                            f"Must be one of: {', '.join(valid_types)}")
             
-            if tool.type == 'http':
-                if not tool.endpoint:
+            if tool_type == 'http':
+                endpoint = tool.implementation.get('endpoint') if tool.implementation else None
+                if not endpoint:
                     self._raise(f"HTTP tool '{tool.name}' must have an endpoint")
                 
-                if tool.method.upper() not in valid_methods:
-                    self._raise(f"Tool '{tool.name}' has invalid HTTP method '{tool.method}'. "
+                method = tool.implementation.get('method', 'GET') if tool.implementation else 'GET'
+                if method.upper() not in valid_methods:
+                    self._raise(f"Tool '{tool.name}' has invalid HTTP method '{method}'. "
                                f"Must be one of: {', '.join(valid_methods)}")
             
-            if tool.timeout <= 0:
+            # Check timeout from timeout_seconds field
+            if tool.timeout_seconds is not None and tool.timeout_seconds <= 0:
                 self._raise(f"Tool '{tool.name}' timeout must be positive")
 
     def _check_prompts_enhanced(self, prompts) -> None:

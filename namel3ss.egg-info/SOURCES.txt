@@ -448,6 +448,7 @@ pyproject.toml
 ./namel3ss/ml/training/__init__.py
 ./namel3ss/ml/training/backends.py
 ./namel3ss/ml/training/production_backends.py
+./namel3ss/modules/system.py
 ./namel3ss/multimodal/__init__.py
 ./namel3ss/multimodal/config.py
 ./namel3ss/multimodal/embeddings.py
@@ -469,6 +470,7 @@ pyproject.toml
 ./namel3ss/parser/actions.py
 ./namel3ss/parser/ai.py
 ./namel3ss/parser/base.py
+./namel3ss/parser/component_helpers.py
 ./namel3ss/parser/components.py
 ./namel3ss/parser/control_flow.py
 ./namel3ss/parser/crud.py
@@ -476,6 +478,7 @@ pyproject.toml
 ./namel3ss/parser/eval.py
 ./namel3ss/parser/experiments.py
 ./namel3ss/parser/expression_builder.py
+./namel3ss/parser/expression_builder_enhanced.py
 ./namel3ss/parser/expressions.py
 ./namel3ss/parser/frames.py
 ./namel3ss/parser/insights.py
@@ -661,6 +664,7 @@ pyproject.toml
 ./namel3ss/tools/__init__.py
 ./namel3ss/tools/adapter.py
 ./namel3ss/tools/base.py
+./namel3ss/tools/editor_api.py
 ./namel3ss/tools/errors.py
 ./namel3ss/tools/factory.py
 ./namel3ss/tools/http_tool.py
@@ -674,6 +678,7 @@ pyproject.toml
 ./namel3ss/types/checker_original_backup.py
 ./namel3ss/types/core.py
 ./namel3ss/types/frame.py
+./namel3ss/types/static_checker.py
 ./namel3ss/types/stdlib_checker.py
 ./namel3ss/utils/__init__.py
 ./namel3ss/utils/dependencies.py
@@ -1128,6 +1133,7 @@ namel3ss/ml/tools/http.py
 namel3ss/ml/training/__init__.py
 namel3ss/ml/training/backends.py
 namel3ss/ml/training/production_backends.py
+namel3ss/modules/system.py
 namel3ss/multimodal/__init__.py
 namel3ss/multimodal/config.py
 namel3ss/multimodal/embeddings.py
@@ -1149,6 +1155,7 @@ namel3ss/parser/__init__.py
 namel3ss/parser/actions.py
 namel3ss/parser/ai.py
 namel3ss/parser/base.py
+namel3ss/parser/component_helpers.py
 namel3ss/parser/components.py
 namel3ss/parser/control_flow.py
 namel3ss/parser/crud.py
@@ -1156,6 +1163,7 @@ namel3ss/parser/datasets.py
 namel3ss/parser/eval.py
 namel3ss/parser/experiments.py
 namel3ss/parser/expression_builder.py
+namel3ss/parser/expression_builder_enhanced.py
 namel3ss/parser/expressions.py
 namel3ss/parser/frames.py
 namel3ss/parser/insights.py
@@ -1341,6 +1349,7 @@ namel3ss/testing/tools.py
 namel3ss/tools/__init__.py
 namel3ss/tools/adapter.py
 namel3ss/tools/base.py
+namel3ss/tools/editor_api.py
 namel3ss/tools/errors.py
 namel3ss/tools/factory.py
 namel3ss/tools/http_tool.py
@@ -1354,6 +1363,7 @@ namel3ss/types/checker.py
 namel3ss/types/checker_original_backup.py
 namel3ss/types/core.py
 namel3ss/types/frame.py
+namel3ss/types/static_checker.py
 namel3ss/types/stdlib_checker.py
 namel3ss/utils/__init__.py
 namel3ss/utils/dependencies.py
@@ -1379,7 +1389,9 @@ tests/test_design_token_mapping.py
 tests/test_design_token_parser.py
 tests/test_design_token_types.py
 tests/test_design_tokens.py
+tests/test_editor_api.py
 tests/test_education_quiz_suite.py
+tests/test_enhanced_expressions.py
 tests/test_feedback_codegen.py
 tests/test_feedback_ir.py
 tests/test_feedback_parser.py
@@ -1388,6 +1400,9 @@ tests/test_forms_integration.py
 tests/test_forms_ir.py
 tests/test_forms_production.py
 tests/test_llm_benchmark_lab_example.py
+tests/test_module_system.py
 tests/test_parser_dataset_compat.py
 tests/test_phase1_parser_unification.py
 tests/test_phase2_core_components.py
+tests/test_static_type_checker.py
+tests/test_unsupported_components_comprehensive.py
