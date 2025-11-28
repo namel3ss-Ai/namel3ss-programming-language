@@ -72,7 +72,21 @@ class QueryContext:
         """
         self.knowledge_modules = knowledge_modules or {}
         self.adapter_registry = adapter_registry or AdapterRegistry()
-    
+
+    def add_knowledge_module(self, module: KnowledgeModule) -> None:
+        """Register a knowledge module for use in compiled queries."""
+
+        if module and module.name:
+            self.knowledge_modules[module.name] = module
+
+    def add_adapter(self, adapter) -> None:
+        """Register a logic adapter (e.g., dataset provider)."""
+
+        name = getattr(adapter, "dataset_name", None) or getattr(adapter, "name", None)
+        if not name:
+            raise ValueError("Adapter must provide a name or dataset_name")
+        self.adapter_registry.register(name, adapter)
+
     def get_knowledge_module(self, name: str) -> Optional[KnowledgeModule]:
         """Get a knowledge module by name."""
         return self.knowledge_modules.get(name)
@@ -110,8 +124,23 @@ class QueryContext:
                     f"Knowledge module not found: {name}"
                 )
             rules.extend(module.rules)
-        
+
         return rules
+
+
+class BindingValue:
+    """Value wrapper that preserves .value access while comparing as primitives."""
+
+    def __init__(self, value: Any):
+        self.value = value
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, BindingValue):
+            return self.value == other.value
+        return self.value == other
+
+    def __repr__(self) -> str:  # pragma: no cover - human-friendly debug
+        return repr(self.value)
 
 
 # ============================================================================
@@ -171,6 +200,10 @@ class QueryCompiler:
             variables=query.variables,
             engine_config=self.engine_config,
         )
+
+    # Backward-compatible alias used by tests
+    def compile(self, query: LogicQuery) -> CompiledQuery:
+        return self.compile_query(query)
     
     def _compile_goals(self, goals: List[LogicStruct]) -> List[LogicStruct]:
         """
@@ -264,8 +297,8 @@ class CompiledQuery:
         for var_name in var_names:
             # Apply substitution to resolve variable
             term = subst.apply(LogicVar(name=var_name))
-            # Convert to Python value
-            result[var_name] = self._term_to_python(term)
+            python_value = self._term_to_python(term)
+            result[var_name] = BindingValue(python_value)
         
         return result
     

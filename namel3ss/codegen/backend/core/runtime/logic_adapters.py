@@ -63,18 +63,35 @@ class DatasetAdapter(LogicAdapter):
     requiring ad-hoc introspection.
     """
     
-    def __init__(self, dataset_name: str, schema: Dict[str, str], records: List[Dict[str, Any]]):
+    def __init__(
+        self,
+        dataset_name: str,
+        schema_or_provider: Dict[str, str] | Any,
+        records: Optional[List[Dict[str, Any]]] = None,
+    ):
         """
         Initialize dataset adapter.
-        
-        Args:
-            dataset_name: Name of the dataset
-            schema: Field name -> type mapping
-            records: List of record dictionaries
+
+        Supports two calling conventions:
+        - DatasetAdapter(name, schema, records)
+        - DatasetAdapter(name, provider) where provider implements get_rows()
         """
         self.dataset_name = dataset_name
-        self.schema = schema
-        self.records = records
+
+        # Allow callers to provide a simple data provider instead of explicit schema
+        if records is None:
+            provider = schema_or_provider
+            if hasattr(provider, "get_rows"):
+                rows = list(provider.get_rows())
+            else:
+                rows = list(provider)
+            inferred_schema = rows[0].keys() if rows else []
+            self.schema = {field: "any" for field in inferred_schema}
+            self.records = rows
+        else:
+            self.schema = schema_or_provider
+            self.records = records
+
         self._validate_records()
     
     def _validate_records(self) -> None:

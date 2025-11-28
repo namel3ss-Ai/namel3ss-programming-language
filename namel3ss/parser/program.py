@@ -401,7 +401,7 @@ class LegacyProgramParser(
         # Support: app "Name" [connects to postgres "ALIAS"] [(theme=X, color_scheme=Y)]
         # Pattern with optional database connection and design tokens
         match = re.match(
-            r'app\s+"([^"]+)"(?:\s+connects\s+to\s+\w+\s+"([^"]+)")?\s*(?:\(([^)]+)\))?\s*\.?$',
+            r'app\s+"([^"]+)"(?:\s+connects\s+to\s+\w+\s+"([^"]+)")?\s*(?:\(([^)]+)\))?\s*[.:]?$',
             line.strip()
         )
         if not match:

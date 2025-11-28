@@ -310,14 +310,13 @@ class LogicParserMixin(ParserBase):
             
             if indent <= base_indent:
                 break
-            
+
             # Centralized indentation validation
             self._expect_indent_greater_than(
                 base_indent,
                 nxt,
                 line_no,
                 context="knowledge module body",
-                hint="Knowledge elements (facts, rules) must be indented under the knowledge declaration"
             )
             
             # Parse fact or rule
@@ -326,9 +325,12 @@ class LogicParserMixin(ParserBase):
                 module.facts.append(fact)
                 self._advance()
             elif stripped.startswith('rule '):
-                rule = self._parse_rule(nxt, line_no, indent)
+                rule, extra_lines = self._parse_rule(nxt, line_no, indent)
                 module.rules.append(rule)
+                # Consume the rule line plus any continuation lines
                 self._advance()
+                for _ in range(extra_lines):
+                    self._advance()
             elif stripped.startswith('import '):
                 # Import another knowledge module
                 import_match = re.match(r'import\s+"([^"]+)"', stripped)
@@ -384,7 +386,7 @@ class LogicParserMixin(ParserBase):
         
         return LogicFact(head=head, line=line_no)
     
-    def _parse_rule(self, line: str, line_no: int, indent: int) -> LogicRule:
+    def _parse_rule(self, line: str, line_no: int, indent: int) -> tuple[LogicRule, int]:
         """
         Parse a rule line.
         
@@ -397,10 +399,37 @@ class LogicParserMixin(ParserBase):
             raise self._error("Expected 'rule'", line_no, line)
         
         rule_text = stripped[5:].strip()  # Remove 'rule '
-        
+
+        # Collect any indented continuation lines for multi-line rule bodies
+        consumed_continuations = 0
+        continuation_parts: List[str] = []
+        cursor = self.pos + 1
+        while cursor < len(self.lines):
+            nxt_line = self.lines[cursor]
+            next_stripped = nxt_line.strip()
+
+            # Skip empty/comment lines that are more indented
+            if not next_stripped or next_stripped.startswith('#'):
+                if self._indent(nxt_line) > indent:
+                    consumed_continuations += 1
+                    cursor += 1
+                    continue
+                break
+
+            next_indent = self._indent(nxt_line)
+            if next_indent <= indent:
+                break
+
+            continuation_parts.append(next_stripped)
+            consumed_continuations += 1
+            cursor += 1
+
+        if continuation_parts:
+            rule_text = " ".join([rule_text] + continuation_parts)
+
         if not rule_text.endswith('.'):
             raise self._error("Rule must end with '.'", line_no, line)
-        
+
         rule_text = rule_text[:-1].strip()  # Remove trailing '.'
         
         # Split into head and body using ':-'
@@ -428,7 +457,7 @@ class LogicParserMixin(ParserBase):
                     raise self._error(f"Rule body goal must be a structure: {goal_str}", line_no, line)
                 body.append(goal)
         
-        return LogicRule(head=head, body=body, line=line_no)
+        return LogicRule(head=head, body=body, line=line_no), consumed_continuations
     
     # ========================================================================
     # Query Parsing
@@ -487,14 +516,13 @@ class LogicParserMixin(ParserBase):
             
             if indent <= base_indent:
                 break
-            
+
             # Centralized indentation validation
             self._expect_indent_greater_than(
                 base_indent,
                 nxt,
                 line_no,
                 context="query body",
-                hint="Query directives (from knowledge, goal, limit, variables) must be indented under the query declaration"
             )
             
             # Parse query directives
@@ -512,6 +540,21 @@ class LogicParserMixin(ParserBase):
                         line_no,
                         nxt,
                         hint='Specify knowledge sources with: from knowledge "module_name":'
+                    )
+            elif stripped.startswith('from dataset '):
+                dataset_match = re.match(r'from dataset\s+"([^"]+)":', stripped)
+                if not dataset_match:
+                    dataset_match = re.match(r'from dataset\s+([a-z_][a-z0-9_]*):', stripped)
+                if dataset_match:
+                    datasets = query.metadata.setdefault("datasets", [])
+                    datasets.append(dataset_match.group(1))
+                    self._advance()
+                else:
+                    raise self._error(
+                        'Expected: from dataset "name":',
+                        line_no,
+                        nxt,
+                        hint='Specify dataset adapters with: from dataset "alias":'
                     )
             elif stripped.startswith('goal '):
                 # Parse goal
