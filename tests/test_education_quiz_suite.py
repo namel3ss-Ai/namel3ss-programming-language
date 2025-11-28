@@ -32,6 +32,24 @@ def parsed_app(quiz_suite_source):
     return app
 
 
+@pytest.fixture
+def backend_ir(parsed_app):
+    """Build backend IR once for the suite"""
+    return build_backend_ir(parsed_app)
+
+
+@pytest.fixture
+def frontend_ir(parsed_app):
+    """Build frontend IR once for the suite"""
+    return build_frontend_ir(parsed_app)
+
+
+@pytest.fixture
+def backend_state(parsed_app):
+    """Build backend state used by codegen"""
+    return build_backend_state(parsed_app)
+
+
 # =============================================================================
 # Parser Tests - Advanced Features
 # =============================================================================
@@ -48,6 +66,7 @@ class TestAdvancedQuizSuiteParser:
         llms = parsed_app.llms
         assert len(llms) >= 4
         llm_names = {llm.name for llm in llms}
+        assert len(llm_names) == len(llms), "LLM names should be unique"
         expected_llms = {'gpt4', 'claude', 'gpt4_creative', 'gpt4_precise'}
         assert expected_llms.issubset(llm_names)
     
@@ -56,6 +75,7 @@ class TestAdvancedQuizSuiteParser:
         memories = parsed_app.memories
         assert len(memories) >= 4
         memory_names = {mem.name for mem in memories}
+        assert len(memory_names) == len(memories), "Memory systems should be uniquely named"
         expected_memories = {'conversation_history', 'student_profiles', 
                            'quiz_generation_context', 'grading_rubrics'}
         assert expected_memories.issubset(memory_names)
@@ -65,6 +85,7 @@ class TestAdvancedQuizSuiteParser:
         prompts = parsed_app.prompts
         assert len(prompts) >= 5
         prompt_names = {p.name for p in prompts}
+        assert len(prompt_names) == len(prompts), "Prompt names should be unique"
         expected_prompts = {'quiz_generation_expert', 'grading_rubric_specialist',
                           'adaptive_learning_tutor', 'plagiarism_analyst', 
                           'peer_review_facilitator'}
@@ -75,6 +96,7 @@ class TestAdvancedQuizSuiteParser:
         tools = parsed_app.tools
         assert len(tools) >= 8
         tool_names = {t.name for t in tools}
+        assert len(tool_names) == len(tools), "Tool names should be unique"
         expected_tools = {'generate_quiz', 'grade_submission', 'explain_concept',
                          'analyze_performance', 'detect_plagiarism', 
                          'generate_learning_path', 'facilitate_peer_review',
@@ -86,6 +108,7 @@ class TestAdvancedQuizSuiteParser:
         agents = parsed_app.agents
         assert len(agents) >= 7
         agent_names = {a.name for a in agents}
+        assert len(agent_names) == len(agents), "Agent names should be unique"
         expected_agents = {'quiz_architect', 'master_grader', 'adaptive_tutor',
                           'integrity_monitor', 'peer_review_coordinator',
                           'performance_analyst', 'content_curator'}
@@ -96,6 +119,7 @@ class TestAdvancedQuizSuiteParser:
         datasets = parsed_app.datasets
         assert len(datasets) >= 15
         dataset_names = {d.name for d in datasets}
+        assert len(dataset_names) == len(datasets), "Dataset names should be unique"
         expected_datasets = {'quizzes', 'questions', 'students', 'submissions', 
                            'analytics', 'rubrics', 'explanations', 'learning_paths',
                            'peer_reviews', 'study_materials', 'plagiarism_reports',
@@ -108,6 +132,7 @@ class TestAdvancedQuizSuiteParser:
         pages = parsed_app.pages
         assert len(pages) >= 8
         page_names = {p.name for p in pages}
+        assert len(page_names) == len(pages), "Page names should be unique"
         expected_pages = {'Quiz Builder', 'Student Submission', 'Analytics Dashboard',
                          'Grading Review', 'Quiz Library', 'Learning Paths',
                          'Peer Review', 'Study Materials'}
@@ -116,6 +141,8 @@ class TestAdvancedQuizSuiteParser:
     def test_parse_page_routes(self, parsed_app):
         """Test that page routes are correct"""
         pages = {p.name: p.route for p in parsed_app.pages}
+        routes = [p.route for p in parsed_app.pages]
+        assert len(routes) == len(set(routes)), "Page routes should be unique"
         assert pages["Quiz Builder"] == "/quiz-builder"
         assert pages["Student Submission"] == "/submit"
         assert pages["Analytics Dashboard"] == "/analytics"
@@ -132,7 +159,7 @@ class TestAdvancedQuizSuiteParser:
             assert hasattr(page, 'body')
             assert isinstance(page.body, list)
             # Should have at least some content
-            assert len(page.body) >= 0
+            assert len(page.body) > 0, f"Page {page.name} should contain components"
 
 
 # =============================================================================
@@ -200,27 +227,27 @@ class TestAdvancedAIFeatures:
 class TestQuizSuiteIR:
     """Test that IR generation works for advanced quiz suite"""
     
-    def test_ir_build(self, parsed_app):
+    def test_ir_build(self, backend_ir, frontend_ir):
         """Test that IR builds without errors"""
-        backend_ir = build_backend_ir(parsed_app)
-        frontend_ir = build_frontend_ir(parsed_app)
         assert backend_ir is not None
         assert frontend_ir is not None
     
-    def test_ir_datasets(self, parsed_app):
+    def test_ir_datasets(self, backend_ir):
         """Test that IR contains all 15 datasets"""
-        backend_ir = build_backend_ir(parsed_app)
-        assert len(backend_ir.datasets) >= 15
         dataset_names = {d.name for d in backend_ir.datasets}
-        expected = {'quizzes', 'questions', 'students', 'submissions', 'analytics',
-                   'rubrics', 'explanations', 'learning_paths', 'peer_reviews'}
+        assert len(dataset_names) == len(backend_ir.datasets), "IR datasets should be unique"
+        expected = {
+            'quizzes', 'questions', 'students', 'submissions', 'analytics',
+            'rubrics', 'explanations', 'learning_paths', 'peer_reviews',
+            'study_materials', 'plagiarism_reports', 'student_profiles',
+            'performance_metrics', 'feedback', 'achievements',
+        }
         assert expected.issubset(dataset_names)
     
-    def test_ir_pages(self, parsed_app):
+    def test_ir_pages(self, frontend_ir):
         """Test that IR contains all 8 pages"""
-        frontend_ir = build_frontend_ir(parsed_app)
-        assert len(frontend_ir.pages) >= 8
         page_names = {p.name for p in frontend_ir.pages}
+        assert len(page_names) == len(frontend_ir.pages), "IR pages should be unique"
         expected = {'Quiz Builder', 'Student Submission', 'Analytics Dashboard',
                    'Grading Review', 'Quiz Library', 'Learning Paths', 
                    'Peer Review', 'Study Materials'}
@@ -234,21 +261,11 @@ class TestQuizSuiteIR:
 class TestQuizSuiteIntegration:
     """Test full pipeline integration"""
     
-    def test_full_pipeline(self, quiz_suite_source):
-        """Test that full pipeline (Parser → IR → Backend State) works"""
-        # Parse
-        parser = Parser(quiz_suite_source)
-        app = parser.parse_app()
-        assert app is not None
-        
-        # Build IR
-        backend_ir = build_backend_ir(app)
-        frontend_ir = build_frontend_ir(app)
+    def test_full_pipeline(self, parsed_app, backend_ir, frontend_ir, backend_state):
+        """Test that full pipeline (Parser -> IR -> Backend State) works"""
+        assert parsed_app is not None
         assert backend_ir is not None
         assert frontend_ir is not None
-        
-        # Build backend state (used by codegen)
-        backend_state = build_backend_state(app)
         assert backend_state is not None
     
     def test_component_coverage(self, parsed_app):

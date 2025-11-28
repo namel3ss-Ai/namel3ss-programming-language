@@ -9,8 +9,9 @@ if TYPE_CHECKING:
 
 from namel3ss.ast.ai import PromptArgument, Prompt, OutputSchema, OutputField, OutputFieldType
 
-# Regex patterns for parsing prompt declarations
+# Regex pattern for parsing prompt declarations  
 _PROMPT_HEADER_RE = re.compile(r'^prompt\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:{]')
+_PROMPT_HEADER_QUOTED_RE = re.compile(r'^prompt\s+"([^"]+)"\s*[:{]')
 
 
 class PromptsParserMixin:
@@ -31,9 +32,18 @@ class PromptsParserMixin:
                 template: <string>
                 model: <llm_name>
         """
-        match = _PROMPT_HEADER_RE.match(line.text.strip())
+        stripped = line.text.strip()
+        
+        # Match prompt header (accepts both : and { for backward compatibility)
+        match = _PROMPT_HEADER_RE.match(stripped) or _PROMPT_HEADER_QUOTED_RE.match(stripped)
         if not match:
-            self._unsupported(line, "prompt declaration")
+            error_msg = (
+                "Invalid prompt declaration syntax.\n"
+                "Expected: prompt <name>: or prompt \"name\":\n"
+                f"Found: {stripped}"
+            )
+            raise self._error(error_msg, line)
+        
         name = match.group(1)
         base_indent = self._indent(line.text)
         self._advance()

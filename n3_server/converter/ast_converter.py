@@ -120,9 +120,10 @@ class N3ASTConverter:
                 "name": prompt.name,
                 "text": template_text,
                 "model": prompt.model if hasattr(prompt, 'model') else None,
-                "temperature": prompt.temperature if hasattr(prompt, 'temperature') else None,
-                "arguments": [arg.name for arg in (prompt.arguments or [])],
+                "temperature": prompt.parameters.get('temperature') if hasattr(prompt, 'parameters') else None,
+                "arguments": [arg.name for arg in (prompt.args or [])],
                 "outputSchema": prompt.output_schema.to_dict() if hasattr(prompt, 'output_schema') and prompt.output_schema else None,
+                "parameters": prompt.parameters if hasattr(prompt, 'parameters') else {},
             },
             position=self._get_position(node_id, depth, index)
         )
@@ -523,7 +524,6 @@ class N3ASTConverter:
             name=chain_name,
             steps=steps,
             input_key="input",
-            output_key="output",
         )
     
     def graph_json_to_agent(self, node: Dict) -> AgentDefinition:

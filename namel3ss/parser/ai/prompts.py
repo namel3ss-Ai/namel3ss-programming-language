@@ -52,9 +52,9 @@ class PromptsParserMixin:
             - Safety policies and evaluation
         """
         stripped = line.strip()
-        if stripped.endswith(":"):
-            stripped = stripped[:-1]
-        if stripped.endswith("{"):
+        
+        # Strip : or { for backward compatibility
+        if stripped.endswith(":") or stripped.endswith("{"):
             stripped = stripped[:-1]
         
         # Try quoted name first: prompt "Name"

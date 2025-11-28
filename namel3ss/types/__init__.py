@@ -30,6 +30,26 @@ from .checker import (
     check_app_enhanced, check_module_enhanced,
     EnhancedAppTypeChecker
 )
+from .static_checker import (
+    # Type system
+    Type,
+    PrimitiveType,
+    ArrayType,
+    ObjectType,
+    UnionType,
+    FunctionType,
+    EnumType,
+    AnyType as StaticAnyType,
+    TEXT,
+    NUMBER,
+    BOOLEAN,
+    NULL,
+    ANY,
+    # Type checker
+    StaticTypeChecker,
+    check_module_static,
+    check_app_static,
+)
 
 __all__ = [
 	"ANY_TYPE",
@@ -64,5 +84,22 @@ __all__ = [
 	"check_app_enhanced",
 	"check_module_enhanced", 
 	"EnhancedAppTypeChecker",
+	# Static type checking (world-class implementation)
+	"Type",
+	"PrimitiveType",
+	"ArrayType",
+	"ObjectType",
+	"UnionType",
+	"FunctionType",
+	"EnumType",
+	"StaticAnyType",
+	"TEXT",
+	"NUMBER",
+	"BOOLEAN",
+	"NULL",
+	"ANY",
+	"StaticTypeChecker",
+	"check_module_static",
+	"check_app_static",
 ]
 

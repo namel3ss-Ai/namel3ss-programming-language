@@ -42,8 +42,8 @@ def test_prompt_to_node():
         name="summarize",
         template="Summarize the following text: {text}",
         model="gpt-4",
-        temperature=0.5,
-        arguments=[PromptArgument(name="text", type="string")],
+        parameters={"temperature": 0.5},
+        args=[PromptArgument(name="text", arg_type="string")],
     )
     
     node = converter.prompt_to_node(prompt)
@@ -52,7 +52,7 @@ def test_prompt_to_node():
     assert node.label == "summarize"
     assert node.data["name"] == "summarize"
     assert node.data["model"] == "gpt-4"
-    assert node.data["temperature"] == 0.5
+    assert node.data["parameters"]["temperature"] == 0.5
 
 
 def test_chain_to_graph():
@@ -67,7 +67,6 @@ def test_chain_to_graph():
             ChainStep(kind="prompt", target="generate_response", options={"context": "$kb_results"}),
         ],
         input_key="input",
-        output_key="output",
     )
     
     nodes, edges = converter.chain_to_graph(chain)
@@ -136,7 +135,6 @@ def test_ast_to_graph_json():
             ChainStep(kind="tool", target="calculator", options={"operation": "add"}),
         ],
         input_key="input",
-        output_key="output",
     )
     
     graph_json = converter.ast_to_graph_json(
@@ -223,7 +221,6 @@ def test_roundtrip_conversion():
             ChainStep(kind="tool", target="step2", options={"b": 2}),
         ],
         input_key="input",
-        output_key="output",
     )
     
     # Convert to graph

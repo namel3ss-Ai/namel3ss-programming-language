@@ -18,11 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from n3_server.api.auth import get_current_user  # Placeholder for auth
 from n3_server.converter import EnhancedN3ASTConverter, GraphJSON, ConversionError
-from n3_server.db.models import Project, User
+from n3_server.db.models import Project
 from n3_server.db.session import get_db
 from n3_server.execution.executor import GraphExecutor, ExecutionContext, ExecutionSpan as ExecSpan
 from n3_server.execution.registry import RuntimeRegistry, RegistryError
-from namel3ss.llm.registry import get_llm, LLMRegistryError
+from namel3ss.llm import create_llm, LLMError
+
+# TYPE_CHECKING import for User to avoid circular dependency
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from n3_server.auth.models import User
+else:
+    User = Any  # Use Any at runtime
 
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -164,18 +171,18 @@ async def build_llm_registry(project: Project) -> Dict[str, Any]:
     # Register commonly used models
     if openai_api_key:
         try:
-            llm_registry["gpt-4"] = get_llm("openai", model="gpt-4", api_key=openai_api_key)
-            llm_registry["gpt-4-turbo"] = get_llm("openai", model="gpt-4-turbo-preview", api_key=openai_api_key)
-            llm_registry["gpt-3.5-turbo"] = get_llm("openai", model="gpt-3.5-turbo", api_key=openai_api_key)
-        except LLMRegistryError:
+            llm_registry["gpt-4"] = create_llm("openai", model="gpt-4", api_key=openai_api_key)
+            llm_registry["gpt-4-turbo"] = create_llm("openai", model="gpt-4-turbo-preview", api_key=openai_api_key)
+            llm_registry["gpt-3.5-turbo"] = create_llm("openai", model="gpt-3.5-turbo", api_key=openai_api_key)
+        except LLMError:
             pass  # Model not available
     
     if anthropic_api_key:
         try:
-            llm_registry["claude-3-opus"] = get_llm("anthropic", model="claude-3-opus-20240229", api_key=anthropic_api_key)
-            llm_registry["claude-3-sonnet"] = get_llm("anthropic", model="claude-3-sonnet-20240229", api_key=anthropic_api_key)
-            llm_registry["claude-3-haiku"] = get_llm("anthropic", model="claude-3-haiku-20240307", api_key=anthropic_api_key)
-        except LLMRegistryError:
+            llm_registry["claude-3-opus"] = create_llm("anthropic", model="claude-3-opus-20240229", api_key=anthropic_api_key)
+            llm_registry["claude-3-sonnet"] = create_llm("anthropic", model="claude-3-sonnet-20240229", api_key=anthropic_api_key)
+            llm_registry["claude-3-haiku"] = create_llm("anthropic", model="claude-3-haiku-20240307", api_key=anthropic_api_key)
+        except LLMError:
             pass
     
     return llm_registry

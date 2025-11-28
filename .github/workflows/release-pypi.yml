@@ -1,0 +1,62 @@
+# Release and PyPI publishing workflow for Namel3ss
+# Triggered by creating a version tag (e.g., v0.7.0)
+# Requires PYPI_API_TOKEN secret to be configured in repository settings
+# 
+# To create a release:
+# 1. Update version in pyproject.toml or setup.py
+# 2. Create and push a tag: git tag v0.7.0 && git push origin v0.7.0
+# 3. This workflow will build and publish to PyPI automatically
+
+name: Release & Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: pypi
+      url: https://pypi.org/project/namel3ss/
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      
+      - name: Build distribution packages
+        run: |
+          python -m build
+      
+      - name: Check distribution packages
+        run: |
+          twine check dist/*
+      
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          files: dist/*

@@ -1,41 +1,242 @@
 # Namel3ss
-## The first language designed for AI
+## An AI-Native DSL for Orchestrating Production Applications
 
-> **✨ Now shipping v0.6.1** – [What's new](#whats-new)
+> **✨ Now shipping v2.0** – [What's new](#whats-new)
 
-We think AI programming should be simple. Beautiful. Intuitive.
+**Namel3ss is a declarative DSL purpose-built for AI orchestration.**
 
-So we built a programming language that thinks like you do. Where you describe what you want in plain English, and it creates production applications. Complete with intelligent agents, conversational memory, and sophisticated workflows.
+We're not trying to replace Python or TypeScript. We're doing something different: creating a specialized language where AI agents, prompts, memory, and workflows are first-class primitives.
+
+**Think of us as the "SQL for AI applications"** – just as SQL specializes in data queries, Namel3ss specializes in AI orchestration.
+
+You write high-level declarations. We generate production-ready backends (FastAPI) and frontends (React). You stay focused on what makes your application unique: the AI logic.
 
 No frameworks to learn. No libraries to wrangle. No boilerplate to write.
 
-**Just pure thought to production code.**
+**Just pure AI orchestration compiled to production code.**
 
 ---
 
-Today, developers bolt AI onto languages built for a different era. They wrestle with complexity. Fight with frameworks. Compromise on what's possible.
+## What Makes Namel3ss Different
 
-**We started from zero.**
+**1. AI-Native Language Design**
 
-We asked ourselves: what if AI wasn't an afterthought? What if prompts, memory, agents, and intelligence were as fundamental as variables and functions?
+Other languages bolt AI onto legacy syntax. We started from zero:
+- Prompts are first-class types with schemas
+- Memory is a language construct, not an afterthought
+- Agents are declarative, not imperative
+- Workflows are orchestrated, not coded
 
-What if building AI applications was as simple as describing them?
+**2. Specialized, Not General-Purpose**
 
-## This changes everything
+We're hyper-focused on AI orchestration:
+- ✅ Building AI agents and multi-agent systems
+- ✅ RAG pipelines and knowledge retrieval
+- ✅ Conversational AI with memory
+- ✅ Complex AI workflows and chains
+- ❌ System programming or low-level computation
+- ❌ Replacing your backend language
+- ❌ General-purpose application logic
 
-**Intelligent conversations.** Memory isn't an afterthought—it's built into the language. Session memory. Conversation history. Global knowledge. Just declare it.
+Use Namel3ss for AI coordination. Use Python/TypeScript for everything else.
 
-**Multi-agent systems.** Orchestrate teams of AI agents with simple, declarative syntax. No complex state machines. No imperative choreography. Just describe the workflow.
+**3. Declarative → Code Generation**
 
-**Production-ready interfaces.** Navigation, dashboards, real-time data, professional UI components. All generated from your description.
+You declare what you want, we generate how to build it:
+- Production FastAPI backends with typed validation
+- Modern React frontends with professional UI components
+- Complete test infrastructure
+- Database migrations
+- Deployment configurations
 
-**Your own AI models.** Deploy private LLMs with one command. Full control. Zero external APIs. Enterprise-grade security.
+This is compiler-driven development. Your source is concise. The generated code is battle-tested.
 
-**Type-safe intelligence.** Every prompt has a schema. Every output is validated. Catch errors at compile time, not in production.
+## Core Capabilities
 
-**Deterministic testing.** Built-in mocks and stubs. Test AI workflows like any other code. No surprises in production.
+### 🤖 Multi-Agent Orchestration
 
-And it all compiles to production-ready FastAPI backends and modern React frontends. Fast. Secure. Observable.
+Build sophisticated agent systems with declarative syntax:
+
+```n3
+agent "ResearchAgent" {
+  role: "Research Specialist"
+  goal: "Find accurate information"
+  tools: [web_search, document_reader]
+  memory: "research_context"
+}
+
+agent "WriterAgent" {
+  role: "Content Writer"
+  goal: "Create engaging content"
+  tools: [text_editor, grammar_check]
+  memory: "writing_context"
+}
+
+chain "ContentPipeline" {
+  steps:
+    - agent: ResearchAgent, task: "Research {{topic}}"
+    - agent: WriterAgent, task: "Write article from {{research_results}}"
+    - step: "publish", action: save_to_database
+}
+```
+
+No imperative choreography. Just declare the workflow.
+
+### 🧠 Structured Memory Systems
+
+Memory isn't an API call—it's a language construct:
+
+```n3
+memory "conversation_history" {
+  scope: "user"           # Per-user, per-session, or global
+  kind: "conversation"    # Conversation, vector, or graph
+  max_items: 100
+  retention_days: 30
+}
+
+memory "knowledge_base" {
+  scope: "global"
+  kind: "vector"
+  embedding_model: "text-embedding-3-small"
+}
+
+prompt "ContextualChat" {
+  input: {message: text}
+  output: {response: text}
+  using model "gpt-4":
+    """
+    Chat history: {{read_memory("conversation_history")}}
+    Relevant context: {{search_memory("knowledge_base", query=message)}}
+    
+    User message: {{message}}
+    """
+}
+```
+
+### 📋 Type-Safe Prompts
+
+Every prompt has a schema. Every output is validated:
+
+```n3
+prompt "ExtractEntities" {
+  input: {
+    text: text,
+    entity_types: array<text>
+  }
+  output: {
+    entities: array<{
+      type: text,
+      value: text,
+      confidence: number
+    }>
+  }
+  using model "gpt-4o-mini":
+    """
+    Extract {{entity_types}} from: {{text}}
+    Return as structured JSON.
+    """
+}
+```
+
+Catch errors at compile time, not in production.
+
+### 🔄 RAG Pipelines
+
+Retrieval-Augmented Generation made simple:
+
+```n3
+index "documentation" {
+  source_dataset: "docs"
+  embedding_model: "text-embedding-3-small"
+  chunk_size: 512
+  backend: "pgvector"
+}
+
+rag_pipeline "doc_qa" {
+  query_encoder: "text-embedding-3-small"
+  index: "documentation"
+  top_k: 5
+  reranker: "cross_encoder"
+}
+
+prompt "AnswerQuestion" {
+  input: {question: text}
+  output: {answer: text, sources: array<text>}
+  using rag: "doc_qa", model: "gpt-4":
+    """
+    Context: {{retrieved_documents}}
+    Question: {{question}}
+    
+    Provide accurate answer with sources.
+    """
+}
+```
+
+### 🎯 Advanced Expression Language (New in 2.0!)
+
+Functional programming features for complex logic:
+
+```n3
+# Lambda expressions
+let active_users = filter(users, fn(u) => u.status == "active")
+let user_names = map(active_users, fn(u) => u.name)
+
+# List comprehensions
+let doubled = [x * 2 for x in numbers if x > 0]
+let formatted = [format_name(user) for user in users if user.verified]
+
+# Subscripts and slicing
+let first_item = items[0]
+let user_email = user["email"]
+let top_five = results[0:5]
+```
+
+### 📦 Multi-File Module System (New in 2.0!)
+
+Build large applications across multiple files:
+
+```n3
+# app/main.ai
+module "app.main"
+import "app.models.user"
+import "app.shared.types"
+
+app "CustomerPortal" {
+  # Use imported types and functions
+}
+
+# app/models/user.ai
+module "app.models.user"
+import "app.shared.types"
+
+dataset "active_users" from postgres {
+  schema: UserSchema
+}
+
+# app/shared/types.ai
+module "app.shared.types"
+
+schema UserSchema {
+  id: number,
+  name: text,
+  email: text
+}
+```
+
+### ✅ Static Type Checking (New in 2.0!)
+
+Catch errors before runtime:
+
+```n3
+fn calculate_total(items: array<number>, tax_rate: number): number =>
+  sum(items) * (1 + tax_rate)
+
+# ❌ Type error: Cannot pass text to function expecting number
+calculate_total(["1", "2"], 0.1)
+
+# ✅ Type-safe
+calculate_total([10, 20, 30], 0.1)
+```
 
 ## See it in action
 
@@ -128,15 +329,173 @@ No external APIs. No usage limits. Complete control over your AI.
 
 ---
 
-## Getting started is insanely simple
+## When to Use Namel3ss (and When Not To)
+
+### ✅ Perfect For:
+
+- **AI Agent Systems**: Multi-agent workflows, autonomous agents, agent orchestration
+- **RAG Applications**: Document Q&A, knowledge bases, semantic search
+- **Conversational AI**: Chatbots, support systems, interactive assistants
+- **AI Workflow Automation**: Complex prompt chains, conditional logic, state management
+- **Rapid AI Prototyping**: MVPs, demos, proof-of-concepts
+- **AI-First Applications**: Where AI coordination is 80%+ of your logic
+
+### ❌ Not Designed For:
+
+- **General Web Applications**: Use Next.js, Django, Rails
+- **System Programming**: Use Rust, C++, Go
+- **Data Engineering Pipelines**: Use Airflow, Prefect
+- **Mobile Apps**: Use React Native, Flutter
+- **Low-Level Computation**: Use Python, C, Julia
+- **Complex Business Logic**: Use TypeScript, Python
+
+### 🤝 Works Great With:
+
+Namel3ss is designed to **orchestrate**, not replace:
+
+```
+┌─────────────────────────────────────┐
+│   Your Application Architecture     │
+├─────────────────────────────────────┤
+│  Namel3ss (AI Orchestration Layer)  │
+│  ↓ Compiles to ↓                    │
+│  FastAPI Backend + React Frontend   │
+├─────────────────────────────────────┤
+│  Your Existing Services:            │
+│  • Python data processing           │
+│  • TypeScript business logic        │
+│  • PostgreSQL database              │
+│  • Redis caching                    │
+│  • External APIs                    │
+└─────────────────────────────────────┘
+```
+
+Use Namel3ss as your **AI coordination layer**. Let it handle prompts, agents, memory, and workflows. Connect it to your existing infrastructure.
+
+---
+
+## Getting Started
 
 ### Install Namel3ss
-
-One command. That's all it takes.
 
 ```bash
 pip install namel3ss
 ```
+
+The core installation (~10MB) includes:
+- Language parser and compiler
+- FastAPI code generation
+- React UI generation  
+- CLI tools
+- Development server
+
+### Quick Start Example
+
+Create `hello_ai.ai`:
+
+```n3
+app "Hello AI" connects to postgres "main_db" {
+  description: "My first AI application"
+}
+
+prompt "Greeter" {
+  input: {name: text}
+  output: {greeting: text, tone: one_of("formal", "casual")}
+  using model "gpt-4o-mini":
+    """
+    Greet {{name}} warmly.
+    Determine if the greeting should be formal or casual.
+    """
+}
+
+page "Home" at "/" {
+  show form "Greeting Generator" {
+    fields: [
+      {name: "name", label: "Your Name", type: "text"}
+    ]
+    on submit {
+      let result = call_prompt("Greeter", {name: form.name})
+      show text result.greeting
+      show badge result.tone
+    }
+  }
+}
+```
+
+### Build and Run
+
+```bash
+# Compile to FastAPI + React
+namel3ss build hello_ai.ai -o ./output
+
+# Start development server
+cd output
+python -m uvicorn demo_backend.main:app --reload
+
+# Frontend runs on http://localhost:3000
+# Backend runs on http://localhost:8000
+```
+
+That's it! You have a working AI application.
+
+---
+
+## What's New in 2.0
+
+### 🎯 Static Type Checking
+
+Catch errors before runtime with comprehensive type validation:
+
+```n3
+fn process_users(users: array<{name: text, age: number}>): array<text> => {
+  let adults = filter(users, fn(u) => u.age >= 18)
+  return map(adults, fn(u) => u.name)
+}
+
+# Type errors caught at compile time!
+```
+
+### 🔥 Enhanced Expression Language
+
+Lambda expressions, subscripts, and list comprehensions:
+
+```n3
+# Lambdas
+let evens = filter(numbers, fn(x) => x % 2 == 0)
+
+# Subscripts
+let first = items[0]
+let email = user["email"]
+
+# Comprehensions
+let doubled = [x * 2 for x in numbers if x > 0]
+```
+
+### 📦 Multi-File Module System
+
+Build large applications with imports:
+
+```n3
+module "app.main"
+import "app.models.user"
+import "app.shared.types"
+
+# Use symbols from imported modules
+```
+
+### 🛠️ Editor/IDE Integration API
+
+Foundation for Language Server Protocol support:
+
+```python
+from namel3ss.tools.editor_api import analyze_module
+
+result = analyze_module(source_code)
+for diag in result.diagnostics:
+    print(f"Error: {diag.message}")
+```
+
+See [ADVANCED_FEATURES.md](docs/ADVANCED_FEATURES.md) for complete details.
 
 The core installation is elegant. Lightweight at ~10MB. Just what you need:
 - Language parser and compiler
