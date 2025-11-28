@@ -154,6 +154,29 @@ class LogicValidator:
         self.warnings: List[str] = []
         self.predicate_registry = PredicateRegistry()
         self.module_names: Set[str] = set()
+
+    def validate_app(self, app_or_module) -> List[str]:
+        """Validate all knowledge modules and queries in an app or module."""
+
+        # Reset state for each run to avoid cross-contamination
+        self.errors = []
+        self.warnings = []
+        self.predicate_registry = PredicateRegistry()
+        self.module_names = set()
+
+        # Support callers passing either the Module or the App directly
+        target = app_or_module
+        if hasattr(app_or_module, "body") and getattr(app_or_module, "body"):
+            target = app_or_module.body[0]
+
+        for module in getattr(target, "knowledge_modules", []):
+            self.validate_knowledge_module(module)
+
+        for query in getattr(target, "queries", []):
+            self.validate_query(query)
+
+        # Return validation errors; warnings remain available via self.warnings
+        return list(self.errors)
     
     def validate_knowledge_module(self, module: KnowledgeModule) -> None:
         """Validate a knowledge module."""
