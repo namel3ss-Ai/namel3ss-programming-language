@@ -52,8 +52,14 @@ These steps assume you have a Git remote named `origin` that points to your GitH
   ```
 - If `git push` fails because the remote branch moved, fetch and rebase:
   ```bash
-  git fetch origin
+ git fetch origin
   git rebase origin/$(git branch --show-current)
   git push origin $(git branch --show-current)
   ```
 - Use `git log --oneline --decorate -5` to confirm your commits before pushing.
+- Use `git log --oneline --decorate -5` to confirm your commits before pushing.
+- To automate the checks above, run the helper script (it will refuse to push if the working tree is dirty or behind the remote):
+  ```bash
+  ./scripts/push_current_branch.sh            # pushes to origin
+  ./scripts/push_current_branch.sh upstream   # pushes to another configured remote
+  ```
