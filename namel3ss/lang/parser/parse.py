@@ -413,8 +413,14 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         All declarations (except App itself) are automatically attached to the App object.
         If no explicit app declaration exists, an implicit App is created on first use.
         """
+        # Skip stray indentation/dedentation tokens that can appear when parsing
+        # indented source snippets (e.g., triple-quoted strings in tests).
+        while self.match(TokenType.INDENT, TokenType.DEDENT):
+            self.advance()
+            self.skip_newlines()
+        
         token = self.current()
-        if not token:
+        if not token or token.type == TokenType.EOF:
             return None
         
         # Dispatch based on keyword
@@ -449,9 +455,40 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             
             # Attach declaration to App (except for App itself)
             if token.type != TokenType.APP and decl is not None:
-                self._attach_to_app(decl, token.type)
+                attached = self._attach_to_app(decl, token.type)
+                # Declarations attached to the app are not duplicated in module.body
+                if attached:
+                    decl = None
+            else:
+                # App is tracked separately via self.app
+                decl = None
             
             return decl
+        
+        # Legacy-style "define" prefix support (define chain/template/etc.)
+        if token.type == TokenType.IDENTIFIER and token.value == "define":
+            self.advance()  # consume 'define'
+            self.skip_newlines()
+            next_token = self.current()
+            if next_token is None:
+                raise create_syntax_error(
+                    "Unexpected end of file after 'define'",
+                    path=self.path,
+                )
+            if next_token.type in dispatch:
+                decl = dispatch[next_token.type]()
+                if next_token.type != TokenType.APP and decl is not None:
+                    attached = self._attach_to_app(decl, next_token.type)
+                    if attached:
+                        return None
+                    return decl
+            raise create_syntax_error(
+                "Unexpected declaration after 'define'",
+                path=self.path,
+                line=next_token.line,
+                found=next_token.value,
+                suggestion="Use: define chain/template/model/etc.",
+            )
         
         # Handle legacy "connectors" block (identifier)
         if token.type == TokenType.IDENTIFIER and token.value == "connectors":
@@ -465,6 +502,16 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             return None
         
         # Unknown declaration - provide helpful error message
+        # Heuristic: allow stray page statements to attach to the last page
+        if self.app and self.app.pages:
+            try:
+                stmt = self.parse_page_statement()
+                if stmt:
+                    self.app.pages[-1].body.append(stmt)
+                return None
+            except Exception:
+                pass
+        
         suggestion = "Expected a declaration keyword like 'app', 'page', 'llm', etc."
         
         # Provide more specific guidance based on what was found
@@ -532,7 +579,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
             self.explicit_app = False
         return self.app
     
-    def _attach_to_app(self, decl: Any, token_type: TokenType) -> None:
+    def _attach_to_app(self, decl: Any, token_type: TokenType) -> bool:
         """
         Attach a parsed declaration to the appropriate App collection.
         
@@ -576,7 +623,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         if collection_name is None:
             # For declarations that don't have a direct mapping (like theme),
             # or for future extensibility, keep them in declarations list
-            return
+            return False
         
         # Get the target collection from the App
         try:
@@ -592,6 +639,7 @@ class N3Parser(DeclarationParsingMixin, ExpressionParsingMixin):
         
         # Attach the declaration
         collection.append(decl)
+        return True
 
 
 __all__ = ["N3Parser"]

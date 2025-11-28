@@ -110,6 +110,21 @@ class SchemaParserMixin:
             )
         return fields
 
+    def _parse_prompt_args_dict(self: 'ParserBase', raw: dict) -> List[PromptArgument]:
+        """Parse prompt args from a dict (non-indented form)."""
+        args: List[PromptArgument] = []
+        for name, spec in raw.items():
+            if isinstance(spec, dict):
+                arg_type = self._normalize_arg_type(str(spec.get("type", spec.get("field_type", "string"))))
+                default = spec.get("default")
+                required = not ("default" in spec or spec.get("required") is False)
+            else:
+                arg_type = self._normalize_arg_type(str(spec))
+                default = None
+                required = True
+            args.append(PromptArgument(name=name, arg_type=arg_type, required=required, default=default))
+        return args
+
     def _parse_prompt_args(self: 'ParserBase', parent_indent: int) -> List[PromptArgument]:
         """
         Parse args block for structured prompts.
@@ -219,6 +234,18 @@ class SchemaParserMixin:
                 }
             }
         """
+        # Dict-style (non-indented) schema
+        if isinstance(parent_indent, dict):
+            fields: List[OutputField] = []
+            for name, spec in parent_indent.items():
+                if isinstance(spec, dict):
+                    field_type_str = spec.get("type", spec.get("field_type", "string"))
+                else:
+                    field_type_str = str(spec)
+                field_type = OutputFieldType(base_type=field_type_str)
+                fields.append(OutputField(name=name, field_type=field_type, required=spec.get("required", True) if isinstance(spec, dict) else True))
+            return OutputSchema(fields=fields)
+        
         fields: List[OutputField] = []
         
         while self.pos < len(self.lines):

@@ -73,10 +73,22 @@ class PromptsParserMixin:
         config_block = self._parse_kv_block(base_indent)
         description_raw = config_block.pop("description", config_block.pop("desc", None))
         description = str(description_raw) if description_raw is not None else None
+        user_raw = None
         model_ref = config_block.pop("model", None)
+        if model_ref is None:
+            # Handle "using model Foo" style keys captured by kv parser
+            for key in list(config_block.keys()):
+                if key.lower().startswith("using model"):
+                    model_ref = key.split("using model", 1)[1].strip().strip('"').strip("'")
+                    value = config_block.pop(key, None)
+                    if user_raw is None and value:
+                        user_raw = value
+                    break
         system_raw = config_block.pop("system", config_block.pop("system_prompt", config_block.pop("instructions", None)))
         system_prompt = str(system_raw) if system_raw is not None else None
-        user_raw = config_block.pop("user", config_block.pop("user_prompt", config_block.pop("template", None)))
+        template_candidate = config_block.pop("user", config_block.pop("user_prompt", config_block.pop("template", None)))
+        if template_candidate is not None:
+            user_raw = template_candidate
         user_prompt = str(user_raw) if user_raw is not None else None
         assistant_raw = config_block.pop("assistant", config_block.pop("assistant_prompt", None))
         assistant_prompt = str(assistant_raw) if assistant_raw is not None else None
@@ -86,7 +98,7 @@ class PromptsParserMixin:
             if isinstance(input_raw, list):
                 for item in input_raw:
                     if isinstance(item, dict):
-                        arguments.extend(self._parse_prompt_args(item))
+                        arguments.extend(self._parse_prompt_args_dict(item))
                     else:
                         raise self._error(
                             "Prompt input list elements must be dicts",
@@ -95,7 +107,7 @@ class PromptsParserMixin:
                             hint='Use input: with field definitions like name: type'
                         )
             elif isinstance(input_raw, dict):
-                arguments = self._parse_prompt_args(input_raw)
+                arguments = self._parse_prompt_args_dict(input_raw)
             else:
                 raise self._error(
                     "Prompt input must be a dict or list of dicts",
@@ -182,18 +194,32 @@ class PromptsParserMixin:
         # Build template from available prompt components
         template_parts = []
         if system_prompt:
-            template_parts.append(f"System: {system_prompt}")
+            template_parts.append(("System", system_prompt))
         if user_prompt:
-            template_parts.append(f"User: {user_prompt}")
+            template_parts.append(("User", user_prompt))
         if assistant_prompt:
-            template_parts.append(f"Assistant: {assistant_prompt}")
-        template = "\n\n".join(template_parts) if template_parts else ""
+            template_parts.append(("Assistant", assistant_prompt))
+        
+        if len(template_parts) == 1:
+            # Preserve the single provided template verbatim (matches legacy expectations)
+            _, template = template_parts[0]
+        else:
+            # When multiple roles are provided, keep lightweight role labels
+            template = "\n\n".join(f"{label}: {text}" for label, text in template_parts)
+        
+        input_fields = [
+            PromptField(name=arg.name, field_type=arg.arg_type, required=arg.required)
+            for arg in arguments
+        ]
+        output_fields = output_schema.fields if output_schema else []
         
         return Prompt(
             name=name,
             description=description,
             model=model_name,
             template=template,
+            input_fields=input_fields,
+            output_fields=output_fields,
             args=arguments if arguments else [],
             output_schema=output_schema,
             metadata=metadata,

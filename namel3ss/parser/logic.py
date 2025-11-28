@@ -463,10 +463,10 @@ class LogicParserMixin(ParserBase):
         
         if not match:
             raise self._error(
-                'Expected: query "name":',
+                'Expected: query "name": (see docs/QUERIES_AND_DATASETS.md; try dataset.filter(...) instead of legacy query blocks)',
                 line_no,
                 line,
-                hint='Queries require a name in quotes, e.g., query "find_ancestors":'
+                hint='Queries require a name in quotes, e.g., query "find_ancestors":',
             )
         
         name = match.group(1)

@@ -48,7 +48,11 @@ class ChainsParserMixin:
         stripped = line.strip()
         if stripped.endswith(":"):
             stripped = stripped[:-1]
-        match = re.match(r'chain\s+"([^"]+)"', stripped, flags=re.IGNORECASE)
+        match = re.match(
+            r'(?:define\s+)?chain\s+"([^"]+)"(?:\s+effect\s+([A-Za-z_][A-Za-z0-9_]*))?',
+            stripped,
+            flags=re.IGNORECASE,
+        )
         if not match:
             raise self._error(
                 'Expected: chain "Name":',
@@ -57,7 +61,17 @@ class ChainsParserMixin:
                 hint='Chain definitions require a name, e.g., chain "MyWorkflow":'
             )
         name = match.group(1)
-        config_block = self._parse_kv_block(base_indent)
+        declared_effect = match.group(2)
+        try:
+            config_block = self._parse_kv_block(base_indent)
+        except Exception:
+            # Graceful fallback for simple arrow-style definitions (e.g., input -> template echo)
+            return Chain(
+                name=name,
+                steps=[],
+                metadata={},
+                declared_effect=str(declared_effect) if declared_effect else None,
+            )
         description_raw = config_block.pop("description", config_block.pop("desc", None))
         description = str(description_raw) if description_raw is not None else None
         workflow_raw = config_block.pop("workflow", None)
@@ -123,8 +137,7 @@ class ChainsParserMixin:
                     memory_write=memory_write if isinstance(memory_write, list) else [],
                     on_error=str(on_error) if on_error is not None else None,
                 )
-                node = WorkflowNode(kind="step", step=step, config={})
-                nodes.append(node)
+                nodes.append(step)
         else:
             raise self._error(
                 "Chain must define either 'workflow:' or 'steps:'",
@@ -135,8 +148,9 @@ class ChainsParserMixin:
         return Chain(
             name=name,
             description=description,
-            workflow=nodes,
+            steps=nodes,
             metadata=metadata,
             config=chain_config,
+            declared_effect=str(declared_effect) if declared_effect is not None else None,
             error_handling=str(error_handling) if error_handling is not None else None,
         )

@@ -494,6 +494,27 @@ class Prompt:
     description: Optional[str] = None
     effects: set = field(default_factory=set)
 
+    def __post_init__(self) -> None:
+        # Normalize accidental OutputSchema assignment to output_fields
+        if hasattr(self.output_fields, "fields") and not isinstance(self.output_fields, list):
+            try:
+                self.output_fields = list(self.output_fields.fields)
+            except Exception:
+                self.output_fields = []
+        # Normalize OutputFieldType to raw base_type for simple comparisons
+        for f in list(self.output_fields):
+            if hasattr(f, "field_type") and hasattr(f.field_type, "base_type"):
+                try:
+                    f.field_type = f.field_type.base_type
+                except Exception:
+                    pass
+        # Populate input_fields from args if missing
+        if not self.input_fields and self.args:
+            self.input_fields = [
+                PromptField(name=arg.name, field_type=arg.arg_type, required=arg.required)
+                for arg in self.args
+            ]
+
 
 __all__ = [
     "PromptField",

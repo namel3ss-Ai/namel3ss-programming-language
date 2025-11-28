@@ -58,27 +58,123 @@ class DeclarationParsingMixin:
                     database = conn.get("name")
                     break
         
-        # Legacy dot terminator support
-        if self.consume_if(TokenType.DOT):
-            config = {}
-        # Parse optional block (will contain config like description, version, etc.)
-        elif self.match(TokenType.LBRACE):
-            config = self.parse_block()
-        else:
-            config = {}
-        
-        # Extract database from config if present
-        if "database" in config:
-            database = config.pop("database")
-        
-        # Create app with proper fields
+        # Create app with proper fields up front (so nested decls attach to this instance)
         self.app = App(
             name=name,
             database=database,
         )
         self.explicit_app = True
         
+        # Legacy dot terminator support
+        if self.consume_if(TokenType.DOT):
+            config = {}
+        # Parse optional block (will contain config like description, version, nested decls)
+        elif self.match(TokenType.LBRACE):
+            config = self._parse_app_block()
+        else:
+            config = {}
+        
+        # Extract database from config if present
+        if "database" in config:
+            database = config.pop("database")
+            self.app.database = database
+        
+        if config:
+            existing = getattr(self.app, "metadata", {}) or {}
+            merged = {**existing, **config}
+            self.app.metadata = merged
+            for k, v in config.items():
+                setattr(self.app, k, v)
+        
         return self.app
+    
+    def _parse_app_block(self) -> Dict[str, Any]:
+        """
+        Parse the contents of an app block.
+        
+        Supports both simple key/value config and nested declarations
+        (pages, datasets, llms, prompts, etc.) inside the app body.
+        """
+        self.expect(TokenType.LBRACE)
+        self.skip_newlines()
+        self.consume_if(TokenType.INDENT)
+        
+        metadata: Dict[str, Any] = {}
+        
+        # Dispatch map reused for nested declarations
+        dispatch = {
+            TokenType.PAGE: self.parse_page_declaration,
+            TokenType.LLM: self.parse_llm_declaration,
+            TokenType.AGENT: self.parse_agent_declaration,
+            TokenType.PROMPT: self.parse_prompt_declaration,
+            TokenType.CHAIN: self.parse_chain_declaration,
+            TokenType.RAG_PIPELINE: self.parse_rag_pipeline_declaration,
+            TokenType.INDEX: self.parse_index_declaration,
+            TokenType.DATASET: self.parse_dataset_declaration,
+            TokenType.MEMORY: self.parse_memory_declaration,
+            TokenType.FN: self.parse_function_declaration,
+            TokenType.TOOL: self.parse_tool_declaration,
+            TokenType.CONNECTOR: self.parse_connector_declaration,
+            TokenType.TEMPLATE: self.parse_template_declaration,
+            TokenType.MODEL: self.parse_model_declaration,
+            TokenType.TRAINING: self.parse_training_declaration,
+            TokenType.POLICY: self.parse_policy_declaration,
+            TokenType.GRAPH: self.parse_graph_declaration,
+            TokenType.KNOWLEDGE: self.parse_knowledge_declaration,
+            TokenType.QUERY: self.parse_query_declaration,
+            TokenType.FRAME: self.parse_frame_declaration,
+            TokenType.THEME: self.parse_theme_declaration,
+        }
+        
+        while not self.match(TokenType.RBRACE):
+            # Clean up indentation/dedentation noise between entries
+            while self.consume_if(TokenType.DEDENT):
+                pass
+            self.skip_newlines()
+            if self.match(TokenType.RBRACE):
+                break
+            while self.consume_if(TokenType.INDENT):
+                pass
+            self.skip_newlines()
+            if self.match(TokenType.RBRACE):
+                break
+            
+            token = self.current()
+            if token is None or token.type == TokenType.EOF:
+                raise create_syntax_error(
+                    "Unclosed inline block: expected '}'",
+                    path=self.path,
+                    line=None,
+                )
+            
+            parser_func = dispatch.get(token.type)
+            if parser_func:
+                decl = parser_func()
+                if decl is not None:
+                    self._attach_to_app(decl, token.type)
+                continue
+            
+            # Otherwise, parse as config key/value
+            if token.type not in (TokenType.IDENTIFIER, TokenType.STRING):
+                raise create_syntax_error(
+                    "Expected field name in app block",
+                    path=self.path,
+                    line=token.line,
+                    column=token.column,
+                    found=token.type.name.lower(),
+                )
+            key_token = self.advance()
+            key = key_token.value
+            self.expect(TokenType.COLON)
+            value = self.parse_value()
+            metadata[key] = value
+            if self.app is not None:
+                setattr(self.app, key, value)
+            self.skip_newlines()
+        
+        self.expect(TokenType.RBRACE)
+        self.skip_newlines()
+        return metadata
     
     def parse_connection_list(self) -> List[Dict[str, str]]:
         """Parse connection list."""
@@ -119,12 +215,11 @@ class DeclarationParsingMixin:
         Grammar:
             PageDecl = "page" , QuotedName , "at" , STRING_LITERAL , Block ;
         """
-        from namel3ss.ast import Page
+        from namel3ss.ast import Page, VariableAssignment
         
         page_token = self.expect(TokenType.PAGE)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
-        
+        name = self.expect_name()  # Accept both STRING and IDENTIFIER
+       
         self.declare_symbol(f"page:{name}", page_token.line)
         
         route = "/"
@@ -138,9 +233,9 @@ class DeclarationParsingMixin:
             # Legacy colon syntax with indented statements
             self.skip_newlines()
             statements = self._parse_indented_page_statements()
-        else:
+        elif self.match(TokenType.LBRACE):
             # Modern brace syntax
-            self.expect(TokenType.LBRACE)
+            self.advance()
             self.skip_newlines()
             self.consume_if(TokenType.INDENT)  # Skip indent after opening brace
         
@@ -165,41 +260,63 @@ class DeclarationParsingMixin:
             self.consume_if(TokenType.DEDENT)  # Skip dedent before closing brace
             self.expect(TokenType.RBRACE)
             self.skip_newlines()
+        else:
+            # Simple page declaration with no body (route only)
+            self.skip_newlines()
         
-        return Page(
+        page = Page(
             name=name,
             route=route,
             body=statements,  # Use 'body' not 'statements' (statements is just a property alias)
         )
+        
+        # Propagate simple assignments to page attributes for ease of access
+        for stmt in statements:
+            if isinstance(stmt, VariableAssignment):
+                setattr(page, stmt.name, stmt.value)
+        
+        return page
     
     def _parse_indented_page_statements(self) -> List[Any]:
         """Parse indented page statements for legacy colon syntax."""
         statements = []
         base_indent = None
-        
+        indent_depth = 0
+
         while True:
             token = self.current()
             if not token or token.type == TokenType.EOF:
                 break
-                
+            
             # Calculate current line indentation
             if token.type == TokenType.NEWLINE:
                 self.advance()
                 continue
-                
-            # For legacy compatibility, we need to check indentation manually
-            # This is a simplified approach - in production we'd want proper indent tracking
-            if base_indent is None:
-                if token.type == TokenType.INDENT:
-                    base_indent = 1
-                    self.advance()
-                else:
-                    # No indentation found, end of page block
+
+            # Track the first indent as the start of the block
+            if token.type == TokenType.INDENT:
+                indent_depth += 1
+                if base_indent is None:
+                    base_indent = indent_depth
+                self.advance()
+                continue
+
+            # A dedent at or beyond the base indent ends the page block
+            if token.type == TokenType.DEDENT:
+                indent_depth = max(indent_depth - 1, 0)
+                self.advance()
+                if base_indent is not None and indent_depth < base_indent:
                     break
-            elif not self.match(TokenType.INDENT, TokenType.IDENTIFIER, TokenType.SHOW):
-                # End of indented block
+                continue
+
+            # If we never saw an indent, this block is finished
+            if base_indent is None:
                 break
-                
+
+            # Only parse valid statement starters
+            if not self.match(TokenType.IDENTIFIER, TokenType.SHOW, TokenType.IF, TokenType.FOR):
+                break
+
             stmt = self.parse_page_statement()
             if stmt:
                 statements.append(stmt)
@@ -224,15 +341,38 @@ class DeclarationParsingMixin:
         
         self.declare_symbol(f"llm:{name}", llm_token.line)
         
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True)
+        else:
+            config = self.parse_block()
         
         # Use config filtering system with LLM aliases
-        return build_dataclass_with_config(
+        llm = build_dataclass_with_config(
             LLMDefinition,
             config=config,
             aliases=LLM_ALIASES,
             name=name,
         )
+        
+        provider = getattr(llm, "provider", None)
+        if not provider:
+            raise create_syntax_error(
+                "LLM provider is required",
+                path=self.path,
+                line=llm_token.line,
+                suggestion="Specify provider: openai, anthropic, vertex, azure, ollama, or bedrock",
+            )
+        allowed_providers = {"openai", "anthropic", "vertex", "azure", "ollama", "bedrock", "mistral"}
+        if str(provider).lower() not in allowed_providers:
+            raise create_syntax_error(
+                f"Invalid LLM provider '{provider}'",
+                path=self.path,
+                line=llm_token.line,
+                suggestion="Valid providers: openai, anthropic, vertex, azure, ollama, bedrock, mistral",
+            )
+        
+        return llm
     
     def parse_agent_declaration(self):
         """
@@ -259,7 +399,11 @@ class DeclarationParsingMixin:
         
         self.declare_symbol(f"agent:{name}", agent_token.line)
         
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True)
+        else:
+            config = self.parse_block()
         
         # Use config filtering system with Agent aliases
         return build_dataclass_with_config(
@@ -301,7 +445,18 @@ class DeclarationParsingMixin:
         self.declare_symbol(f"prompt:{name}", prompt_token.line)
         
         # Parse block with special handlers for legacy input/output
-        self.expect(TokenType.LBRACE)
+        brace_mode = False
+        if self.match(TokenType.LBRACE):
+            brace_mode = True
+            self.advance()
+        elif self.match(TokenType.COLON):
+            self.advance()
+        else:
+            raise create_syntax_error(
+                "Prompt declaration must use ':' or '{'",
+                path=self.path,
+                line=prompt_token.line,
+            )
         
         # Special handlers for legacy schema fields
         def parse_input_schema():
@@ -332,10 +487,12 @@ class DeclarationParsingMixin:
         # Use shared block parsing
         config = self._parse_config_block(
             allow_any_keyword=True,
-            special_handlers=special_handlers
+            special_handlers=special_handlers,
+            break_on_dedent=not brace_mode,
         )
         
-        self.expect(TokenType.RBRACE)
+        if brace_mode:
+            self.expect(TokenType.RBRACE)
         self.skip_newlines()
         
         # Extract legacy fields if present
@@ -422,37 +579,59 @@ class DeclarationParsingMixin:
         from namel3ss.lang.parser.errors import create_syntax_error
         
         chain_token = self.expect(TokenType.CHAIN)
-        name_token = self.expect(TokenType.STRING)
-        name = name_token.value
+        name = self.expect_name()
+        
+        declared_effect = None
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "effect":
+            self.advance()
+            declared_effect = self.expect_name()
         
         self.declare_symbol(f"chain:{name}", chain_token.line)
         
-        # Parse block to get steps and config
-        self.expect(TokenType.LBRACE)
-        self.skip_newlines()
+        # Determine block style
+        brace_mode = False
+        if self.match(TokenType.LBRACE):
+            brace_mode = True
+            self.advance()
+        elif self.match(TokenType.COLON):
+            self.advance()
+        else:
+            raise create_syntax_error(
+                "Expected '{' or ':' after chain declaration",
+                path=self.path,
+                line=chain_token.line,
+            )
         
-        # Skip indent if present (lexer may insert it after opening brace)
-        self.consume_if(TokenType.INDENT)
+        self.skip_newlines()
+        if brace_mode:
+            self.consume_if(TokenType.INDENT)
         
         steps = []
         config = {}
         
         # Parse chain body: steps, control flow, or config
-        while not self.match(TokenType.RBRACE):
-            # Skip any dedent/indent tokens between lines
-            while self.consume_if(TokenType.DEDENT):
-                pass
+        while True:
+            self.skip_newlines()
             
-            # Check for closing brace after consuming dedents
-            if self.match(TokenType.RBRACE):
+            # Stop conditions for each block style
+            if brace_mode and self.match(TokenType.RBRACE):
                 break
-                
-            # Skip indent tokens
+            if not brace_mode and self.match(TokenType.DEDENT):
+                # Consume the dedent that closes the chain block
+                self.advance()
+                break
+            if self.match(TokenType.EOF):
+                break
+            
+            # Skip structural indent/dedent noise.
+            # In brace mode we ignore dedents entirely; in colon mode they delimit the block.
+            if brace_mode:
+                while self.consume_if(TokenType.DEDENT):
+                    pass
             while self.consume_if(TokenType.INDENT):
                 pass
             
-            # Check again for closing brace
-            if self.match(TokenType.RBRACE):
+            if brace_mode and self.match(TokenType.RBRACE):
                 break
             
             # Check for 'step' keyword
@@ -473,6 +652,13 @@ class DeclarationParsingMixin:
             elif self.peek(1) and self.peek(1).type == TokenType.COLON:
                 key = self.expect(TokenType.IDENTIFIER).value
                 self.expect(TokenType.COLON)
+                
+                # YAML-style workflow steps (hyphen bullets)
+                if key == "steps" and (self.match(TokenType.NEWLINE) or self.match(TokenType.INDENT) or self.match(TokenType.MINUS)):
+                    yaml_steps = self._parse_yaml_workflow_items()
+                    steps.extend(yaml_steps)
+                    continue
+                
                 value = self.parse_value()
                 config[key] = value
                 
@@ -494,6 +680,18 @@ class DeclarationParsingMixin:
                                 stop_on_error=True,
                             ))
             else:
+                # Handle simple arrow syntax lines like "input -> template echo"
+                if self.match(TokenType.IDENTIFIER) and self.peek(1) and self.peek(1).type in {TokenType.ARROW, TokenType.FAT_ARROW}:
+                    while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE):
+                        self.advance()
+                    self.skip_newlines()
+                    continue
+                # For colon-mode, swallow unrecognized lines to keep parser in sync
+                if not brace_mode:
+                    while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE):
+                        self.advance()
+                    self.skip_newlines()
+                    continue
                 # Unknown syntax
                 current = self.current()
                 raise create_syntax_error(
@@ -506,16 +704,21 @@ class DeclarationParsingMixin:
             
             self.skip_newlines()
         
-        # Skip dedent if present before closing brace
-        self.consume_if(TokenType.DEDENT)
-        
-        self.expect(TokenType.RBRACE)
-        self.skip_newlines()
+        if brace_mode:
+            # Skip dedent if present before closing brace
+            self.consume_if(TokenType.DEDENT)
+            self.expect(TokenType.RBRACE)
+            self.skip_newlines()
+        else:
+            # Consume any remaining dedent tokens for the chain block and normalize spacing
+            while self.match(TokenType.DEDENT):
+                self.advance()
+            self.skip_newlines()
         
         # Extract known chain config fields
         input_key = config.pop("input_key", "input")
         metadata = config.pop("metadata", {})
-        declared_effect = config.pop("declared_effect", None)
+        config_declared_effect = config.pop("declared_effect", None)
         policy_name = config.pop("policy_name", None)
         
         # Remaining config items are metadata
@@ -530,7 +733,7 @@ class DeclarationParsingMixin:
             input_key=input_key,
             steps=steps,
             metadata=metadata,
-            declared_effect=declared_effect,
+            declared_effect=declared_effect or config_declared_effect,
             effects=set(),
             policy_name=policy_name,
         )
@@ -560,8 +763,18 @@ class DeclarationParsingMixin:
         step_name = None
         if self.match(TokenType.STRING):
             step_name = self.advance().value
-        
-        self.expect(TokenType.LBRACE)
+        brace_mode = False
+        if self.consume_if(TokenType.LBRACE):
+            brace_mode = True
+        elif self.consume_if(TokenType.COLON):
+            brace_mode = False
+        else:
+            raise create_syntax_error(
+                "Expected '{' or ':' after step name",
+                path=self.path,
+                line=step_token.line,
+                column=step_token.column,
+            )
         self.skip_newlines()
         
         # Skip indent if present
@@ -574,21 +787,30 @@ class DeclarationParsingMixin:
         stop_on_error = True
         evaluation_config = None
         
-        while not self.match(TokenType.RBRACE):
-            # Skip any dedent/indent tokens between lines
-            while self.consume_if(TokenType.DEDENT):
-                pass
-            
-            # Check for closing brace
-            if self.match(TokenType.RBRACE):
+        while True:
+            # Terminate based on block style
+            if brace_mode and self.match(TokenType.RBRACE):
                 break
-                
+            if not brace_mode and self.match(TokenType.DEDENT):
+                # consume dedent that closes the step block
+                self.advance()
+                break
+            
+            # Skip any dedent/indent tokens between lines (brace mode only)
+            if brace_mode:
+                while self.consume_if(TokenType.DEDENT):
+                    pass
+            
+            # Check for closing brace after consuming dedents
+            if brace_mode and self.match(TokenType.RBRACE):
+                break
+            
             # Skip indent tokens
             while self.consume_if(TokenType.INDENT):
                 pass
             
             # Check again for closing brace
-            if self.match(TokenType.RBRACE):
+            if brace_mode and self.match(TokenType.RBRACE):
                 break
             
             if not self.match(TokenType.IDENTIFIER):
@@ -649,6 +871,17 @@ class DeclarationParsingMixin:
                         line=step_token.line,
                         column=step_token.column,
                     )
+            elif field_name == "continue_on_error":
+                cont_value = self.parse_value()
+                if isinstance(cont_value, bool):
+                    stop_on_error = not cont_value
+                else:
+                    raise create_syntax_error(
+                        "Step 'continue_on_error' must be a boolean",
+                        path=self.path,
+                        line=step_token.line,
+                        column=step_token.column,
+                    )
             elif field_name == "evaluation":
                 eval_value = self.parse_value()
                 if isinstance(eval_value, dict):
@@ -672,9 +905,11 @@ class DeclarationParsingMixin:
             self.skip_newlines()
         
         # Skip dedent if present before closing brace
-        self.consume_if(TokenType.DEDENT)
-        
-        self.expect(TokenType.RBRACE)
+        if brace_mode:
+            self.consume_if(TokenType.DEDENT)
+            self.expect(TokenType.RBRACE)
+        else:
+            self.skip_newlines()
         self.skip_newlines()
         
         # Validate required fields
@@ -860,6 +1095,203 @@ class DeclarationParsingMixin:
             self.advance()
         
         return nodes
+
+    def _parse_yaml_workflow_items(self, stop_on_parent_dedent: bool = False):
+        """Parse YAML-style workflow lists that use '-' bullets."""
+        nodes = []
+        self.skip_newlines()
+
+        while True:
+            self.skip_newlines()
+            # Normalize indentation noise between items
+            while self.match(TokenType.DEDENT):
+                self.advance()
+                self.skip_newlines()
+                if stop_on_parent_dedent:
+                    return nodes
+            while self.match(TokenType.INDENT):
+                self.advance()
+                self.skip_newlines()
+            
+            if not self.match(TokenType.MINUS):
+                break
+            
+            # Consume '-' and parse the workflow node
+            self.advance()
+            self.skip_newlines()
+            
+            if self.match(TokenType.STEP):
+                nodes.append(self._parse_step_block())
+            elif self.match(TokenType.IF):
+                nodes.append(self._parse_yaml_if_block())
+            elif self.match(TokenType.FOR):
+                nodes.append(self._parse_yaml_for_block())
+            elif self.match(TokenType.WHILE):
+                nodes.append(self._parse_yaml_while_block())
+            else:
+                # Unknown entry, skip the rest of the line
+                while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT):
+                    self.advance()
+            
+            self.skip_newlines()
+        
+        return nodes
+
+    def _parse_yaml_if_block(self):
+        """Parse YAML-style if block within a chain steps list."""
+        from namel3ss.ast import WorkflowIfBlock
+        
+        self.expect(TokenType.IF)
+        
+        # Capture the condition tokens up to the block colon (handles ctx:foo style)
+        cond_tokens = []
+        while not (self.match(TokenType.COLON) and self.peek(1) and self.peek(1).type == TokenType.NEWLINE):
+            tok = self.current()
+            if tok is None:
+                break
+            cond_tokens.append(tok)
+            self.advance()
+        self.expect(TokenType.COLON)
+        condition_expr = " ".join(str(t.value) if hasattr(t, "value") else t.type.name.lower() for t in cond_tokens).strip()
+        
+        self.skip_newlines()
+        
+        # Optional indent and 'then:' label
+        if self.match(TokenType.INDENT):
+            self.advance()
+            self.skip_newlines()
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "then":
+            self.advance()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+        
+        then_steps = self._parse_yaml_workflow_items(stop_on_parent_dedent=True)
+        
+        else_steps = []
+        self.skip_newlines()
+        while self.match(TokenType.DEDENT):
+            self.advance()
+            self.skip_newlines()
+        if self.match(TokenType.ELSE):
+            self.advance()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            else_steps = self._parse_yaml_workflow_items(stop_on_parent_dedent=True)
+        
+        return WorkflowIfBlock(
+            condition=condition_expr,
+            then_steps=then_steps,
+            elif_steps=[],
+            else_steps=else_steps,
+        )
+
+    def _parse_yaml_for_block(self):
+        """Parse YAML-style 'for' loop entry in chain steps."""
+        from namel3ss.ast import WorkflowForBlock
+        
+        self.expect(TokenType.FOR)
+        loop_var = self.expect(TokenType.IDENTIFIER).value
+        self.expect(TokenType.IN)
+        
+        # Capture source tokens until the block colon+newline
+        source_tokens = []
+        while not (self.match(TokenType.COLON) and self.peek(1) and self.peek(1).type == TokenType.NEWLINE):
+            tok = self.current()
+            if tok is None:
+                break
+            source_tokens.append(tok)
+            self.advance()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        
+        max_iterations = None
+        body = []
+        
+        # Consume indent for loop body
+        if self.match(TokenType.INDENT):
+            self.advance()
+            self.skip_newlines()
+            
+            # Optional max_iterations config line
+            if self.match(TokenType.IDENTIFIER) and self.current().value == "max_iterations":
+                self.advance()
+                self.expect(TokenType.COLON)
+                num_tok = self.expect(TokenType.NUMBER)
+                try:
+                    max_iterations = int(num_tok.value)
+                except Exception:
+                    max_iterations = None
+                self.skip_newlines()
+            
+            body = self._parse_yaml_workflow_items(stop_on_parent_dedent=True)
+            
+            # Normalize dedents after body
+            while self.match(TokenType.DEDENT):
+                self.advance()
+        
+        source_expr = " ".join(str(t.value) if hasattr(t, "value") else t.type.name.lower() for t in source_tokens).strip()
+        
+        return WorkflowForBlock(
+            loop_var=loop_var,
+            source_kind="expression",
+            source_name=None,
+            source_expression=source_expr or None,
+            body=body,
+            max_iterations=max_iterations,
+        )
+
+    def _parse_yaml_while_block(self):
+        """Parse YAML-style 'while' loop entry in chain steps."""
+        from namel3ss.ast import WorkflowWhileBlock
+        
+        self.expect(TokenType.WHILE)
+        
+        start_pos = self.pos
+        condition = None
+        try:
+            condition = self.parse_expression()
+            self.expect(TokenType.COLON)
+        except Exception:
+            self.pos = start_pos
+            cond_tokens = []
+            while not (self.match(TokenType.COLON) and self.peek(1) and self.peek(1).type == TokenType.NEWLINE):
+                tok = self.current()
+                if tok is None:
+                    break
+                cond_tokens.append(tok)
+                self.advance()
+            self.expect(TokenType.COLON)
+            condition = " ".join(str(t.value) if hasattr(t, "value") else t.type.name.lower() for t in cond_tokens).strip()
+        
+        self.skip_newlines()
+        
+        max_iterations = None
+        body = []
+        
+        if self.match(TokenType.INDENT):
+            self.advance()
+            self.skip_newlines()
+            
+            if self.match(TokenType.IDENTIFIER) and self.current().value == "max_iterations":
+                self.advance()
+                self.expect(TokenType.COLON)
+                num_tok = self.expect(TokenType.NUMBER)
+                try:
+                    max_iterations = int(num_tok.value)
+                except Exception:
+                    max_iterations = None
+                self.skip_newlines()
+            
+            body = self._parse_yaml_workflow_items(stop_on_parent_dedent=True)
+            
+            while self.match(TokenType.DEDENT):
+                self.advance()
+        
+        return WorkflowWhileBlock(
+            condition=condition,
+            body=body,
+            max_iterations=max_iterations,
+        )
     
     def parse_rag_pipeline_declaration(self):
         """
@@ -944,6 +1376,10 @@ class DeclarationParsingMixin:
                 source = self.advance().value
             else:
                 source = "unknown"
+        else:
+            # Inline/virtual dataset defined directly in the DSL
+            source_type = "inline"
+            source = name
         
         # Parse optional block for filters/schema
         config = {}
@@ -954,11 +1390,21 @@ class DeclarationParsingMixin:
             self.skip_newlines()
             config = self._parse_indented_config_block()
         
+        schema = config.pop("schema", None)
+        fields = config.pop("fields", None)
+        metadata = config.pop("metadata", {}) or {}
+        if fields is not None and schema is None:
+            metadata["fields"] = fields
+        # Any remaining unknown keys fold into metadata
+        if config:
+            metadata.update(config)
+        
         return Dataset(
             name=name,
             source=source or "unknown",
             source_type=source_type,
-            **config,
+            schema=schema or [],
+            metadata=metadata,
         )
     
     def parse_dataset_block(self) -> Dict[str, Any]:
@@ -1034,6 +1480,7 @@ class DeclarationParsingMixin:
                 self.expect(TokenType.COLON)
                 
             # Parse the value
+            self.skip_newlines()
             value = self.parse_value()
             config[key] = value
             
@@ -1046,11 +1493,25 @@ class DeclarationParsingMixin:
         from namel3ss.ast import Memory
         
         memory_token = self.expect(TokenType.MEMORY)
-        name = self.expect_name()  # Accept both STRING and IDENTIFIER
+        name = "memory"
+        if self.match(TokenType.STRING) or self.match(TokenType.IDENTIFIER):
+            name = self.expect_name()  # Accept both STRING and IDENTIFIER
         
         self.declare_symbol(f"memory:{name}", memory_token.line)
         
-        config = self.parse_block()
+        # Support colon+indent as well as brace blocks
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            special = {
+                "storage": lambda: self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+            }
+            config = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True, special_handlers=special)
+            # consume trailing dedents/newlines after config block
+            while self.match(TokenType.DEDENT):
+                self.advance()
+            self.skip_newlines()
+        else:
+            config = self.parse_block()
         
         # Memory config goes into the config dict, not as top-level kwargs
         return Memory(
@@ -1143,9 +1604,41 @@ class DeclarationParsingMixin:
         from namel3ss.ast import Template
         
         template_token = self.expect(TokenType.TEMPLATE)
-        name = self.expect(TokenType.STRING).value
+        name = self.expect_name()
         self.declare_symbol(f"template:{name}", template_token.line)
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            # Support either key:value or key = value assignments
+            if self.match(TokenType.INDENT):
+                config = {}
+                self.advance()
+                self.skip_newlines()
+                while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                    if self.match(TokenType.IDENTIFIER) or self.match(TokenType.PROMPT) or self.match(TokenType.MODEL):
+                        key_token = self.advance()
+                    else:
+                        key_token = self.current()
+                        raise create_syntax_error(
+                            "Unexpected token",
+                            path=self.path,
+                            line=key_token.line if key_token else None,
+                            column=key_token.column if key_token else None,
+                            expected=["identifier"],
+                            found=key_token.value if key_token else "eof",
+                        )
+                    if self.match(TokenType.ASSIGN):
+                        self.advance()
+                        value = self.parse_value()
+                    else:
+                        self.expect(TokenType.COLON)
+                        value = self.parse_value()
+                    config[key_token.value] = value
+                    self.skip_newlines()
+                self.consume_if(TokenType.DEDENT)
+            else:
+                config = self._parse_config_block(allow_any_keyword=True)
+        else:
+            config = self.parse_block()
         
         return Template(name=name, **config)
     
@@ -1154,11 +1647,35 @@ class DeclarationParsingMixin:
         from namel3ss.ast import Model
         
         model_token = self.expect(TokenType.MODEL)
-        name = self.expect(TokenType.STRING).value
+        name = self.expect_name()
         self.declare_symbol(f"model:{name}", model_token.line)
-        config = self.parse_block()
         
-        return Model(name=name, **config)
+        config: Dict[str, Any] = {}
+        
+        # Optional "using provider" syntax
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "using":
+            self.advance()
+            if self.match(TokenType.STRING):
+                config["provider"] = self.advance().value
+            else:
+                config["provider"] = self.expect(TokenType.IDENTIFIER).value
+        
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            block = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+            config.update(block)
+        else:
+            block = self.parse_block()
+            config.update(block)
+        
+        provider = config.pop("provider", None)
+        engine = config.pop("engine", provider)
+        model_type = config.pop("model_type", provider or "custom")
+        config.pop("name", None)
+        
+        # Route remaining keys into options/metadata to avoid ctor errors
+        options = dict(config)
+        return Model(name=name, model_type=model_type, engine=engine, options=options)
     
     def parse_training_declaration(self):
         """Parse training declaration."""
@@ -1167,7 +1684,11 @@ class DeclarationParsingMixin:
         training_token = self.expect(TokenType.TRAINING)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"training:{name}", training_token.line)
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+        else:
+            config = self.parse_block()
         
         return TrainingJob(name=name, **config)
     
@@ -1180,7 +1701,11 @@ class DeclarationParsingMixin:
         policy_token = self.expect(TokenType.POLICY)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"policy:{name}", policy_token.line)
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+        else:
+            config = self.parse_block()
         if PolicyDefinition is dict:
             return {"type": "policy", "name": name, **config}
         return PolicyDefinition(name=name, **config)
@@ -1196,7 +1721,11 @@ class DeclarationParsingMixin:
         graph_token = self.expect(TokenType.GRAPH)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"graph:{name}", graph_token.line)
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+        else:
+            config = self.parse_block()
         
         return build_dataclass_with_config(
             GraphDefinition,
@@ -1211,7 +1740,11 @@ class DeclarationParsingMixin:
         knowledge_token = self.expect(TokenType.KNOWLEDGE)
         name = self.expect(TokenType.STRING).value
         self.declare_symbol(f"knowledge:{name}", knowledge_token.line)
-        config = self.parse_block()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            config = self._parse_config_block(allow_any_keyword=True)
+        else:
+            config = self.parse_block()
         return KnowledgeModule(name=name, **config)
     
     def parse_query_declaration(self):

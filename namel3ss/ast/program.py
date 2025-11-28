@@ -21,6 +21,20 @@ class Module:
     has_explicit_app: bool = False
     comments: List[Comment] = field(default_factory=list)
 
+    def __getattr__(self, name: str) -> Any:
+        """
+        Backward-compatible attribute forwarding.
+
+        Many legacy callers expect parser.parse() to return the App directly.
+        When a single App is present as the first body element, forward
+        attribute access to it.
+        """
+        if self.body:
+            target = self.body[0]
+            if hasattr(target, name):
+                return getattr(target, name)
+        raise AttributeError(f"Module has no attribute '{name}'")
+
 
 @dataclass
 class Program:

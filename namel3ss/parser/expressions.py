@@ -120,6 +120,14 @@ class ExpressionParserMixin(ParserBase):
         """
         stripped = text.strip()
         
+        # Detect unsupported ternary usage early to give a clearer error
+        if '?' in stripped and ':' in stripped:
+            raise self._error(
+                "Ternary operator ('? :') is not supported. Use an if/else block instead.",
+                self.pos,
+                stripped,
+            )
+        
         # Check if this expression uses symbolic constructs
         symbolic_keywords = ['fn', 'match', 'let', 'if', 'query', 'rule', '=>', '~']
         uses_symbolic = any(kw in stripped for kw in symbolic_keywords)

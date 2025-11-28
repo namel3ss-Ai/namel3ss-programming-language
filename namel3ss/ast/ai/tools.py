@@ -189,6 +189,17 @@ class ToolDefinition:
     """
     name: str
     description: str
+    # Core request metadata (HTTP-style tools)
+    type: Optional[str] = None
+    endpoint: Optional[str] = None
+    method: Optional[str] = None
+    headers: Dict[str, Any] = field(default_factory=dict)
+    timeout: Optional[float] = None
+    
+    # Schemas and configuration
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    output_schema: Dict[str, Any] = field(default_factory=dict)
+    config: Dict[str, Any] = field(default_factory=dict)
     parameters: Dict[str, Any] = field(default_factory=dict)  # JSON Schema for inputs
     returns: Optional[Dict[str, Any]] = None  # JSON Schema for outputs
     implementation: Dict[str, Any] = field(default_factory=dict)  # Implementation details

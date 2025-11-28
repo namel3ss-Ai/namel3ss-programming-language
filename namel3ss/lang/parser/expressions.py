@@ -4,6 +4,7 @@ Handles expressions, literals, operators, and complex values.
 """
 
 from typing import Any, Dict, List, Optional
+from namel3ss.ast import VariableAssignment
 from .grammar.lexer import TokenType
 from .errors import create_syntax_error
 
@@ -20,7 +21,8 @@ class ExpressionParsingMixin:
     def _parse_config_block(
         self,
         allow_any_keyword: bool = False,
-        special_handlers: Optional[Dict[str, Any]] = None
+        special_handlers: Optional[Dict[str, Any]] = None,
+        break_on_dedent: bool = False,
     ) -> Dict[str, Any]:
         """
         Parse a configuration block with configurable keyword handling.
@@ -55,7 +57,14 @@ class ExpressionParsingMixin:
         config = {}
         special_handlers = special_handlers or {}
         
-        while not self.match(TokenType.RBRACE):
+        while True:
+            if break_on_dedent and self.match(TokenType.DEDENT):
+                self.advance()
+                break
+            if break_on_dedent and self.match(TokenType.PAGE, TokenType.SHOW):
+                break
+            if self.match(TokenType.RBRACE) or self.match(TokenType.EOF):
+                break
             # Skip any dedent/indent tokens between lines
             while self.consume_if(TokenType.DEDENT):
                 pass
@@ -78,6 +87,11 @@ class ExpressionParsingMixin:
                 raise self.error("Unexpected end of file in block")
             
             # Check if this is a structural token (not allowed as key)
+            if key_token.type == TokenType.COLON:
+                # Skip stray colons that can appear in loose YAML-ish layouts
+                self.advance()
+                self.skip_newlines()
+                continue
             if key_token.type in self._STRUCTURAL_TOKENS:
                 raise create_syntax_error(
                     "Expected field name in block",
@@ -88,37 +102,50 @@ class ExpressionParsingMixin:
                     found=key_token.type.name.lower()
                 )
             
-            # Handle various token types as keys
-            if key_token.type == TokenType.IDENTIFIER:
-                key = key_token.value
+            # Collect key tokens up to the colon (supports composite keys like "using model foo")
+            key_parts = []
+            while True:
+                tok = self.current()
+                if tok is None:
+                    raise self.error("Unexpected end of file in block")
+                if tok.type == TokenType.COLON:
+                    break
+                if tok.type in self._STRUCTURAL_TOKENS and tok.type not in {TokenType.STRING, TokenType.NUMBER}:
+                    # Stop if we hit structural punctuation unexpectedly
+                    if tok.type == TokenType.NEWLINE:
+                        break
+                    raise create_syntax_error(
+                        "Expected field name in block",
+                        path=self.path,
+                        line=tok.line,
+                        column=tok.column,
+                        expected="identifier or keyword",
+                        found=tok.type.name.lower(),
+                    )
+                key_parts.append(str(tok.value if hasattr(tok, "value") else tok.type.name.lower()))
                 self.advance()
-            elif allow_any_keyword:
-                # In allow_any_keyword mode, any non-structural token is valid
-                key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
-                self.advance()
-            elif key_token.type in (TokenType.MODEL, TokenType.FILTER, TokenType.INDEX, 
-                                     TokenType.MEMORY, TokenType.CHAIN):
-                # In strict mode, only specific keywords are allowed
-                key = key_token.value.lower() if hasattr(key_token, 'value') and key_token.value else key_token.type.name.lower()
+            key = " ".join(key_parts).strip()
+            
+            if self.match(TokenType.COLON):
                 self.advance()
             else:
-                # In strict mode, reject other keywords
-                raise create_syntax_error(
-                    "Expected field name in block",
-                    path=self.path,
-                    line=key_token.line,
-                    column=key_token.column,
-                    expected="identifier or keyword",
-                    found=key_token.type.name.lower()
-                )
-            
-            self.expect(TokenType.COLON)
+                # Tolerate newline/dedent before colon or implicit true
+                if self.match(TokenType.NEWLINE):
+                    self.advance()
+                    self.skip_newlines()
+                if self.match(TokenType.COLON):
+                    self.advance()
+                else:
+                    # Implicit boolean flag
+                    config[key] = True
+                    self.skip_newlines()
+                    continue
             
             # Parse value - use special handler if one is registered for this key
             if key in special_handlers:
                 value = special_handlers[key]()
             else:
-                value = self.parse_value()
+                value = self.parse_value(allow_dedent_skip=not break_on_dedent)
             
             config[key] = value
             
@@ -146,7 +173,7 @@ class ExpressionParsingMixin:
         
         return config
     
-    def parse_value(self) -> Any:
+    def parse_value(self, allow_dedent_skip: bool = True) -> Any:
         """
         Parse a value (literal, array, object, expression).
         
@@ -157,6 +184,21 @@ class ExpressionParsingMixin:
         
         if not token:
             raise self.error("Expected value")
+        if not allow_dedent_skip and token.type in {TokenType.DEDENT, TokenType.PAGE, TokenType.SHOW, TokenType.DATASET, TokenType.MEMORY}:
+            return {}
+        
+        # Inline show statement used inside component configs (e.g., on submit)
+        if token.type == TokenType.SHOW:
+            return self.parse_show_statement()
+        
+        # Skip structural tokens that can precede a value in indented YAML-style blocks
+        while token and token.type in (TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT):
+            if token.type == TokenType.DEDENT and not allow_dedent_skip:
+                break
+            self.advance()
+            token = self.current()
+            if not token:
+                raise self.error("Expected value")
         
         # String literal
         if token.type == TokenType.STRING:
@@ -173,6 +215,10 @@ class ExpressionParsingMixin:
         if token.type in (TokenType.TRUE, TokenType.FALSE):
             self.advance()
             return token.type == TokenType.TRUE
+        
+        # YAML-style dash list (e.g., - item)
+        if token.type == TokenType.MINUS:
+            return self._parse_dash_list_value()
         
         # Null literal
         if token.type == TokenType.NULL:
@@ -290,6 +336,44 @@ class ExpressionParsingMixin:
         
         self.expect(TokenType.RBRACE)
         return obj
+    
+    def _parse_dash_list_value(self):
+        """Parse YAML-style dash-prefixed lists."""
+        items = []
+        while True:
+            self.skip_newlines()
+            if not self.match(TokenType.MINUS):
+                break
+            self.advance()  # consume '-'
+            self.skip_newlines()
+            
+            # Inline key:value after '-'
+            if self.match(TokenType.IDENTIFIER) and self.peek(1) and self.peek(1).type == TokenType.COLON:
+                key = self.advance().value
+                self.expect(TokenType.COLON)
+                self.skip_newlines()
+                value = self.parse_value()
+                entry = {key: value}
+            else:
+                entry = self.parse_value()
+            
+            # Consume nested indented key/values belonging to this dash item
+            self.skip_newlines()
+            if self.consume_if(TokenType.INDENT):
+                self.skip_newlines()
+                while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                    if not self.match(TokenType.IDENTIFIER):
+                        break
+                    nested_key = self.advance().value
+                    self.expect(TokenType.COLON)
+                    self.skip_newlines()
+                    entry[nested_key] = self.parse_value()
+                    self.skip_newlines()
+                self.consume_if(TokenType.DEDENT)
+            
+            items.append(entry)
+            self.skip_newlines()
+        return items
     
     def parse_env_ref(self) -> Dict[str, str]:
         """Parse environment variable reference: env.VAR_NAME"""
@@ -544,7 +628,21 @@ class ExpressionParsingMixin:
         
         # Identifier
         if token.type == TokenType.IDENTIFIER:
+            if self.peek(1) and self.peek(1).type == TokenType.COLON:
+                # Interpret as inline object mapping (YAML-style) until dedent
+                return self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
             return self.advance().value
+        
+        # Treat certain keyword tokens as identifier-like values (e.g., template/model names)
+        keyword_ident_tokens = {
+            TokenType.TEMPLATE, TokenType.MODEL, TokenType.LLM, TokenType.CHAIN,
+            TokenType.AGENT, TokenType.TOOL, TokenType.MEMORY, TokenType.DATASET,
+            TokenType.FRAME, TokenType.INDEX, TokenType.CONNECTOR, TokenType.TABLE,
+        }
+        if token.type in keyword_ident_tokens:
+            value = token.value if hasattr(token, "value") else token.type.name.lower()
+            self.advance()
+            return value
         
         # Parenthesized expression
         if token.type == TokenType.LPAREN:
@@ -711,6 +809,10 @@ class ExpressionParsingMixin:
         """Parse a page statement (show, if, for, log, etc.)."""
         token = self.current()
         
+        # Skip leading newlines only
+        while token and token.type == TokenType.NEWLINE:
+            self.advance()
+            token = self.current()
         if not token:
             return None
         
@@ -724,16 +826,72 @@ class ExpressionParsingMixin:
         
         if token.type == TokenType.FOR:
             return self.parse_for_statement()
+        
+        # Set statement (e.g., set session.var to expr)
+        if token.type == TokenType.IDENTIFIER and token.value == "set":
+            return self.parse_set_statement()
             
         # Log statement
         if token.type == TokenType.IDENTIFIER and token.value == "log":
             return self.parse_log_statement()
         
+        # Action statement inside pages
+        if token.type == TokenType.IDENTIFIER and token.value == "action":
+            return self.parse_action_statement()
+        
+        # Generic container-style blocks (stack, grid, tabs, etc.)
+        if token.type == TokenType.IDENTIFIER and self._has_colon_ahead():
+            container_name = token.value
+            # Consume tokens up to colon on this line
+            while not self.match(TokenType.COLON) and not self.match(TokenType.EOF):
+                self.advance()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+            body = []
+            while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                stmt = self.parse_page_statement()
+                if stmt:
+                    body.append(stmt)
+                self.skip_newlines()
+            self.consume_if(TokenType.DEDENT)
+            return {"type": container_name, "body": body}
+        
+        # Simple assignment within page blocks: name: <value>
+        next_token = self.peek(1)
+        if token.type == TokenType.IDENTIFIER and next_token and next_token.type == TokenType.COLON:
+            name = token.value
+            self.advance()  # consume name
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            value = self.parse_value()
+            return VariableAssignment(name=name, value=value)
+        
         # Expression statement
         return self.parse_expression()
+
+    def parse_set_statement(self):
+        """Parse simple set statements: set target to value."""
+        self.expect(TokenType.IDENTIFIER)  # 'set'
+        target_tokens = []
+        while self.current() and not (self.match(TokenType.IDENTIFIER) and self.current().value == "to"):
+            if self.match(TokenType.NEWLINE):
+                break
+            tok = self.advance()
+            target_tokens.append(str(tok.value if hasattr(tok, "value") else tok.type.name.lower()))
+        target = " ".join(target_tokens).strip()
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "to":
+            self.advance()
+        value = None
+        if not self.match(TokenType.NEWLINE, TokenType.DEDENT, TokenType.EOF):
+            value = self.parse_expression()
+        return {"type": "set", "target": target, "value": value}
     
     def parse_show_statement(self) -> Dict[str, Any]:
         """Parse show statement."""
+        from namel3ss.ast.pages import ShowText, ShowForm, FormField
+        from namel3ss.lang.parser.errors import create_syntax_error
+        
         self.expect(TokenType.SHOW)
         
         # Component type can be identifier or certain keywords
@@ -746,18 +904,157 @@ class ExpressionParsingMixin:
             component_type = str(component_token.value if hasattr(component_token, 'value') and component_token.value else component_token.type.name.lower())
             self.advance()
         
+        # Capture simple inline payloads like: show text "hello"
+        inline_value = None
+        if self.match(TokenType.STRING):
+            inline_value = self.advance().value
+        
+        # Explicitly reject unsupported components with guidance
+        unsupported = {
+            "progress_bar": "Use stat_summary or a simple text indicator instead.",
+            "code_block": "Use show text with syntax highlighting client-side.",
+            "json_view": "Use show text or data_table as an alternative.",
+            "tree_view": "Use accordion or data_list as an alternative.",
+        }
+        if component_type in unsupported:
+            raise create_syntax_error(
+                "Unsupported component",
+                path=self.path,
+                line=component_token.line,
+                column=component_token.column,
+                suggestion=unsupported[component_type],
+            )
+        
+        # Optional source clause (e.g., show table "Users" from dataset users)
+        source_type = None
+        source_name = None
+        if self.consume_if(TokenType.FROM):
+            if self.match(TokenType.DATASET):
+                self.advance()
+                source_type = "dataset"
+                source_name = self.expect_name()
+            elif self.match(TokenType.TABLE):
+                self.advance()
+                source_type = "table"
+                source_name = self.expect_name()
+            elif self.match(TokenType.IDENTIFIER):
+                source_type = self.advance().value
+                if self.match(TokenType.IDENTIFIER) or self.match(TokenType.STRING):
+                    source_name = self.expect_name()
+        
+        has_inline_block = False
+        
         config = {}
         if self.consume_if(TokenType.COLON):
+            has_inline_block = True
             self.skip_newlines()
-            config = self.parse_value()
+            # If we see an indented block, parse it as a config map instead of a single value
+            if self.match(TokenType.INDENT):
+                config = self._parse_config_block(allow_any_keyword=True, break_on_dedent=True)
+            else:
+                config = self.parse_value()
         elif self.match(TokenType.LBRACE):
             config = self.parse_block()
+        
+        # Propagate source info into config for downstream use
+        if source_type or source_name:
+            if isinstance(config, dict):
+                config.setdefault("from", {})
+                if isinstance(config["from"], dict):
+                    if source_type:
+                        config["from"]["type"] = source_type
+                    if source_name:
+                        config["from"]["source"] = source_name
+                else:
+                    config["from"] = {"type": source_type, "source": source_name}
+            else:
+                config = {"from": {"type": source_type, "source": source_name}, "value": config} if config else {"from": {"type": source_type, "source": source_name}}
+        
+        # Special-case common components
+        if component_type == "text":
+            text_value = inline_value if inline_value is not None else (config if isinstance(config, str) else None)
+            if text_value is not None:
+                return ShowText(text=text_value)
+        if component_type == "form":
+            fields_cfg = config.pop("fields", []) if isinstance(config, dict) else []
+            if isinstance(config, dict) and isinstance(fields_cfg, list) and fields_cfg:
+                shared_keys = {}
+                for k in ("component", "label", "multiple", "accept", "max_file_size"):
+                    if k in config:
+                        shared_keys[k] = config.pop(k)
+                if shared_keys:
+                    if isinstance(fields_cfg[0], dict):
+                        fields_cfg[0].update(shared_keys)
+                    else:
+                        fields_cfg[0] = {**shared_keys, "name": str(fields_cfg[0])}
+            # Merge flattened dict entries into field objects
+            merged_fields = []
+            current = {}
+            for entry in fields_cfg if isinstance(fields_cfg, list) else []:
+                if isinstance(entry, dict):
+                    if ("name" in entry and current) or ("component" in entry and "name" in current):
+                        merged_fields.append(current)
+                        current = {}
+                    current.update(entry)
+                elif isinstance(entry, str):
+                    if current:
+                        merged_fields.append(current)
+                    current = {"name": entry}
+            if current:
+                merged_fields.append(current)
+            
+            form_fields = []
+            for f in merged_fields:
+                if isinstance(f, dict):
+                    form_fields.append(FormField(
+                        name=str(f.get("name", "")),
+                        component=str(f.get("component", f.get("field_type", "text_input"))),
+                        label=f.get("label"),
+                        placeholder=f.get("placeholder"),
+                        help_text=f.get("help_text"),
+                        required=bool(f.get("required", False)),
+                        multiple=bool(f.get("multiple", False)),
+                        accept=f.get("accept"),
+                        max_file_size=f.get("max_file_size"),
+                    ))
+                elif isinstance(f, str):
+                    form_fields.append(FormField(name=f))
+            on_submit_cfg = None
+            if isinstance(config, dict):
+                on_submit_cfg = config.pop("on submit", config.pop("onsubmit", None))
+            return ShowForm(
+                title=inline_value or config.get("title") if isinstance(config, dict) else inline_value,
+                fields=form_fields,
+                on_submit_ops=on_submit_cfg if isinstance(on_submit_cfg, list) else [],
+            )
+        
+        # Consume remaining inline tokens on this line to avoid stray parsing (e.g., type="success")
+        while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE, TokenType.EOF):
+            self.advance()
+        
+        # If we captured an inline value but don't have a structured config,
+        # carry it forward in the config for downstream consumers.
+        if inline_value is not None and not config:
+            config = inline_value
         
         return {
             "type": "show",
             "component": component_type,
             "config": config,
         }
+
+    def _has_colon_ahead(self) -> bool:
+        """Look ahead on the current line for a colon before newline/dedent."""
+        i = 0
+        while True:
+            tok = self.peek(i)
+            if not tok:
+                return False
+            if tok.type == TokenType.COLON:
+                return True
+            if tok.type in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE, TokenType.EOF):
+                return False
+            i += 1
     
     def parse_log_statement(self) -> Dict[str, Any]:
         """Parse log statement: log [level] "message" """
@@ -793,6 +1090,243 @@ class ExpressionParsingMixin:
             message=message,
             source_location=source_location
         )
+    
+    def parse_action_statement(self):
+        """Parse page-level action blocks (action "...": when ...)."""
+        from namel3ss.ast import (
+            Action,
+            ToastOperation,
+            RunPromptOperation,
+            RunChainOperation,
+            GoToPageOperation,
+            AskConnectorOperation,
+            CallPythonOperation,
+        )
+        
+        self.expect(TokenType.IDENTIFIER)  # 'action'
+        name = self.expect_name()
+        declared_effect = None
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "effect":
+            self.advance()
+            declared_effect = self.expect_name()
+        
+        # Support both ':' and '{' but tests rely on ':' with indentation
+        if self.consume_if(TokenType.COLON):
+            pass
+        elif self.consume_if(TokenType.LBRACE):
+            # Allow brace syntax as well
+            pass
+        else:
+            raise create_syntax_error(
+                "Action declaration must end with ':' or '{'",
+                path=self.path,
+                line=self.current().line if self.current() else None,
+                suggestion="Use: action \"Name\":",
+            )
+        
+        self.skip_newlines()
+        self.consume_if(TokenType.INDENT)
+        
+        trigger = ""
+        # Optional 'when' trigger line
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "when":
+            self.advance()
+            trigger_parts = []
+            while self.current() and self.current().type not in (TokenType.COLON, TokenType.NEWLINE):
+                tok = self.advance()
+                trigger_parts.append(str(tok.value if hasattr(tok, "value") else tok.type.name.lower()))
+            trigger = " ".join(trigger_parts).strip()
+            self.consume_if(TokenType.COLON)
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+        
+        operations = []
+        while not self.match(TokenType.DEDENT) and not self.match(TokenType.RBRACE) and not self.match(TokenType.EOF):
+            self.skip_newlines()
+            if self.match(TokenType.DEDENT) or self.match(TokenType.RBRACE) or self.match(TokenType.EOF):
+                break
+            
+            op = None
+            # show toast "msg"
+            if self.match(TokenType.SHOW):
+                op = self._parse_action_show_operation()
+            # run prompt foo with:
+            elif self.match(TokenType.IDENTIFIER) and self.current().value == "run" and self.peek(1) and self.peek(1).type == TokenType.PROMPT:
+                op = self._parse_action_run_prompt()
+            # run chain foo with:
+            elif self.match(TokenType.IDENTIFIER) and self.current().value == "run" and self.peek(1) and self.peek(1).type == TokenType.CHAIN:
+                op = self._parse_action_run_chain()
+            # go to page "X"
+            elif self.match(TokenType.IDENTIFIER) and self.current().value == "go":
+                op = self._parse_action_go_to_page()
+            # ask connector foo with:
+            elif self.match(TokenType.IDENTIFIER) and self.current().value == "ask":
+                op = self._parse_action_ask_connector()
+            # call python "module" method "fn" with:
+            elif self.match(TokenType.IDENTIFIER) and self.current().value == "call":
+                op = self._parse_action_call_python()
+            
+            # Unknown operation: skip the line gracefully
+            if op is None:
+                while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE, TokenType.EOF):
+                    self.advance()
+            else:
+                operations.append(op)
+            
+            self.skip_newlines()
+            while self.consume_if(TokenType.DEDENT):
+                pass
+        
+        # Consume closing dedent/brace if present
+        self.consume_if(TokenType.DEDENT)
+        if self.match(TokenType.RBRACE):
+            self.advance()
+        
+        return Action(
+            name=name,
+            trigger=trigger or "",
+            operations=operations,
+            declared_effect=declared_effect,
+        )
+    
+    def _parse_action_show_operation(self):
+        """Parse simple show toast operation used in actions."""
+        from namel3ss.ast import ToastOperation
+        
+        self.expect(TokenType.SHOW)
+        if self.match(TokenType.IDENTIFIER):
+            component = self.advance().value
+        else:
+            component = str(self.advance().value if self.current() else "")
+        message = ""
+        if self.match(TokenType.STRING):
+            message = self.advance().value
+        # Treat any show toast as ToastOperation; otherwise fallback to generic message
+        if component == "toast":
+            op = ToastOperation(message=message)
+        else:
+            op = ToastOperation(message=message or component)
+        # Consume rest of line to avoid stray tokens (e.g., type="success")
+        while self.current() and self.current().type not in (TokenType.NEWLINE, TokenType.DEDENT, TokenType.RBRACE, TokenType.EOF):
+            self.advance()
+        return op
+    
+    def _parse_action_run_prompt(self):
+        """Parse run prompt <name> with: block."""
+        from namel3ss.ast import RunPromptOperation
+        
+        self.expect(TokenType.IDENTIFIER)  # run
+        self.expect(TokenType.PROMPT)
+        prompt_name = self.expect_name()
+        
+        arguments = {}
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "with":
+            self.advance()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+            while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                if not self.match(TokenType.IDENTIFIER):
+                    break
+                arg_name = self.advance().value
+                self.expect(TokenType.ASSIGN)
+                arg_value = self.parse_expression()
+                arguments[arg_name] = arg_value
+                self.skip_newlines()
+            self.consume_if(TokenType.DEDENT)
+        return RunPromptOperation(prompt_name=prompt_name, arguments=arguments)
+    
+    def _parse_action_run_chain(self):
+        """Parse run chain <name> with: block."""
+        from namel3ss.ast import RunChainOperation
+        
+        self.expect(TokenType.IDENTIFIER)  # run
+        self.expect(TokenType.CHAIN)
+        chain_name = self.expect_name()
+        
+        inputs = {}
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "with":
+            self.advance()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+            while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                if not self.match(TokenType.IDENTIFIER):
+                    break
+                input_name = self.advance().value
+                self.expect(TokenType.ASSIGN)
+                input_value = self.parse_expression()
+                inputs[input_name] = input_value
+                self.skip_newlines()
+            self.consume_if(TokenType.DEDENT)
+        return RunChainOperation(chain_name=chain_name, inputs=inputs)
+    
+    def _parse_action_ask_connector(self):
+        """Parse ask connector <name> with: block."""
+        from namel3ss.ast import AskConnectorOperation
+        
+        self.expect(TokenType.IDENTIFIER)  # ask
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "connector":
+            self.advance()
+        connector_name = self.expect_name()
+        
+        arguments = {}
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "with":
+            self.advance()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+            while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                if not self.match(TokenType.IDENTIFIER):
+                    break
+                arg_name = self.advance().value
+                self.expect(TokenType.ASSIGN)
+                arg_value = self.parse_expression()
+                arguments[arg_name] = arg_value
+                self.skip_newlines()
+            self.consume_if(TokenType.DEDENT)
+        return AskConnectorOperation(connector_name=connector_name, arguments=arguments)
+    
+    def _parse_action_call_python(self):
+        """Parse call python \"module\" method \"fn\" with: block."""
+        from namel3ss.ast import CallPythonOperation
+        
+        self.expect(TokenType.IDENTIFIER)  # call
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "python":
+            self.advance()
+        module_name = self.expect_name()
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "method":
+            self.advance()
+        method_name = self.expect_name()
+        
+        arguments = {}
+        if self.match(TokenType.IDENTIFIER) and self.current().value == "with":
+            self.advance()
+        if self.consume_if(TokenType.COLON):
+            self.skip_newlines()
+            self.consume_if(TokenType.INDENT)
+            while not self.match(TokenType.DEDENT) and not self.match(TokenType.EOF):
+                if not self.match(TokenType.IDENTIFIER):
+                    break
+                arg_name = self.advance().value
+                self.expect(TokenType.ASSIGN)
+                arg_value = self.parse_expression()
+                arguments[arg_name] = arg_value
+                self.skip_newlines()
+            self.consume_if(TokenType.DEDENT)
+        return CallPythonOperation(module=module_name, method=method_name, arguments=arguments)
+    
+    def _parse_action_go_to_page(self):
+        """Parse go to page \"Page\" operation."""
+        from namel3ss.ast import GoToPageOperation
+        
+        self.expect(TokenType.IDENTIFIER)  # go
+        if self.match(TokenType.TO):
+            self.advance()
+        if self.match(TokenType.PAGE):
+            self.advance()
+        page_name = self.expect_name()
+        return GoToPageOperation(page_name=page_name)
     
     def parse_if_statement(self) -> Dict[str, Any]:
         """Parse if statement."""
@@ -1102,16 +1636,42 @@ class ExpressionParsingMixin:
                     prev_token_type = TokenType.RBRACE
                 self.advance()
             else:
-                # Add space before token if needed (not after newline/indent)
-                if (prev_token_type is not None and 
-                    prev_token_type not in (TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT) and
-                    token.type not in (TokenType.NEWLINE, TokenType.INDENT, TokenType.DEDENT, 
-                                      TokenType.LPAREN, TokenType.RPAREN, TokenType.COMMA, 
-                                      TokenType.COLON, TokenType.DOT, TokenType.LBRACKET, TokenType.RBRACKET)):
+                # Add space between tokens unless they are structural punctuation
+                no_space_prev = {
+                    TokenType.NEWLINE,
+                    TokenType.INDENT,
+                    TokenType.DEDENT,
+                    TokenType.LBRACE,
+                    TokenType.LBRACKET,
+                    TokenType.LPAREN,
+                    TokenType.LT,
+                    TokenType.SLASH,
+                    TokenType.DOT,
+                }
+                no_space_current = {
+                    TokenType.RBRACE,
+                    TokenType.RBRACKET,
+                    TokenType.RPAREN,
+                    TokenType.COMMA,
+                    TokenType.DOT,
+                    TokenType.COLON,
+                    TokenType.GT,
+                    TokenType.SLASH,
+                    TokenType.LPAREN,
+                }
+                token_value = token.value if hasattr(token, "value") else None
+                if (
+                    prev_token_type is not None
+                    and prev_token_type not in no_space_prev
+                    and token.type not in no_space_current
+                    and token_value not in ("!", "?")
+                ):
                     code_tokens.append(' ')
                 
                 # Preserve token value
-                if hasattr(token, 'value') and token.value is not None:
+                if token.type == TokenType.STRING:
+                    code_tokens.append(f"\"{token.value}\"")
+                elif hasattr(token, 'value') and token.value is not None:
                     code_tokens.append(str(token.value))
                 elif token.type == TokenType.NEWLINE:
                     code_tokens.append('\n')

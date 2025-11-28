@@ -5,6 +5,7 @@ from typing import Optional
 from namel3ss.ast import App, Module
 from namel3ss.lang.parser import parse_module as new_parse_module
 from namel3ss.lang.parser import N3SyntaxError
+from namel3ss.errors import N3SyntaxError as LegacyN3SyntaxError
 
 # Legacy parser fallback for compatibility
 from .program import LegacyProgramParser
@@ -33,7 +34,10 @@ class Parser:
             legacy_parser = LegacyProgramParser(self._source, module_name=self._module_name, path=self.source_path)
             try:
                 return legacy_parser.parse()
-            except Exception:
+            except Exception as legacy_error:
+                # Surface the legacy error when it is more specific (e.g., validation)
+                if isinstance(legacy_error, (N3SyntaxError, LegacyN3SyntaxError)):
+                    raise legacy_error
                 raise modern_error
 
     def parse_app(self) -> App:

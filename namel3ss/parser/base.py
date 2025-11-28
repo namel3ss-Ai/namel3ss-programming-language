@@ -286,9 +286,9 @@ class ParserBase:
 
     def _expect_indent_greater_than(
         self,
-        line: str,
-        base_indent: int,
-        line_no: int,
+        line: str | int,
+        base_indent: int | None = None,
+        line_no: int | None = None,
         context: str = "block"
     ) -> IndentationInfo:
         """
@@ -298,8 +298,10 @@ class ParserBase:
         providing helpful error messages if indentation is insufficient.
         
         Args:
-            line: The line to check (with leading whitespace)
-            base_indent: The parent indentation level
+            line: The line to check (with leading whitespace) OR, for backwards
+                  compatibility, the parent indentation level.
+            base_indent: The parent indentation level when 'line' is a string.
+                         Ignored when 'line' is an int.
             line_no: Line number for error reporting
             context: Human-readable context (e.g., "if block", "page body")
             
@@ -319,6 +321,15 @@ class ParserBase:
             >>> parser._expect_indent_greater_than("code", 0, 10, "page body")
             N3SyntaxError: Expected indented block for page body...
         """
+        # Backwards compatibility: allow callers to pass base_indent as first arg
+        if isinstance(line, int):
+            base_indent = line
+            line = self._peek() or ""
+            if line_no is None:
+                line_no = self.pos + 1
+        if base_indent is None:
+            base_indent = 0
+        
         info = self._compute_indent_details(line)
         stripped = line.strip()
         
@@ -1013,7 +1024,8 @@ class ParserBase:
                 continue
             if indent <= parent_indent or stripped.startswith('-'):
                 break
-            match = re.match(r'([\w\.\s]+):\s*(.*)$', stripped)
+            # Allow richer key names (including quoted or multi-word keys) up to the first colon
+            match = re.match(r'([^:]+):\s*(.*)$', stripped)
             if not match:
                 raise self._error("Expected 'key: value' inside block", self.pos + 1, line)
             key = match.group(1).strip()

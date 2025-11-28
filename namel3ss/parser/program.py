@@ -513,8 +513,8 @@ class LegacyProgramParser(
         provider = None
         temperature = None
         max_tokens = None
+        config = {}
         
-        self._advance()
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -545,6 +545,9 @@ class LegacyProgramParser(
                 if not value.startswith('env.'):
                     value = value.strip('"').strip("'")
                 
+                # Track the raw config value for debugging/back-compat
+                config[key] = value
+                
                 if key == 'model':
                     model = value
                 elif key == 'provider':
@@ -555,10 +558,26 @@ class LegacyProgramParser(
                     max_tokens = int(value) if value else None
                 elif key == 'api_key':
                     api_key = value
-                else:
-                    config[key] = value
             
             self._advance()
+        
+        # Basic validation for provider to surface clearer errors
+        if provider is None:
+            provider = config.get("provider")
+        if provider is None:
+            raise self._error(
+                "LLM provider is required (e.g., provider: openai)",
+                line_no,
+                line,
+            )
+        allowed_providers = {"openai", "anthropic", "vertex", "azure", "ollama", "bedrock", "mistral"}
+        if str(provider).lower() not in allowed_providers:
+            raise self._error(
+                f"Invalid provider '{provider}'",
+                line_no,
+                line,
+                hint="Valid providers: openai, anthropic, vertex, azure, ollama, bedrock, mistral",
+            )
         
         return LLMDefinition(
             name=name,
@@ -745,6 +764,10 @@ class LegacyProgramParser(
         
         name = match.group(1)
         description = ""
+        tool_type = None
+        endpoint = None
+        method = None
+        timeout = None
         parameters = {}
         returns = None
         implementation = {}
@@ -766,6 +789,21 @@ class LegacyProgramParser(
             if stripped.startswith('description:'):
                 description = stripped[len('description:'):].strip().strip('"').strip("'")
                 self._advance()
+            elif stripped.startswith('type:'):
+                tool_type = stripped[len('type:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('endpoint:'):
+                endpoint = stripped[len('endpoint:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('method:'):
+                method = stripped[len('method:'):].strip().strip('"').strip("'")
+                self._advance()
+            elif stripped.startswith('timeout:'):
+                try:
+                    timeout = float(stripped[len('timeout:'):].strip())
+                except ValueError:
+                    timeout = None
+                self._advance()
             elif stripped.startswith('parameters:'):
                 self._advance()
                 parameters = self._parse_kv_block(indent + 4)
@@ -781,6 +819,10 @@ class LegacyProgramParser(
         return ToolDefinition(
             name=name,
             description=description,
+            type=tool_type,
+            endpoint=endpoint,
+            method=method,
+            timeout=timeout,
             parameters=parameters,
             returns=returns,
             implementation=implementation

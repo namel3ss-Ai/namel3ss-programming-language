@@ -39,7 +39,13 @@ class UtilityMethodsMixin:
             text = text.text
         return len(text) - len(text.lstrip(' '))
 
-    def _error(self, message: str, line_or_line_no=None, line_text: str = None) -> N3SyntaxError:
+    def _error(
+        self,
+        message: str,
+        line_or_line_no=None,
+        line_text: str = None,
+        hint: Optional[str] = None,
+    ) -> N3SyntaxError:
         """
         Create a syntax error. Supports two call patterns:
         1. Grammar style: _error(message, line: _Line)
@@ -55,7 +61,7 @@ class UtilityMethodsMixin:
                 path=self._path or None,
                 line=line.number,
                 code="SYNTAX_GRAMMAR",
-                hint=line.text.strip() or None,
+                hint=hint or (line.text.strip() or None),
             )
         # Pattern 2: AIParserMixin style with line_no and line_text
         elif isinstance(line_or_line_no, int):
@@ -65,7 +71,7 @@ class UtilityMethodsMixin:
                 path=self._path or None,
                 line=line_no,
                 code="SYNTAX_GRAMMAR",
-                hint=line_text.strip() if line_text else None,
+                hint=hint or (line_text.strip() if line_text else None),
             )
         # Fallback for no line info
         else:
