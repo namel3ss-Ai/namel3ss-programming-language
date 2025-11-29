@@ -797,6 +797,17 @@ class ShowStatSummary(Statement):
     icon: Optional[str] = None
     layout: Optional[LayoutMeta] = None
     style: Optional[Dict[str, Any]] = None
+
+    # Extended configuration
+    stats: Optional[List[Dict[str, Any]]] = None
+
+    @property
+    def title(self) -> str:
+        return self.label
+
+    @title.setter
+    def title(self, value: str) -> None:
+        self.label = value
     
     # Data binding
     binding: Optional[DataBindingConfig] = None
@@ -809,6 +820,7 @@ class TimelineItem:
     title: Union[str, Dict[str, Any]]
     description: Optional[Union[str, Dict[str, Any]]] = None
     icon: Optional[Union[str, Dict[str, Any]]] = None
+    user: Optional[Union[str, Dict[str, Any]]] = None
     status: Optional[Union[str, Dict[str, Any]]] = None  # "success" | "warning" | "error" | "info" | expr
     color: Optional[str] = None
     actions: List[ConditionalAction] = field(default_factory=list)
@@ -1157,6 +1169,22 @@ class AccordionLayout(Statement):
     # Styling
     style: Optional[Dict[str, Any]] = None
     layout: Optional[LayoutMeta] = None
+
+    @property
+    def allow_multiple(self) -> bool:
+        return self.multiple
+
+    @allow_multiple.setter
+    def allow_multiple(self, value: bool) -> None:
+        self.multiple = value
+
+    @property
+    def sections(self) -> List[AccordionItem]:
+        return self.items
+
+    @sections.setter
+    def sections(self, value: List[AccordionItem]) -> None:
+        self.items = value
 
 
 # =============================================================================

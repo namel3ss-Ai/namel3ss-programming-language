@@ -1418,7 +1418,7 @@ def _show_data_table_to_component(stmt, state) -> ComponentSpec:
     # Wrap in ComponentSpec for compatibility
     return ComponentSpec(
         name=stmt.title,
-        type="data_table",
+        type="table",
         props={
             "ir_spec": ir_table,
         },
@@ -1900,7 +1900,7 @@ def _grid_layout_to_component(stmt, state) -> ComponentSpec:
             "responsive": stmt.responsive,
         },
         children=children,
-        layout=layout_ir,
+        metadata={"layout": layout_ir},
     )
 
 
