@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import re
+
 from namel3ss.ast import App, Module
 from namel3ss.lang.parser import parse_module as new_parse_module
 from namel3ss.lang.parser import N3SyntaxError
@@ -21,10 +23,27 @@ class Parser:
 
     def parse(self) -> Module:
         """Parse source into Module AST using the unified parser."""
+        uses_indented_syntax = bool(
+            re.search(r'^\s*(app|page)\s+"[^"]+".*:\s*$', self._source, re.MULTILINE)
+        )
+
+        if uses_indented_syntax:
+            legacy_parser = LegacyProgramParser(self._source, module_name=self._module_name, path=self.source_path)
+            try:
+                return legacy_parser.parse()
+            except Exception as legacy_error:
+                if isinstance(legacy_error, (N3SyntaxError, LegacyN3SyntaxError)):
+                    # Try modern parser for new syntax support
+                    try:
+                        module = new_parse_module(self._source, path=self.source_path, module_name=self._module_name)
+                        return module
+                    except N3SyntaxError:
+                        raise legacy_error
+                raise legacy_error
+
         try:
             return new_parse_module(self._source, path=self.source_path, module_name=self._module_name)
         except N3SyntaxError as modern_error:
-            # Track fallback usage for diagnostics
             _FallbackTracker.record(
                 path=self.source_path,
                 error_code=getattr(modern_error, "code", ""),
@@ -35,7 +54,6 @@ class Parser:
             try:
                 return legacy_parser.parse()
             except Exception as legacy_error:
-                # Surface the legacy error when it is more specific (e.g., validation)
                 if isinstance(legacy_error, (N3SyntaxError, LegacyN3SyntaxError)):
                     raise legacy_error
                 raise modern_error

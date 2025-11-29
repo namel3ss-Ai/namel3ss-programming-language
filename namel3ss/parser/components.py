@@ -133,7 +133,7 @@ class ComponentParserMixin(ActionParserMixin):
         
         Optional styling properties can be specified in indented block.
         """
-        match = re.match(r'show\s+text\s+"([^"]+)"\s*$', line.strip())
+        match = re.match(r'show\s+text\s+"([^"]+)"(?:\s+(.*))?$', line.strip())
         if not match:
             raise self._error(
                 "Expected: show text \"Message\"",
@@ -142,7 +142,13 @@ class ComponentParserMixin(ActionParserMixin):
                 hint='Text components require a message in quotes, e.g., show text "Hello World"'
             )
         text = match.group(1)
+        inline_styles = match.group(2)
         styles: Dict[str, str] = {}
+
+        if inline_styles:
+            inline_match = re.match(r'([\w_]+):\s*(.+)', inline_styles)
+            if inline_match:
+                styles[inline_match.group(1)] = inline_match.group(2).strip()
         while self.pos < len(self.lines):
             nxt = self._peek()
             if nxt is None:
@@ -1435,9 +1441,17 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= base_indent:
                 break
             
-            if stripped.startswith('item:'):
+            if stripped.startswith('item:') or stripped.startswith('item_config:'):
                 self._advance()
                 item = self._parse_list_item_config(indent)
+            elif stripped.startswith('row_actions:'):
+                # Support explicit row action definitions
+                self._advance()
+                actions = self._parse_conditional_actions(indent)
+                if item is None:
+                    item = ListItemConfig(title="", actions=actions)
+                else:
+                    item.actions = actions
             elif stripped.startswith('variant:'):
                 variant = stripped[len('variant:'):].strip()
                 self._advance()
@@ -1535,6 +1549,7 @@ class ComponentParserMixin(ActionParserMixin):
         icon: Optional[str] = None
         layout_meta: Optional[LayoutMeta] = None
         style: Optional[Dict[str, Any]] = None
+        stats: List[Dict[str, Any]] = []
         
         while self.pos < len(self.lines):
             nxt = self._peek()
@@ -1548,7 +1563,21 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= base_indent:
                 break
             
-            if stripped.startswith('value:'):
+            if stripped.startswith('stats:'):
+                self._advance()
+                stats = self._parse_stats_list(indent)
+                if stats:
+                    primary = stats[0]
+                    value = primary.get('value', value)
+                    format_str = primary.get('format', format_str)
+                    prefix = primary.get('prefix', prefix)
+                    suffix = primary.get('suffix', suffix)
+                    delta = primary.get('delta', delta)
+                    trend = primary.get('trend', trend)
+                    comparison_period = primary.get('comparison_period', comparison_period)
+                    color = primary.get('color', color)
+                    icon = primary.get('icon', icon)
+            elif stripped.startswith('value:'):
                 value = stripped[len('value:'):].strip()
                 self._advance()
             elif stripped.startswith('format:'):
@@ -1597,7 +1626,7 @@ class ComponentParserMixin(ActionParserMixin):
                     nxt
                 )
         
-        return ShowStatSummary(
+        summary = ShowStatSummary(
             label=label,
             source_type=source_type,
             source=source,
@@ -1613,7 +1642,46 @@ class ComponentParserMixin(ActionParserMixin):
             icon=icon,
             layout=layout_meta,
             style=style,
+            stats=stats or None,
         )
+
+        summary.title = label
+        return summary
+
+    def _parse_stats_list(self, base_indent: int) -> List[Dict[str, Any]]:
+        """Parse a list of stat configurations from a stats: block."""
+        stats: List[Dict[str, Any]] = []
+
+        while self.pos < len(self.lines):
+            nxt = self._peek()
+            if nxt is None:
+                break
+
+            indent = self._indent(nxt)
+            stripped = nxt.strip()
+            if not stripped or stripped.startswith('#'):
+                self._advance()
+                continue
+            if indent <= base_indent:
+                break
+
+            if stripped.startswith('-'):
+                self._advance()
+                entry_indent = indent
+                entry: Dict[str, Any] = {}
+
+                inline = stripped[1:].strip()
+                if inline and ':' in inline:
+                    key, val = inline.split(':', 1)
+                    entry[key.strip()] = val.strip().strip('"')
+
+                entry.update(self._parse_kv_block(entry_indent))
+                stats.append(entry)
+            else:
+                # If the line isn't a list item, stop processing stats
+                break
+
+        return stats
 
     def _parse_show_timeline(self, line: str, base_indent: int) -> ShowTimeline:
         """
@@ -1663,7 +1731,7 @@ class ComponentParserMixin(ActionParserMixin):
             if indent <= base_indent:
                 break
             
-            if stripped.startswith('item:'):
+            if stripped.startswith('item:') or stripped.startswith('item_config:'):
                 self._advance()
                 item = self._parse_timeline_item(indent)
             elif stripped.startswith('variant:'):
@@ -1774,11 +1842,27 @@ class ComponentParserMixin(ActionParserMixin):
             if stripped.startswith('item:'):
                 self._advance()
                 item = self._parse_avatar_item(indent)
+            elif stripped.startswith('avatar_field:'):
+                if item is None:
+                    item = AvatarItem()
+                item.image_url = stripped[len('avatar_field:'):].strip()
+                self._advance()
+            elif stripped.startswith('name_field:'):
+                if item is None:
+                    item = AvatarItem()
+                item.name = stripped[len('name_field:'):].strip()
+                self._advance()
             elif stripped.startswith('max_visible:'):
                 try:
                     max_visible = int(stripped[len('max_visible:'):].strip())
                 except ValueError:
                     raise self._error("max_visible must be an integer", self.pos + 1, nxt)
+                self._advance()
+            elif stripped.startswith('max_display:'):
+                try:
+                    max_visible = int(stripped[len('max_display:'):].strip())
+                except ValueError:
+                    raise self._error("max_display must be an integer", self.pos + 1, nxt)
                 self._advance()
             elif stripped.startswith('size:'):
                 size = stripped[len('size:'):].strip()
@@ -1863,6 +1947,28 @@ class ComponentParserMixin(ActionParserMixin):
             if stripped.startswith('config:'):
                 self._advance()
                 config = self._parse_chart_config(indent)
+            elif stripped.startswith('chart_type:'):
+                if config is None:
+                    config = ChartConfig(x_field="")
+                config.variant = stripped[len('chart_type:'):].strip()
+                self._advance()
+            elif stripped.startswith('x_axis:'):
+                if config is None:
+                    config = ChartConfig(x_field="")
+                config.x_field = stripped[len('x_axis:'):].strip()
+                self._advance()
+            elif stripped.startswith('y_axis:'):
+                if config is None:
+                    config = ChartConfig(x_field="")
+                y_field = stripped[len('y_axis:'):].strip()
+                if y_field:
+                    config.y_fields.append(y_field)
+                self._advance()
+            elif stripped.startswith('group_by:'):
+                if config is None:
+                    config = ChartConfig(x_field="")
+                config.group_by = stripped[len('group_by:'):].strip()
+                self._advance()
             elif stripped.startswith('filter_by:'):
                 filter_by = stripped[len('filter_by:'):].strip()
                 self._advance()
@@ -2231,6 +2337,7 @@ class ComponentParserMixin(ActionParserMixin):
         title: Union[str, Dict[str, Any]] = ""
         description: Optional[Union[str, Dict[str, Any]]] = None
         icon: Optional[Union[str, Dict[str, Any]]] = None
+        user: Optional[Union[str, Dict[str, Any]]] = None
         status: Optional[Union[str, Dict[str, Any]]] = None
         color: Optional[str] = None
         actions: List[ConditionalAction] = []
@@ -2271,6 +2378,14 @@ class ComponentParserMixin(ActionParserMixin):
                     self._advance()
                     description = self._parse_kv_block(indent)
                 self._advance() if desc_val else None
+            elif stripped.startswith('user:'):
+                user_val = stripped[len('user:'):].strip()
+                if user_val:
+                    user = user_val
+                else:
+                    self._advance()
+                    user = self._parse_kv_block(indent)
+                self._advance() if user_val else None
             elif stripped.startswith('icon:'):
                 icon_val = stripped[len('icon:'):].strip()
                 if icon_val:
@@ -2301,6 +2416,7 @@ class ComponentParserMixin(ActionParserMixin):
             title=title,
             description=description,
             icon=icon,
+            user=user,
             status=status,
             color=color,
             actions=actions,
@@ -3528,13 +3644,38 @@ class ComponentParserMixin(ActionParserMixin):
                     hint='Valid properties: direction, gap, align, justify, wrap, children, style, layout'
                 )
         
+        expanded_children = list(children)
+        for child in children:
+            if isinstance(child, ShowStatSummary) and getattr(child, "stats", None):
+                for extra_stat in child.stats[1:]:
+                    expanded_children.append(
+                        ShowStatSummary(
+                            label=extra_stat.get("label", child.label),
+                            source_type=child.source_type,
+                            source=child.source,
+                            value=extra_stat.get("value", child.value),
+                            format=extra_stat.get("format", child.format),
+                            prefix=extra_stat.get("prefix", child.prefix),
+                            suffix=extra_stat.get("suffix", child.suffix),
+                            delta=extra_stat.get("delta", child.delta),
+                            trend=extra_stat.get("trend", child.trend),
+                            comparison_period=extra_stat.get("comparison_period", child.comparison_period),
+                            sparkline=child.sparkline,
+                            color=extra_stat.get("color", child.color),
+                            icon=extra_stat.get("icon", child.icon),
+                            layout=child.layout,
+                            style=child.style,
+                            stats=None,
+                        )
+                    )
+
         return StackLayout(
             direction=direction,
             gap=gap,
             align=align,
             justify=justify,
             wrap=wrap,
-            children=children,
+            children=expanded_children,
             style=style,
             layout=layout,
         )
@@ -3879,6 +4020,9 @@ class ComponentParserMixin(ActionParserMixin):
                 self._advance()
                 # Use helper method to parse content with dash-list support
                 content = self._parse_children_list(indent)
+            elif stripped.startswith('children:'):
+                self._advance()
+                content = self._parse_children_list(indent)
             else:
                 break
         
@@ -3989,7 +4133,11 @@ class ComponentParserMixin(ActionParserMixin):
                 mult_str = stripped[len('multiple:'):].strip().lower()
                 multiple = mult_str in ('true', 'yes', '1')
                 self._advance()
-            elif stripped.startswith('items:'):
+            elif stripped.startswith('allow_multiple:'):
+                mult_str = stripped[len('allow_multiple:'):].strip().lower()
+                multiple = mult_str in ('true', 'yes', '1')
+                self._advance()
+            elif stripped.startswith('items:') or stripped.startswith('sections:'):
                 self._advance()
                 # Parse accordion items
                 while self.pos < len(self.lines):
@@ -4080,6 +4228,9 @@ class ComponentParserMixin(ActionParserMixin):
             elif stripped.startswith('content:'):
                 self._advance()
                 # Use helper method to parse content with dash-list support
+                content = self._parse_children_list(indent)
+            elif stripped.startswith('children:'):
+                self._advance()
                 content = self._parse_children_list(indent)
             else:
                 break
